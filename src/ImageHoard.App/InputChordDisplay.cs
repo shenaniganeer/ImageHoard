@@ -1,0 +1,69 @@
+using System.Text.Json;
+
+namespace ImageHoard.App;
+
+internal static class InputChordDisplay
+{
+    public static string FormatChord(JsonElement chord)
+    {
+        if (!chord.TryGetProperty("kind", out var kindProp))
+            return chord.GetRawText();
+        var kind = kindProp.GetString() ?? "";
+        return kind switch
+        {
+            "keyboard" => FormatKeyboard(chord),
+            "mouseWheel" => FormatMouseWheel(chord),
+            "mouseButton" => FormatMouseButton(chord),
+            "mouseWheelTilt" => FormatMouseWheelTilt(chord),
+            "mouseChord" => FormatMouseChord(chord),
+            _ => chord.GetRawText(),
+        };
+    }
+
+    public static string FormatChordList(IReadOnlyList<JsonElement> list) =>
+        list.Count == 0 ? "(none)" : string.Join(" · ", list.Select(FormatChord));
+
+    private static string FormatKeyboard(JsonElement chord)
+    {
+        if (!chord.TryGetProperty("keys", out var keys) || keys.ValueKind != JsonValueKind.Array)
+            return chord.GetRawText();
+        return string.Join("+", keys.EnumerateArray().Select(k => k.GetString() ?? ""));
+    }
+
+    private static string FormatMouseWheel(JsonElement chord)
+    {
+        var w = chord.TryGetProperty("wheel", out var wheel) ? wheel.GetString() ?? "?" : "?";
+        var baseText = w is "Up" or "Down" ? $"Wheel {w}" : $"Wheel {w}";
+        return baseText + FormatModifiersSuffix(chord);
+    }
+
+    private static string FormatMouseButton(JsonElement chord)
+    {
+        var b = chord.TryGetProperty("button", out var btn) ? btn.GetString() ?? "?" : "?";
+        var clicks = chord.TryGetProperty("clickCount", out var cc) ? cc.GetInt32() : 1;
+        var clickLabel = clicks == 1 ? "click" : $"{clicks}x click";
+        return $"{b} {clickLabel}{FormatModifiersSuffix(chord)}";
+    }
+
+    private static string FormatMouseWheelTilt(JsonElement chord)
+    {
+        var t = chord.TryGetProperty("tilt", out var tilt) ? tilt.GetString() ?? "?" : "?";
+        return $"Tilt {t}{FormatModifiersSuffix(chord)}";
+    }
+
+    private static string FormatMouseChord(JsonElement chord)
+    {
+        if (!chord.TryGetProperty("buttons", out var buttons) || buttons.ValueKind != JsonValueKind.Array)
+            return chord.GetRawText();
+        var parts = buttons.EnumerateArray().Select(b => b.GetString() ?? "").Where(s => s.Length > 0).ToArray();
+        return (parts.Length == 0 ? "Chord" : string.Join("+", parts)) + FormatModifiersSuffix(chord);
+    }
+
+    private static string FormatModifiersSuffix(JsonElement chord)
+    {
+        if (!chord.TryGetProperty("modifiers", out var mods) || mods.ValueKind != JsonValueKind.Array)
+            return "";
+        var parts = mods.EnumerateArray().Select(m => m.GetString() ?? "").Where(s => s.Length > 0).ToArray();
+        return parts.Length == 0 ? "" : " (" + string.Join("+", parts) + ")";
+    }
+}

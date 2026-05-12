@@ -1,0 +1,265 @@
+<Window
+    x:Class="ImageHoard.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:ImageHoard.App"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="ImageHoard">
+    <Grid
+        x:Name="RootGrid"
+        KeyDown="RootGrid_KeyDown"
+        IsTabStop="True">
+        <Grid x:Name="NormalLayout" Visibility="Visible">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" MinHeight="160" />
+            </Grid.RowDefinitions>
+            <MenuBar Grid.Row="0">
+                <MenuBarItem Title="File">
+                    <MenuFlyoutItem Text="Open…" Click="OpenFolder_Click" />
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem Text="Exit" Click="Exit_Click" />
+                </MenuBarItem>
+                <MenuBarItem Title="Browse">
+                    <ToggleMenuFlyoutItem
+                        x:Name="IncludeSubfoldersToggle"
+                        Text="Include subfolders in list"
+                        Click="IncludeSubfoldersToggle_Click" />
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem Text="Go to path…" Click="BrowseGoToPath_Click" />
+                    <MenuFlyoutItem Text="Add current folder to favorites" Click="BrowseAddFavorite_Click" />
+                    <MenuFlyoutSubItem Text="Favorites">
+                        <MenuFlyoutItem x:Name="FavoritePlaceholder" Text="(none)" IsEnabled="False" />
+                    </MenuFlyoutSubItem>
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem Text="Reveal in Explorer" Click="BrowseRevealInExplorer_Click" />
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem Text="Compute folder metrics…" Click="BrowseComputeMetrics_Click" />
+                </MenuBarItem>
+                <MenuBarItem Title="View">
+                    <ToggleMenuFlyoutItem
+                        x:Name="ShowBrowserPaneToggle"
+                        Text="Show browser pane"
+                        Click="ShowBrowserPaneToggle_Click" />
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutSubItem Text="Sort list by">
+                        <RadioMenuFlyoutItem
+                            x:Name="SortNameNaturalItem"
+                            Text="Name (natural order)"
+                            GroupName="ListSort"
+                            Click="SortList_NameNatural_Click" />
+                        <RadioMenuFlyoutItem
+                            x:Name="SortNameItem"
+                            Text="Name (A–Z only)"
+                            GroupName="ListSort"
+                            Click="SortList_Name_Click" />
+                        <RadioMenuFlyoutItem
+                            x:Name="SortDateItem"
+                            Text="Date modified"
+                            GroupName="ListSort"
+                            Click="SortList_Date_Click" />
+                        <RadioMenuFlyoutItem
+                            x:Name="SortSizeItem"
+                            Text="Size"
+                            GroupName="ListSort"
+                            Click="SortList_Size_Click" />
+                    </MenuFlyoutSubItem>
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem Text="Cycle image fit mode" Click="ViewCycleFit_Click" />
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem
+                        x:Name="EnterFullscreenMenuItem"
+                        Text="Enter fullscreen"
+                        Click="EnterFullscreen_Click" />
+                </MenuBarItem>
+                <MenuBarItem Title="Slideshow">
+                    <MenuFlyoutItem Text="Start slideshow (tree)…" Click="SlideshowStart_Click" />
+                    <MenuFlyoutItem Text="Toggle Tree / Folder scope" Click="SlideshowToggleScope_Click" />
+                    <MenuFlyoutItem Text="Reshuffle session" Click="SlideshowReshuffle_Click" />
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem Text="About random fairness…" Click="SlideshowFairnessHelp_Click" />
+                </MenuBarItem>
+                <MenuBarItem Title="Sort">
+                    <MenuFlyoutItem Text="Flag selection: Keep" Click="SortFlagKeep_Click" />
+                    <MenuFlyoutItem Text="Flag selection: Delete" Click="SortFlagDelete_Click" />
+                    <MenuFlyoutItem Text="Flag selection: Unset" Click="SortFlagUnset_Click" />
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem Text="Batch delete (non-keepers)…" Click="SortBatchDelete_Click" />
+                    <MenuFlyoutItem Text="Move current folder to archive…" Click="SortMoveArchive_Click" />
+                </MenuBarItem>
+                <MenuBarItem Title="Settings">
+                    <MenuFlyoutItem Text="Set archive root…" Click="SettingsArchiveRoot_Click" />
+                    <MenuFlyoutItem Text="Clear caches (metrics)" Click="SettingsClearCaches_Click" />
+                    <MenuFlyoutItem Text="Clear caches + operation log" Click="SettingsClearCachesAndLog_Click" />
+                </MenuBarItem>
+                <MenuBarItem Title="Options">
+                    <MenuFlyoutItem Text="Preferences…" Click="OptionsPreferences_Click" />
+                    <MenuFlyoutSeparator />
+                    <ToggleMenuFlyoutItem
+                        x:Name="ShowPathInFullscreenToggle"
+                        Text="Show file path on image overlay"
+                        Click="ShowPathToggle_Click" />
+                </MenuBarItem>
+            </MenuBar>
+            <Grid x:Name="ContentBelowMenu" Grid.Row="1" MinHeight="160">
+                <Grid x:Name="BrowserPaneGrid" MinHeight="120">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition x:Name="ColBrowser" MinWidth="120" Width="74*" />
+                        <ColumnDefinition x:Name="ColGapBrowserPreview" Width="6" />
+                        <ColumnDefinition x:Name="ColPreview" MinWidth="120" Width="26*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid
+                        x:Name="BrowserColumnHost"
+                        Grid.Column="0"
+                        MinWidth="120">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" MinHeight="80" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TreeView
+                            x:Name="FolderTree"
+                            Grid.Row="0"
+                            Expanding="FolderTree_OnExpanding"
+                            SelectionChanged="FolderTree_SelectionChanged" />
+                        <Expander
+                            x:Name="FilesExpander"
+                            Grid.Row="1"
+                            Header="Images in folder"
+                            IsExpanded="True"
+                            Expanding="FilesExpander_Expanding"
+                            Collapsed="FilesExpander_Collapsed">
+                            <ListView
+                                x:Name="ImageList"
+                                MinHeight="120"
+                                MaxHeight="360"
+                                PreviewKeyDown="ImageList_PreviewKeyDown"
+                                SelectionChanged="ImageList_SelectionChanged">
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="local:ImageRow">
+                                        <Grid ColumnSpacing="8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" MinWidth="120" />
+                                                <ColumnDefinition Width="88" />
+                                                <ColumnDefinition Width="140" />
+                                                <ColumnDefinition Width="40" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{x:Bind DisplayName}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="1" VerticalAlignment="Center" TextAlignment="Right" Text="{x:Bind SizeDisplay}" />
+                                            <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="{x:Bind ModifiedDisplay}" />
+                                            <TextBlock Grid.Column="3" VerticalAlignment="Center" Text="{x:Bind SortFlagDisplay}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </Expander>
+                    </Grid>
+                    <Border
+                        x:Name="SplitterBrowserPreview"
+                        Grid.Column="1"
+                        HorizontalAlignment="Stretch"
+                        Background="{ThemeResource DividerStrokeColorDefaultBrush}"
+                        PointerPressed="SplitterBrowserPreview_PointerPressed"
+                        PointerMoved="SplitterBrowserPreview_PointerMoved"
+                        PointerReleased="SplitterBrowserPreview_PointerReleased"
+                        PointerCaptureLost="Splitter_PointerCaptureLost" />
+                    <Grid
+                        x:Name="PreviewHostGrid"
+                        Grid.Column="2"
+                        Margin="8,0"
+                        Background="Transparent">
+                        <Image
+                            x:Name="PreviewImage"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Stretch="Uniform" />
+                        <Border
+                            x:Name="NormalPathOverlay"
+                            Margin="8"
+                            Padding="10,6"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Top"
+                            Background="#99000000"
+                            CornerRadius="4"
+                            Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock
+                                    x:Name="NormalPathText"
+                                    Foreground="White"
+                                    FontSize="12"
+                                    TextWrapping="WrapWholeWords" />
+                                <TextBlock
+                                    x:Name="NormalPathPositionText"
+                                    Foreground="White"
+                                    FontSize="12"
+                                    VerticalAlignment="Center"
+                                    Visibility="Collapsed" />
+                                <SymbolIcon
+                                    x:Name="NormalPathFlagIcon"
+                                    Height="14"
+                                    Width="14"
+                                    Visibility="Collapsed" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Grid>
+        <Grid
+            x:Name="FullscreenLayout"
+            Visibility="Collapsed"
+            Background="Black"
+            KeyDown="FullscreenLayout_KeyDown"
+            IsTabStop="True">
+            <Image
+                x:Name="FullscreenImage"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Stretch="Uniform" />
+            <Border
+                x:Name="FullscreenPathOverlay"
+                Margin="12"
+                Padding="10,6"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Background="#99000000"
+                CornerRadius="4"
+                Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock
+                        x:Name="FullscreenPathText"
+                        Foreground="White"
+                        FontSize="12"
+                        TextWrapping="WrapWholeWords" />
+                    <TextBlock
+                        x:Name="FullscreenPathPositionText"
+                        Foreground="White"
+                        FontSize="12"
+                        VerticalAlignment="Center"
+                        Visibility="Collapsed" />
+                    <SymbolIcon
+                        x:Name="FullscreenPathFlagIcon"
+                        Height="14"
+                        Width="14"
+                        Visibility="Collapsed" />
+                </StackPanel>
+            </Border>
+            <Border
+                x:Name="FullscreenScopeBadgeHost"
+                Margin="12"
+                Padding="8,4"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Background="#99000000"
+                CornerRadius="4"
+                Visibility="Collapsed">
+                <TextBlock
+                    x:Name="FullscreenScopeBadge"
+                    Foreground="White"
+                    FontSize="12"
+                    FontWeight="SemiBold" />
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

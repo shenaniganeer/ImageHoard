@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "profileId": "MouseOnly",
+  "displayName": "Mouse-only (sort / browse)",
+  "description": "Default profile for FR-SR-02 mouse-only acceptance and FR-IN-03. Uses wheel navigation, primary buttons for flags, X1/X2 for archive pipeline steps with double-confirm (FR-IN-05). Hardware without wheel tilt or X3 should expose slideshow scope via in-viewer chrome (implementation).",
+  "bindings": {
+    "nav.nextImage": [{ "kind": "mouseWheel", "wheel": "Down" }],
+    "nav.prevImage": [{ "kind": "mouseWheel", "wheel": "Up" }],
+    "sort.flagKeep": [{ "kind": "mouseButton", "button": "Left", "clickCount": 1 }],
+    "sort.flagDelete": [
+      {
+        "kind": "mouseButton",
+        "button": "Right",
+        "clickCount": 1,
+        "notes": "Short click in viewer flags delete; long-press opens context menu (see design doc)."
+      }
+    ],
+    "sort.flagUnset": [{ "kind": "mouseButton", "button": "Middle", "clickCount": 1 }],
+    "sort.commitBatchDelete": [
+      {
+        "kind": "mouseButton",
+        "button": "X1",
+        "clickCount": 1,
+        "notes": "First press opens FR-SR-03 summary; second X1 within 2s or primary Confirm completes (double-confirm)."
+      }
+    ],
+    "sort.moveToArchive": [
+      {
+        "kind": "mouseButton",
+        "button": "X2",
+        "clickCount": 1,
+        "notes": "Same double-confirm pattern as commitBatchDelete."
+      }
+    ],
+    "sort.undoLastFlag": [
+      { "kind": "mouseWheelTilt", "tilt": "Right" },
+      {
+        "kind": "mouseButton",
+        "button": "Middle",
+        "clickCount": 3,
+        "notes": "Triple middle within ~600ms when wheel tilt is unavailable."
+      }
+    ],
+    "slideshow.toggleScope": [
+      { "kind": "mouseWheelTilt", "tilt": "Left" },
+      {
+        "kind": "mouseButton",
+        "button": "X3",
+        "clickCount": 1,
+        "notes": "When OS exposes a sixth discrete button; otherwise use on-screen scope control."
+      }
+    ],
+    "ui.fullscreen": [
+      {
+        "kind": "mouseButton",
+        "button": "Left",
+        "clickCount": 2,
+        "notes": "Double-click on viewer chrome / title-safe region; implementation defines hit target."
+      }
+    ],
+    "ui.escape": [
+      {
+        "kind": "mouseChord",
+        "buttons": ["Left", "Right"],
+        "notes": "Primary buttons pressed together within ~50ms; ignored during drag gestures."
+      }
+    ]
+  }
+}

@@ -1,0 +1,89 @@
+using ImageHoard.Core.Browse;
+using ImageHoard.Core.Services;
+
+namespace ImageHoard.Tests;
+
+public sealed class LocalFileSystemTests
+{    [Fact]
+    public async Task ListDirectoryAsync_orders_directories_before_files_name_ascending()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ImageHoardTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "b_dir"));
+        Directory.CreateDirectory(Path.Combine(root, "a_dir"));
+        await File.WriteAllTextAsync(Path.Combine(root, "z.txt"), "x");
+        await File.WriteAllTextAsync(Path.Combine(root, "a.txt"), "y");
+
+        try
+        {
+            var fs = new LocalFileSystem();
+            var list = await fs.ListDirectoryAsync(root);
+
+            Assert.Equal(4, list.Count);
+            Assert.True(list[0].IsDirectory && list[0].Name == "a_dir");
+            Assert.True(list[1].IsDirectory && list[1].Name == "b_dir");
+            Assert.False(list[2].IsDirectory);
+            Assert.False(list[3].IsDirectory);
+            Assert.Equal("a.txt", list[2].Name);
+            Assert.Equal("z.txt", list[3].Name);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ListDirectoryAsync_throws_when_missing()
+    {
+        var fs = new LocalFileSystem();
+        var missing = Path.Combine(Path.GetTempPath(), "ImageHoardMissing_" + Guid.NewGuid().ToString("N"));
+        await Assert.ThrowsAsync<DirectoryNotFoundException>(() => fs.ListDirectoryAsync(missing));
+    }
+
+    [Fact]
+    public async Task ListDirectoryAsync_returns_image_files_for_filtering()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ImageHoardImg_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "sub"));
+        await File.WriteAllTextAsync(Path.Combine(root, "a.jpg"), "x");
+        await File.WriteAllTextAsync(Path.Combine(root, "b.PNG"), "y");
+        await File.WriteAllTextAsync(Path.Combine(root, "readme.txt"), "z");
+
+        try
+        {
+            var fs = new LocalFileSystem();
+            var list = await fs.ListDirectoryAsync(root);
+            var images = list.Where(e => !e.IsDirectory && ImageExtensions.IsImageFile(e.FullPath)).ToList();
+
+            Assert.Equal(2, images.Count);
+            Assert.Contains(images, e => string.Equals(e.Name, "a.jpg", StringComparison.Ordinal));
+            Assert.Contains(images, e => string.Equals(e.Name, "b.PNG", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ListDirectoryAsync_matches_extended_prefix_entry_count()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ImageHoardIoParity_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "d"));
+        await File.WriteAllTextAsync(Path.Combine(root, "f.txt"), "x");
+
+        try
+        {
+            var fs = new LocalFileSystem();
+            var list = await fs.ListDirectoryAsync(root);
+            var ioPath = PathNormalizer.ForIo(Path.GetFullPath(root));
+            var viaIo = new DirectoryInfo(ioPath).EnumerateFileSystemInfos().ToArray();
+
+            Assert.Equal(viaIo.Length, list.Count);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+}

@@ -1,0 +1,197 @@
+using System.Text.Json;
+
+namespace ImageHoard.App;
+
+internal static class AppSettingsStore
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+    };
+
+    public static (UiLayoutState Layout, AppSessionSettings Session) LoadAll()
+    {
+        var path = AppDataPaths.SettingsFilePath;
+        if (!File.Exists(path))
+            return (new UiLayoutState(), new AppSessionSettings());
+
+        try
+        {
+            var json = File.ReadAllText(path);
+            var file = JsonSerializer.Deserialize<AppSettingsFile>(json, JsonOptions);
+            return (MapToLayoutState(file), MapToSession(file));
+        }
+        catch
+        {
+            return (new UiLayoutState(), new AppSessionSettings());
+        }
+    }
+
+    private static UiLayoutState MapToLayoutState(AppSettingsFile? file)
+    {
+        var state = new UiLayoutState();
+        var ui = file?.Ui;
+
+        if (ui?.MainPaneColumns is { Length: > 0 } cols)
+        {
+            if (cols.Length >= 3 && cols[1] > 1e-6)
+            {
+                var sum = cols[0] + cols[1] + cols[2];
+                if (sum > 1e-6)
+                {
+                    state.BrowserColumnShare = (cols[0] + cols[1]) / sum;
+                    state.PreviewColumnShare = cols[2] / sum;
+                }
+            }
+            else if (cols.Length >= 2)
+            {
+                var sum = cols[0] + cols[1];
+                if (sum > 1e-6)
+                {
+                    state.BrowserColumnShare = cols[0] / sum;
+                    state.PreviewColumnShare = cols[1] / sum;
+                }
+            }
+        }
+
+        if (ui?.MainContentRows is { Length: 2 } rows)
+        {
+            var sum = rows[0] + rows[1];
+            if (sum > 1e-6)
+            {
+                state.BrowserRowShare = rows[0] / sum;
+                state.StatusRowShare = rows[1] / sum;
+            }
+        }
+
+        if (ui?.ShowFullscreenPath is { } showPath)
+            state.ShowFullscreenPath = showPath;
+
+        if (ui?.ShowOverlayListPosition is { } showPos)
+            state.ShowOverlayListPosition = showPos;
+
+        if (ui?.ShowBrowserPane is { } sb)
+            state.ShowBrowserPane = sb;
+        else
+        {
+            var folder = ui?.ShowFolderPane == true;
+            var fileList = ui?.ShowFileListPane == true;
+            if (ui?.ShowFolderPane != null || ui?.ShowFileListPane != null)
+                state.ShowBrowserPane = folder || fileList;
+        }
+
+        if (ui?.FilesExpanderOpen is { } feo)
+            state.FilesExpanderOpen = feo;
+
+        if (ui?.IncludeSubfoldersInList is { } inc)
+            state.IncludeSubfoldersInList = inc;
+
+        if (!string.IsNullOrEmpty(ui?.ListSort) && Enum.TryParse<ListSortKind>(ui.ListSort, out var sk))
+            state.ListSort = sk;
+
+        return state;
+    }
+
+    private static AppSessionSettings MapToSession(AppSettingsFile? file)
+    {
+        var s = new AppSessionSettings();
+        if (file?.Paths?.ArchiveRoot is { Length: > 0 } ar)
+            s.ArchiveRoot = ar;
+        if (file?.Paths?.StagingRoot is { Length: > 0 } st)
+            s.StagingRoot = st;
+        if (file?.Paths?.LastBrowseFolder is { Length: > 0 } lb)
+            s.LastBrowseFolder = lb;
+        if (file?.Paths?.LastSelectedImage is { Length: > 0 } ls)
+            s.LastSelectedImage = ls;
+        if (file?.Favorites is { Count: > 0 } fav)
+            s.Favorites = fav.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (file?.LogDestructiveOperations is { } log)
+            s.LogDestructiveOperations = log;
+        if (file?.SlideshowAllowDelete is { } sad)
+            s.SlideshowAllowDelete = sad;
+        return s;
+    }
+
+    public static void SaveAll(UiLayoutState layout, AppSessionSettings session)
+    {
+        try
+        {
+            var path = AppDataPaths.SettingsFilePath;
+            var dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+
+            AppSettingsFile file;
+            if (File.Exists(path))
+            {
+                try
+                {
+                    file = JsonSerializer.Deserialize<AppSettingsFile>(File.ReadAllText(path), JsonOptions)
+                           ?? new AppSettingsFile();
+                }
+                catch
+                {
+                    file = new AppSettingsFile();
+                }
+            }
+            else
+            {
+                file = new AppSettingsFile();
+            }
+
+            file.SchemaVersion = Math.Max(file.SchemaVersion, 1);
+            file.Ui ??= new UiSettingsSection();
+            file.Ui.MainPaneColumns = [layout.BrowserColumnShare, layout.PreviewColumnShare];
+            file.Ui.MainContentRows = [1.0, 0.0];
+            file.Ui.ShowFullscreenPath = layout.ShowFullscreenPath;
+            file.Ui.ShowOverlayListPosition = layout.ShowOverlayListPosition;
+            file.Ui.ShowBrowserPane = layout.ShowBrowserPane;
+            file.Ui.FilesExpanderOpen = layout.FilesExpanderOpen;
+            file.Ui.IncludeSubfoldersInList = layout.IncludeSubfoldersInList;
+            file.Ui.ListSort = layout.ListSort.ToString();
+
+            file.Paths ??= new PathsSettingsSection();
+            file.Paths.ArchiveRoot = session.ArchiveRoot;
+            file.Paths.StagingRoot = session.StagingRoot;
+            file.Paths.LastBrowseFolder = session.LastBrowseFolder;
+            file.Paths.LastSelectedImage = session.LastSelectedImage;
+            file.Favorites = session.Favorites.Count > 0 ? session.Favorites : null;
+            file.LogDestructiveOperations = session.LogDestructiveOperations;
+            file.SlideshowAllowDelete = session.SlideshowAllowDelete;
+
+            File.WriteAllText(path, JsonSerializer.Serialize(file, JsonOptions));
+        }
+        catch
+        {
+            // ignore IO errors
+        }
+    }
+
+    /// <summary>FR-ST-03 — clear metrics cache + optional log wipe.</summary>
+    public static void ClearCaches(bool deleteOperationLog)
+    {
+        try
+        {
+            if (File.Exists(AppDataPaths.FolderMetricsCachePath))
+                File.Delete(AppDataPaths.FolderMetricsCachePath);
+        }
+        catch
+        {
+            // ignored
+        }
+
+        if (!deleteOperationLog)
+            return;
+
+        try
+        {
+            if (File.Exists(AppDataPaths.OperationsLogPath))
+                File.Delete(AppDataPaths.OperationsLogPath);
+        }
+        catch
+        {
+            // ignored
+        }
+    }
+}

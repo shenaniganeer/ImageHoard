@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "profileId": "KeyboardOnly",
+  "displayName": "Keyboard-only (sort / browse / slideshow)",
+  "description": "Default profile for FR-SR-02 keyboard-only acceptance and FR-IN-02. No mouse bindings required for core commands.",
+  "bindings": {
+    "nav.nextImage": [
+      { "kind": "keyboard", "keys": ["ArrowRight"] },
+      { "kind": "keyboard", "keys": ["ArrowDown"] },
+      { "kind": "keyboard", "keys": ["Space"] }
+    ],
+    "nav.prevImage": [
+      { "kind": "keyboard", "keys": ["ArrowLeft"] },
+      { "kind": "keyboard", "keys": ["ArrowUp"] },
+      { "kind": "keyboard", "keys": ["Backspace"] }
+    ],
+    "nav.firstImage": [{ "kind": "keyboard", "keys": ["Home"] }],
+    "nav.lastImage": [{ "kind": "keyboard", "keys": ["End"] }],
+    "nav.firstImage": [{ "kind": "keyboard", "keys": ["Home"] }],
+    "nav.lastImage": [{ "kind": "keyboard", "keys": ["End"] }],
+    "sort.flagKeep": [{ "kind": "keyboard", "keys": ["KeyK"] }],
+    "sort.flagDelete": [{ "kind": "keyboard", "keys": ["KeyD"] }],
+    "sort.flagUnset": [{ "kind": "keyboard", "keys": ["KeyU"] }],
+    "sort.commitBatchDelete": [{ "kind": "keyboard", "keys": ["Control", "Shift", "Delete"] }],
+    "sort.moveToArchive": [{ "kind": "keyboard", "keys": ["Control", "Shift", "KeyM"] }],
+    "sort.undoLastFlag": [{ "kind": "keyboard", "keys": ["Control", "KeyZ"] }],
+    "slideshow.toggleScope": [{ "kind": "keyboard", "keys": ["Tab"] }],
+    "ui.fullscreen": [
+      { "kind": "keyboard", "keys": ["F11"] },
+      { "kind": "keyboard", "keys": ["Enter"] }
+    ],
+    "ui.escape": [{ "kind": "keyboard", "keys": ["Escape"] }]
+  }
+}

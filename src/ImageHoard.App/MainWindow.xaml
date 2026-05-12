@@ -11,6 +11,122 @@
         x:Name="RootGrid"
         KeyDown="RootGrid_KeyDown"
         IsTabStop="True">
+        <Grid.Resources>
+            <local:BoolToVisibilityConverter x:Key="BoolToVis" />
+            <local:InvertedBoolToVisibilityConverter x:Key="InvBoolToVis" />
+            <DataTemplate x:Key="BrowserFolderItemTemplate">
+                <Grid MinHeight="28" Padding="0,2" DataContext="{Binding Content}">
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        Text="{Binding DisplayLabel}"
+                        TextTrimming="CharacterEllipsis"
+                        Visibility="{Binding IsRenaming, Converter={StaticResource InvBoolToVis}}" />
+                    <TextBox
+                        VerticalAlignment="Center"
+                        Text="{Binding EditingName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        Visibility="{Binding IsRenaming, Converter={StaticResource BoolToVis}}"
+                        PreviewKeyDown="BrowserRenameTextBox_PreviewKeyDown"
+                        LostFocus="BrowserRenameTextBox_LostFocus"
+                        Loaded="BrowserRenameTextBox_Loaded" />
+                </Grid>
+            </DataTemplate>
+            <DataTemplate x:Key="BrowserFileItemTemplate">
+                <Grid MinHeight="28" Padding="0,2" DataContext="{Binding Content}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="120" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid
+                        Grid.Column="0"
+                        Grid.ColumnSpan="3"
+                        ColumnSpacing="10"
+                        Visibility="{Binding IsRenaming, Converter={StaticResource InvBoolToVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="120" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid Grid.Column="0" VerticalAlignment="Center">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <SymbolIcon
+                                Grid.Column="0"
+                                Width="14"
+                                Height="14"
+                                Margin="0,0,6,0"
+                                VerticalAlignment="Center"
+                                Symbol="{Binding SortFlagGlyphSymbol}"
+                                Foreground="{Binding SortFlagGlyphForeground}"
+                                Visibility="{Binding SortFlagGlyphVisibility}" />
+                            <TextBlock
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                Text="{Binding DisplayName}"
+                                TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                        <TextBlock
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            MinWidth="56"
+                            TextAlignment="Right"
+                            Text="{Binding SizeDisplay}"
+                            TextTrimming="CharacterEllipsis"
+                            Visibility="{Binding SizeDetailVisibility}" />
+                        <TextBlock
+                            Grid.Column="2"
+                            VerticalAlignment="Center"
+                            MinWidth="120"
+                            Text="{Binding ModifiedDisplay}"
+                            TextTrimming="CharacterEllipsis"
+                            Visibility="{Binding DateDetailVisibility}" />
+                    </Grid>
+                    <TextBox
+                        Grid.Column="0"
+                        Grid.ColumnSpan="3"
+                        VerticalAlignment="Center"
+                        Text="{Binding EditingName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        Visibility="{Binding IsRenaming, Converter={StaticResource BoolToVis}}"
+                        PreviewKeyDown="BrowserRenameTextBox_PreviewKeyDown"
+                        LostFocus="BrowserRenameTextBox_LostFocus"
+                        Loaded="BrowserRenameTextBox_Loaded" />
+                </Grid>
+            </DataTemplate>
+            <DataTemplate x:Key="BrowserFileListHeaderTemplate">
+                <Grid MinHeight="20" Padding="0,0,0,4" ColumnSpacing="10" DataContext="{Binding Content}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="120" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Grid.Column="0"
+                        VerticalAlignment="Center"
+                        Opacity="0.9"
+                        Style="{ThemeResource CaptionTextBlockStyle}"
+                        Text="Name" />
+                    <TextBlock
+                        Grid.Column="1"
+                        VerticalAlignment="Center"
+                        MinWidth="56"
+                        TextAlignment="Right"
+                        Opacity="0.9"
+                        Style="{ThemeResource CaptionTextBlockStyle}"
+                        Text="Size"
+                        Visibility="{Binding SizeHeaderVisibility}" />
+                    <TextBlock
+                        Grid.Column="2"
+                        VerticalAlignment="Center"
+                        MinWidth="120"
+                        Opacity="0.9"
+                        Style="{ThemeResource CaptionTextBlockStyle}"
+                        Text="Date modified"
+                        Visibility="{Binding DateHeaderVisibility}" />
+                </Grid>
+            </DataTemplate>
+        </Grid.Resources>
         <Grid x:Name="NormalLayout" Visibility="Visible">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -43,6 +159,16 @@
                         x:Name="ShowBrowserPaneToggle"
                         Text="Show browser pane"
                         Click="ShowBrowserPaneToggle_Click" />
+                    <MenuFlyoutSubItem Text="Image overlay">
+                        <ToggleMenuFlyoutItem
+                            x:Name="ShowPathOnOverlayWindowedToggle"
+                            Text="Show file path (windowed preview)"
+                            Click="ShowPathOnOverlayWindowedToggle_Click" />
+                        <ToggleMenuFlyoutItem
+                            x:Name="ShowPathOnOverlayFullscreenToggle"
+                            Text="Show file path (fullscreen)"
+                            Click="ShowPathOnOverlayFullscreenToggle_Click" />
+                    </MenuFlyoutSubItem>
                     <MenuFlyoutSeparator />
                     <MenuFlyoutSubItem Text="Sort list by">
                         <RadioMenuFlyoutItem
@@ -66,8 +192,38 @@
                             GroupName="ListSort"
                             Click="SortList_Size_Click" />
                     </MenuFlyoutSubItem>
+                    <MenuFlyoutSubItem Text="File details">
+                        <ToggleMenuFlyoutItem
+                            x:Name="ShowBrowserFileColumnHeadingsToggle"
+                            Text="Show column headings"
+                            Click="ShowBrowserFileColumnHeadingsToggle_Click" />
+                        <ToggleMenuFlyoutItem
+                            x:Name="ShowBrowserFileSizeToggle"
+                            Text="Show file size"
+                            Click="ShowBrowserFileSizeToggle_Click" />
+                        <ToggleMenuFlyoutItem
+                            x:Name="ShowBrowserFileDateToggle"
+                            Text="Show date modified"
+                            Click="ShowBrowserFileDateToggle_Click" />
+                    </MenuFlyoutSubItem>
                     <MenuFlyoutSeparator />
-                    <MenuFlyoutItem Text="Cycle image fit mode" Click="ViewCycleFit_Click" />
+                    <MenuFlyoutSubItem Text="Image fit">
+                        <RadioMenuFlyoutItem
+                            x:Name="FitModeFitItem"
+                            Text="Fit"
+                            GroupName="ImageFit"
+                            Click="ViewFit_Fit_Click" />
+                        <RadioMenuFlyoutItem
+                            x:Name="FitModeFillItem"
+                            Text="Fill"
+                            GroupName="ImageFit"
+                            Click="ViewFit_Fill_Click" />
+                        <RadioMenuFlyoutItem
+                            x:Name="FitModeOneToOneItem"
+                            Text="1:1"
+                            GroupName="ImageFit"
+                            Click="ViewFit_OneToOne_Click" />
+                    </MenuFlyoutSubItem>
                     <MenuFlyoutSeparator />
                     <MenuFlyoutItem
                         x:Name="EnterFullscreenMenuItem"
@@ -90,17 +246,11 @@
                     <MenuFlyoutItem Text="Move current folder to archive…" Click="SortMoveArchive_Click" />
                 </MenuBarItem>
                 <MenuBarItem Title="Settings">
+                    <MenuFlyoutItem Text="Preferences…" Click="OptionsPreferences_Click" />
+                    <MenuFlyoutSeparator />
                     <MenuFlyoutItem Text="Set archive root…" Click="SettingsArchiveRoot_Click" />
                     <MenuFlyoutItem Text="Clear caches (metrics)" Click="SettingsClearCaches_Click" />
                     <MenuFlyoutItem Text="Clear caches + operation log" Click="SettingsClearCachesAndLog_Click" />
-                </MenuBarItem>
-                <MenuBarItem Title="Options">
-                    <MenuFlyoutItem Text="Preferences…" Click="OptionsPreferences_Click" />
-                    <MenuFlyoutSeparator />
-                    <ToggleMenuFlyoutItem
-                        x:Name="ShowPathInFullscreenToggle"
-                        Text="Show file path on image overlay"
-                        Click="ShowPathToggle_Click" />
                 </MenuBarItem>
             </MenuBar>
             <Grid x:Name="ContentBelowMenu" Grid.Row="1" MinHeight="160">
@@ -115,45 +265,45 @@
                         Grid.Column="0"
                         MinWidth="120">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="*" MinHeight="80" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" MinHeight="80" />
                         </Grid.RowDefinitions>
+                        <Grid
+                            Grid.Row="0"
+                            MinHeight="36"
+                            Padding="0,4,0,4"
+                            ColumnSpacing="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <AppBarButton
+                                x:Name="BrowserNavigateUpButton"
+                                Grid.Column="0"
+                                Width="40"
+                                Height="36"
+                                IsCompact="True"
+                                VerticalAlignment="Center"
+                                LabelPosition="Collapsed"
+                                Click="BrowserNavigateUp_Click"
+                                ToolTipService.ToolTip="Up to parent folder">
+                                <AppBarButton.Icon>
+                                    <SymbolIcon Symbol="Up" />
+                                </AppBarButton.Icon>
+                            </AppBarButton>
+                            <TextBlock
+                                x:Name="BrowserCurrentPathText"
+                                Grid.Column="1"
+                                Margin="4,0,0,0"
+                                VerticalAlignment="Center"
+                                TextTrimming="CharacterEllipsis" />
+                        </Grid>
                         <TreeView
                             x:Name="FolderTree"
-                            Grid.Row="0"
+                            Grid.Row="1"
+                            MinHeight="80"
                             Expanding="FolderTree_OnExpanding"
                             SelectionChanged="FolderTree_SelectionChanged" />
-                        <Expander
-                            x:Name="FilesExpander"
-                            Grid.Row="1"
-                            Header="Images in folder"
-                            IsExpanded="True"
-                            Expanding="FilesExpander_Expanding"
-                            Collapsed="FilesExpander_Collapsed">
-                            <ListView
-                                x:Name="ImageList"
-                                MinHeight="120"
-                                MaxHeight="360"
-                                PreviewKeyDown="ImageList_PreviewKeyDown"
-                                SelectionChanged="ImageList_SelectionChanged">
-                                <ListView.ItemTemplate>
-                                    <DataTemplate x:DataType="local:ImageRow">
-                                        <Grid ColumnSpacing="8">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" MinWidth="120" />
-                                                <ColumnDefinition Width="88" />
-                                                <ColumnDefinition Width="140" />
-                                                <ColumnDefinition Width="40" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{x:Bind DisplayName}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Grid.Column="1" VerticalAlignment="Center" TextAlignment="Right" Text="{x:Bind SizeDisplay}" />
-                                            <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="{x:Bind ModifiedDisplay}" />
-                                            <TextBlock Grid.Column="3" VerticalAlignment="Center" Text="{x:Bind SortFlagDisplay}" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
-                            </ListView>
-                        </Expander>
                     </Grid>
                     <Border
                         x:Name="SplitterBrowserPreview"
@@ -169,11 +319,24 @@
                         Grid.Column="2"
                         Margin="8,0"
                         Background="Transparent">
-                        <Image
-                            x:Name="PreviewImage"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
-                            Stretch="Uniform" />
+                        <ScrollViewer
+                            x:Name="PreviewScrollViewer"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Stretch"
+                            HorizontalScrollBarVisibility="Auto"
+                            VerticalScrollBarVisibility="Auto"
+                            ZoomMode="Disabled">
+                            <Grid
+                                x:Name="PreviewScrollContentGrid"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Top">
+                                <Image
+                                    x:Name="PreviewImage"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Stretch="Uniform" />
+                            </Grid>
+                        </ScrollViewer>
                         <Border
                             x:Name="NormalPathOverlay"
                             Margin="8"

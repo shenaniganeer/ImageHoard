@@ -11,8 +11,6 @@ internal static class CommandCatalog
         new("nav.prevImage", "Previous image", true),
         new("nav.firstImage", "First image in folder list", true),
         new("nav.lastImage", "Last image in folder list", true),
-        new("nav.firstImage", "First image in folder list", true),
-        new("nav.lastImage", "Last image in folder list", true),
         new("sort.flagKeep", "Sort: flag Keep", true),
         new("sort.flagDelete", "Sort: flag Delete", true),
         new("sort.flagUnset", "Sort: flag Unset", true),
@@ -29,11 +27,13 @@ internal static class CommandCatalog
         new("browse.addBookmark", "Browse: add current folder to favorites", true),
         new("browse.revealInExplorer", "Browse: reveal in Explorer", true),
         new("view.cycleFitMode", "View: cycle image fit mode", true),
+        new("view.clearSelection", "View: clear image selection and preview", true),
+        new("view.panPreview", "View: pan primary preview (hold chord and drag)", true),
         new("view.zoomIn", "View: zoom in", true),
         new("view.zoomOut", "View: zoom out", true),
         new("settings.open", "Settings: open settings", false),
         new("settings.clearCaches", "Settings: clear caches", true),
         new("ui.fullscreen", "Toggle fullscreen", true),
-        new("ui.escape", "Exit fullscreen / cancel", true),
+        new("ui.escape", "Exit fullscreen; clear preview when not fullscreen", true),
     ];
 }

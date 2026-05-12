@@ -33,6 +33,16 @@ public sealed class InputPointerChordMatchTests
     }
 
     [Fact]
+    public void IsMouseButtonMatch_shift_left_matches_view_pan_preview_shipped_chord()
+    {
+        var json = """{"kind":"mouseButton","button":"Left","clickCount":1,"modifiers":["Shift"]}""";
+        var chord = JsonSerializer.Deserialize<JsonElement>(json);
+        Assert.True(InputPointerChordMatch.IsMouseButtonMatch(chord, "Left", 1, true, false, false, false));
+        Assert.False(InputPointerChordMatch.IsMouseButtonMatch(chord, "Left", 1, false, false, false, false));
+        Assert.False(InputPointerChordMatch.IsMouseButtonMatch(chord, "Left", 1, true, true, false, false));
+    }
+
+    [Fact]
     public void FindChordKeyConflicts_detects_duplicate_mouseWheel()
     {
         var doc = new InputProfileDocument

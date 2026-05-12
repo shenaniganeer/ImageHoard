@@ -9,10 +9,8 @@ This document extends the **minimum** command set in [input-default-profiles.md]
 |-------------|-------------|------|------------|
 | `nav.nextImage` | Next image | FR-VW-04 | Yes (defaults shipped) |
 | `nav.prevImage` | Previous image | FR-VW-04 | Yes |
-| `nav.firstImage` | First image in folder list | FR-VW-04 | Yes |
-| `nav.lastImage` | Last image in folder list | FR-VW-04 | Yes |
-| `nav.firstImage` | First image in current folder list | FR-VW-04 | Yes (KeyboardOnly default `Home`) |
-| `nav.lastImage` | Last image in current folder list | FR-VW-04 | Yes (KeyboardOnly default `End`) |
+| `nav.firstImage` | First image in folder list | FR-VW-04 | Yes (KeyboardOnly default `Home`) |
+| `nav.lastImage` | Last image in folder list | FR-VW-04 | Yes (KeyboardOnly default `End`) |
 | `sort.flagKeep` | Keep | FR-SR-01 | Yes |
 | `sort.flagDelete` | Delete | FR-SR-01 | Yes |
 | `sort.flagUnset` | Unset | FR-SR-01 | Yes |
@@ -29,10 +27,14 @@ This document extends the **minimum** command set in [input-default-profiles.md]
 | `browse.addBookmark` | Bookmark current root/folder | FR-BR-04 | Chrome P0; bind P1 |
 | `browse.revealInExplorer` | Reveal current file in Explorer | FR-BR-05 | Chrome P0; bind P1 |
 | `view.cycleFitMode` | Cycle fit / fill / 1:1 (or next mode) | FR-VW-01 | Chrome P0; bind **recommended P0** `KeyV` or toolbar |
+| `view.panPreview` | Pan primary preview (modifier + drag) when image exceeds pane | FR-VW-01 | Yes (MouseOnly default `Shift` + primary click drag; scrollbars also) |
 | `view.zoomIn` | Zoom in (when not slideshow-only) | FR-VW-01 | P1 |
 | `view.zoomOut` | Zoom out | FR-VW-01 | P1 |
+| `view.clearSelection` | Clear browser image selection and blank preview (no-op in fullscreen for dispatch; `Escape` exits fullscreen instead) | FR-VW-01 | Yes (KeyboardOnly default `Escape`; no shipped MouseOnly keyboard chord) |
 | `settings.open` | Open **Preferences** window (Options → Preferences…) | FR-ST-01 | Chrome P0 |
 | `settings.clearCaches` | FR-ST-03 clear folder metrics + thumbnails | FR-ST-03 | Chrome P0; bind P1 |
+
+**Keyboard `Escape` and FR-IN-05:** Shipped **KeyboardOnly** binds `Escape` to `view.clearSelection`, not `ui.escape`, so the merged built-in profile does not register the same keyboard chord on two commands. `ui.escape` keeps the **MouseOnly** left+right chord; merged defaults still include that chord under `ui.escape`. In windowed mode, `ui.escape` also clears selection and preview when triggered by that chord (same effect as `view.clearSelection` for keyboard `Escape`).
 
 ## P0 UX rule
 
@@ -44,6 +46,7 @@ When promoting to shipped profiles:
 
 - `slideshow.reshuffle`: `Control+Shift+R` (KeyboardOnly); mouse: **none** by default (avoid accidents).  
 - `view.cycleFitMode`: `KeyV` (KeyboardOnly).  
+- `view.panPreview`: `Shift` + primary click drag on preview (MouseOnly merged profile; rebinding in Preferences).  
 - `browse.revealInExplorer`: `Control+Shift+E`.
 
 ## Acceptance

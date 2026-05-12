@@ -4,6 +4,8 @@ namespace ImageHoard.App;
 
 internal static class InputChordDisplay
 {
+    internal const string ChordListSeparator = " · ";
+
     public static string FormatChord(JsonElement chord)
     {
         if (!chord.TryGetProperty("kind", out var kindProp))
@@ -21,7 +23,27 @@ internal static class InputChordDisplay
     }
 
     public static string FormatChordList(IReadOnlyList<JsonElement> list) =>
-        list.Count == 0 ? "(none)" : string.Join(" · ", list.Select(FormatChord));
+        list.Count == 0 ? "(none)" : string.Join(ChordListSeparator, list.Select(FormatChord));
+
+    /// <summary>Half-open character spans for each chord in <see cref="FormatChordList"/> (non-empty lists only).</summary>
+    public static List<(int Start, int EndExclusive)> GetChordListDisplayRanges(IReadOnlyList<JsonElement> list)
+    {
+        var result = new List<(int Start, int EndExclusive)>();
+        if (list.Count == 0)
+            return result;
+        var pos = 0;
+        for (var i = 0; i < list.Count; i++)
+        {
+            var piece = FormatChord(list[i]);
+            var start = pos;
+            pos += piece.Length;
+            result.Add((start, pos));
+            if (i < list.Count - 1)
+                pos += ChordListSeparator.Length;
+        }
+
+        return result;
+    }
 
     private static string FormatKeyboard(JsonElement chord)
     {

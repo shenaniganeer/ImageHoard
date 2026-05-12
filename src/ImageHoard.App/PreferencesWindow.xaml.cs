@@ -1,15 +1,21 @@
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Windows.Foundation;
 using WinRT.Interop;
 
 namespace ImageHoard.App;
 
 public sealed partial class PreferencesWindow : Window
 {
+    private const double PreferencesNavPaneWidthBuffer = 16;
+    private const double PreferencesNavPaneMinOpenLength = 140;
+
     private static PreferencesWindow? _instance;
     private IPreferencesSession _host;
     private bool _suppressEvents;
+    private bool _hotkeysTabPrimed;
 
     public PreferencesWindow(IPreferencesSession host)
     {
@@ -25,6 +31,29 @@ public sealed partial class PreferencesWindow : Window
         RootNav.SelectedItem = NavItemGeneral;
         ShowPage("general");
         RefreshFromHost();
+
+        _ = DispatcherQueue.GetForCurrentThread().TryEnqueue(
+            DispatcherQueuePriority.Low,
+            ApplyMenuPaneWidthFromTitles);
+    }
+
+    private void ApplyMenuPaneWidthFromTitles()
+    {
+        RootNav.UpdateLayout();
+        var maxItem = 0.0;
+        foreach (var item in RootNav.MenuItems)
+        {
+            if (item is not NavigationViewItem nvi)
+                continue;
+            nvi.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            maxItem = Math.Max(maxItem, nvi.DesiredSize.Width);
+            if (nvi.ActualWidth > 0)
+                maxItem = Math.Max(maxItem, nvi.ActualWidth);
+        }
+
+        RootNav.OpenPaneLength = Math.Max(
+            PreferencesNavPaneMinOpenLength,
+            maxItem + PreferencesNavPaneWidthBuffer);
     }
 
     public static void ShowOrActivate(IPreferencesSession host)
@@ -73,6 +102,8 @@ public sealed partial class PreferencesWindow : Window
         PageGeneral.Visibility = tag == "general" ? Visibility.Visible : Visibility.Collapsed;
         PageHotkeys.Visibility = tag == "hotkeys" ? Visibility.Visible : Visibility.Collapsed;
         PageLibrary.Visibility = tag == "library" ? Visibility.Visible : Visibility.Collapsed;
+        if (tag == "hotkeys")
+            _ = EnsureHotkeysEditorLoadedAsync();
     }
 
     private void RefreshFromHost()
@@ -82,10 +113,12 @@ public sealed partial class PreferencesWindow : Window
         {
             LogOperationsToggle.IsOn = _host.LogDestructiveOperations;
             ShowBrowserPaneToggle.IsOn = _host.ShowBrowserPane;
-            ShowPathOverlayToggle.IsOn = _host.ShowFullscreenPath;
+            ShowPathOnOverlayWindowedToggle.IsOn = _host.ShowPathOnOverlayWindowed;
+            ShowPathOnOverlayFullscreenToggle.IsOn = _host.ShowPathOnOverlayFullscreen;
             ShowOverlayListPositionToggle.IsOn = _host.ShowOverlayListPosition;
             IncludeSubfoldersToggle.IsOn = _host.IncludeSubfoldersInList;
             SlideshowAllowDeleteToggle.IsOn = _host.SlideshowAllowDelete;
+            PreviewNavCatchUpLagNumberBox.Value = _host.PreviewNavCatchUpLagSeconds;
 
             switch (_host.ListSort)
             {
@@ -113,7 +146,26 @@ public sealed partial class PreferencesWindow : Window
         }
     }
 
-    private void EditHotkeysButton_Click(object sender, RoutedEventArgs e) => _host.OpenHotkeysEditor();
+    private async Task EnsureHotkeysEditorLoadedAsync()
+    {
+        if (_hotkeysTabPrimed)
+            return;
+
+        var docs = await _host.LoadHotkeysEditDocumentsAsync();
+        if (docs == null)
+        {
+            HotkeysLoadError.Visibility = Visibility.Visible;
+            HotkeysEditor.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        HotkeysLoadError.Visibility = Visibility.Collapsed;
+        HotkeysEditor.Visibility = Visibility.Visible;
+        HotkeysEditor.LoadEditDocumentsAsync = () => _host.LoadHotkeysEditDocumentsAsync();
+        HotkeysEditor.BindingsPersisted = () => _host.ReloadInputBindingsAfterHotkeysPersist();
+        HotkeysEditor.Reset(docs.Value.Builtin, docs.Value.Merged);
+        _hotkeysTabPrimed = true;
+    }
 
     private void LogOperationsToggle_Toggled(object sender, RoutedEventArgs e)
     {
@@ -129,11 +181,18 @@ public sealed partial class PreferencesWindow : Window
         _host.ApplyShowBrowserPane(ShowBrowserPaneToggle.IsOn);
     }
 
-    private void ShowPathOverlayToggle_Toggled(object sender, RoutedEventArgs e)
+    private void ShowPathOnOverlayWindowedToggle_Toggled(object sender, RoutedEventArgs e)
     {
         if (_suppressEvents)
             return;
-        _host.ApplyShowFullscreenPath(ShowPathOverlayToggle.IsOn);
+        _host.ApplyShowPathOnOverlayWindowed(ShowPathOnOverlayWindowedToggle.IsOn);
+    }
+
+    private void ShowPathOnOverlayFullscreenToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_suppressEvents)
+            return;
+        _host.ApplyShowPathOnOverlayFullscreen(ShowPathOnOverlayFullscreenToggle.IsOn);
     }
 
     private void ShowOverlayListPositionToggle_Toggled(object sender, RoutedEventArgs e)
@@ -155,6 +214,16 @@ public sealed partial class PreferencesWindow : Window
         if (_suppressEvents)
             return;
         _host.ApplySlideshowAllowDelete(SlideshowAllowDeleteToggle.IsOn);
+    }
+
+    private void PreviewNavCatchUpLagNumberBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (_suppressEvents)
+            return;
+        var v = args.NewValue;
+        if (double.IsNaN(v) || double.IsInfinity(v))
+            return;
+        _host.ApplyPreviewNavCatchUpLagSeconds(v);
     }
 
     private void SortRadio_Checked(object sender, RoutedEventArgs e)

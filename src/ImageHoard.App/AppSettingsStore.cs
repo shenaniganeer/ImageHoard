@@ -65,8 +65,16 @@ internal static class AppSettingsStore
             }
         }
 
-        if (ui?.ShowFullscreenPath is { } showPath)
-            state.ShowFullscreenPath = showPath;
+        var legacyPath = ui?.ShowFullscreenPath;
+        if (ui?.ShowPathOnOverlayWindowed is { } wPath)
+            state.ShowPathOnOverlayWindowed = wPath;
+        else if (legacyPath is { } lw)
+            state.ShowPathOnOverlayWindowed = lw;
+
+        if (ui?.ShowPathOnOverlayFullscreen is { } fPath)
+            state.ShowPathOnOverlayFullscreen = fPath;
+        else if (legacyPath is { } lf)
+            state.ShowPathOnOverlayFullscreen = lf;
 
         if (ui?.ShowOverlayListPosition is { } showPos)
             state.ShowOverlayListPosition = showPos;
@@ -89,6 +97,21 @@ internal static class AppSettingsStore
 
         if (!string.IsNullOrEmpty(ui?.ListSort) && Enum.TryParse<ListSortKind>(ui.ListSort, out var sk))
             state.ListSort = sk;
+
+        if (ui?.ShowBrowserFileSize is { } sfs)
+            state.ShowBrowserFileSize = sfs;
+
+        if (ui?.ShowBrowserFileDate is { } sfd)
+            state.ShowBrowserFileDate = sfd;
+
+        if (ui?.ShowBrowserFileColumnHeadings is { } sch)
+            state.ShowBrowserFileColumnHeadings = sch;
+
+        if (ui?.PreviewNavCatchUpLagSeconds is { } lag
+            && !double.IsNaN(lag)
+            && !double.IsInfinity(lag)
+            && lag >= 0)
+            state.PreviewNavCatchUpLagSeconds = lag;
 
         return state;
     }
@@ -143,13 +166,17 @@ internal static class AppSettingsStore
             file.SchemaVersion = Math.Max(file.SchemaVersion, 1);
             file.Ui ??= new UiSettingsSection();
             file.Ui.MainPaneColumns = [layout.BrowserColumnShare, layout.PreviewColumnShare];
-            file.Ui.MainContentRows = [1.0, 0.0];
-            file.Ui.ShowFullscreenPath = layout.ShowFullscreenPath;
+            file.Ui.ShowPathOnOverlayWindowed = layout.ShowPathOnOverlayWindowed;
+            file.Ui.ShowPathOnOverlayFullscreen = layout.ShowPathOnOverlayFullscreen;
+            file.Ui.ShowFullscreenPath = layout.ShowPathOnOverlayFullscreen;
             file.Ui.ShowOverlayListPosition = layout.ShowOverlayListPosition;
             file.Ui.ShowBrowserPane = layout.ShowBrowserPane;
-            file.Ui.FilesExpanderOpen = layout.FilesExpanderOpen;
             file.Ui.IncludeSubfoldersInList = layout.IncludeSubfoldersInList;
             file.Ui.ListSort = layout.ListSort.ToString();
+            file.Ui.ShowBrowserFileSize = layout.ShowBrowserFileSize;
+            file.Ui.ShowBrowserFileDate = layout.ShowBrowserFileDate;
+            file.Ui.ShowBrowserFileColumnHeadings = layout.ShowBrowserFileColumnHeadings;
+            file.Ui.PreviewNavCatchUpLagSeconds = layout.PreviewNavCatchUpLagSeconds;
 
             file.Paths ??= new PathsSettingsSection();
             file.Paths.ArchiveRoot = session.ArchiveRoot;

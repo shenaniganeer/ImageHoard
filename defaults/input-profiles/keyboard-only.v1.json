@@ -16,8 +16,6 @@
     ],
     "nav.firstImage": [{ "kind": "keyboard", "keys": ["Home"] }],
     "nav.lastImage": [{ "kind": "keyboard", "keys": ["End"] }],
-    "nav.firstImage": [{ "kind": "keyboard", "keys": ["Home"] }],
-    "nav.lastImage": [{ "kind": "keyboard", "keys": ["End"] }],
     "sort.flagKeep": [{ "kind": "keyboard", "keys": ["KeyK"] }],
     "sort.flagDelete": [{ "kind": "keyboard", "keys": ["KeyD"] }],
     "sort.flagUnset": [{ "kind": "keyboard", "keys": ["KeyU"] }],
@@ -29,6 +27,6 @@
       { "kind": "keyboard", "keys": ["F11"] },
       { "kind": "keyboard", "keys": ["Enter"] }
     ],
-    "ui.escape": [{ "kind": "keyboard", "keys": ["Escape"] }]
+    "view.clearSelection": [{ "kind": "keyboard", "keys": ["Escape"] }]
   }
 }

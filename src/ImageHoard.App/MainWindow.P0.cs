@@ -1,6 +1,6 @@
-using System.Collections.ObjectModel;
 using System.Diagnostics;
-using ImageHoard.App.Imaging;
+using System.Threading.Tasks;
+using ImageHoard.Core.Browse;
 using ImageHoard.Core.Input;
 using ImageHoard.Core.Logging;
 using ImageHoard.Core.Metrics;
@@ -11,8 +11,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.System;
+using Windows.UI;
 
 namespace ImageHoard.App;
 
@@ -39,7 +39,7 @@ public sealed partial class MainWindow
         if (e.Key == VirtualKey.Left)
         {
             if (_slideshow.TryMovePrevious(out var p) && p != null)
-                _ = ShowImagePathAsync(p);
+                EnqueuePreviewNavigation(p, true);
             e.Handled = true;
             return true;
         }
@@ -47,7 +47,7 @@ public sealed partial class MainWindow
         if (e.Key == VirtualKey.Right)
         {
             if (_slideshow.TryMoveNext(out var p) && p != null)
-                _ = ShowImagePathAsync(p);
+                EnqueuePreviewNavigation(p, true);
             e.Handled = true;
             return true;
         }
@@ -75,42 +75,18 @@ public sealed partial class MainWindow
             return;
         await _slideshow.ToggleScopeAsync(AppServices.FileSystem, _currentImageFullPath).ConfigureAwait(true);
         if (_slideshow.Scope == SlideshowScopeKind.Folder && _slideshow.GetCurrentPath() is { } p)
-            await ShowImagePathAsync(p).ConfigureAwait(true);
+            await CommitPreviewImmediatelyAsync(p).ConfigureAwait(true);
         UpdateSlideshowScopeBadge();
-    }
-
-    private async Task ShowImagePathAsync(string path)
-    {
-        _currentImageFullPath = path;
-        UpdatePathOverlays();
-        SetTransientStatus(Path.GetFileName(path));
-        var layout = CreateWicDecodeLayout();
-        var bmp = await WicBitmapLoader.DecodeWithOrientationAsync(path, layout);
-        if (bmp == null)
-        {
-            SetTransientStatus("Preview unavailable (codec or format).");
-            return;
-        }
-
-        try
-        {
-            var src = new SoftwareBitmapSource();
-            await src.SetBitmapAsync(bmp);
-            PreviewImage.Source = src;
-            FullscreenImage.Source = src;
-            RememberDecodeTargetBox(layout);
-        }
-        catch
-        {
-            SetTransientStatus("Preview failed.");
-        }
     }
 
     private void InitializeFeatures()
     {
         IncludeSubfoldersToggle.IsChecked = _layoutState.IncludeSubfoldersInList;
         UpdateSortMenuChecks();
+        UpdateFileDetailsMenuChecks();
         UpdatePreviewStretch();
+        UpdateFitModeMenuChecks();
+        ApplyBrowserFileDetailsChrome();
         TryLoadInputProfile();
     }
 
@@ -122,6 +98,30 @@ public sealed partial class MainWindow
             SortFlagState.Delete => "D",
             _ => "·",
         };
+    }
+
+    private static readonly SolidColorBrush SortFlagKeepListBrush = new(Color.FromArgb(255, 76, 175, 80));
+    private static readonly SolidColorBrush SortFlagDeleteListBrush = new(Color.FromArgb(255, 232, 17, 35));
+
+    private void ApplySortFlagPresentationToRow(ImageRow row, string fullPath)
+    {
+        row.SortFlagDisplay = SortFlagLabel(fullPath);
+        switch (_sortSession.GetState(fullPath))
+        {
+            case SortFlagState.Keep:
+                row.SortFlagGlyphVisibility = Visibility.Visible;
+                row.SortFlagGlyphSymbol = Symbol.Accept;
+                row.SortFlagGlyphForeground = SortFlagKeepListBrush;
+                break;
+            case SortFlagState.Delete:
+                row.SortFlagGlyphVisibility = Visibility.Visible;
+                row.SortFlagGlyphSymbol = Symbol.Cancel;
+                row.SortFlagGlyphForeground = SortFlagDeleteListBrush;
+                break;
+            default:
+                row.SortFlagGlyphVisibility = Visibility.Collapsed;
+                break;
+        }
     }
 
     private void TryLoadInputProfile()
@@ -155,6 +155,59 @@ public sealed partial class MainWindow
         SortSizeItem.IsChecked = _layoutState.ListSort == ListSortKind.Size;
     }
 
+    private void UpdateFileDetailsMenuChecks()
+    {
+        ShowBrowserFileColumnHeadingsToggle.IsChecked = _layoutState.ShowBrowserFileColumnHeadings;
+        ShowBrowserFileSizeToggle.IsChecked = _layoutState.ShowBrowserFileSize;
+        ShowBrowserFileDateToggle.IsChecked = _layoutState.ShowBrowserFileDate;
+    }
+
+    private void ShowBrowserFileColumnHeadingsToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleMenuFlyoutItem t)
+        {
+            _layoutState.ShowBrowserFileColumnHeadings = t.IsChecked == true;
+            PersistLayout();
+            SyncBrowserFileListHeaderNodes();
+            ApplyBrowserFileDetailsChrome();
+        }
+    }
+
+    private void ShowBrowserFileSizeToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleMenuFlyoutItem t)
+        {
+            _layoutState.ShowBrowserFileSize = t.IsChecked == true;
+            PersistLayout();
+            ApplyBrowserFileDetailsChrome();
+        }
+    }
+
+    private void ShowBrowserFileDateToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleMenuFlyoutItem t)
+        {
+            _layoutState.ShowBrowserFileDate = t.IsChecked == true;
+            PersistLayout();
+            ApplyBrowserFileDetailsChrome();
+        }
+    }
+
+    private void UpdateFitModeMenuChecks()
+    {
+        FitModeFitItem.IsChecked = _fitMode == ImageFitMode.Fit;
+        FitModeFillItem.IsChecked = _fitMode == ImageFitMode.Fill;
+        FitModeOneToOneItem.IsChecked = _fitMode == ImageFitMode.OneToOne;
+    }
+
+    private void ApplyFitModeUi()
+    {
+        UpdatePreviewStretch();
+        UpdateFitModeMenuChecks();
+        if (PreviewImage.Source != null)
+            _ = ReloadCurrentPreviewAsync();
+    }
+
     private void UpdatePreviewStretch()
     {
         var stretch = _fitMode switch
@@ -163,8 +216,8 @@ public sealed partial class MainWindow
             ImageFitMode.OneToOne => Stretch.None,
             _ => Stretch.Uniform,
         };
-        PreviewImage.Stretch = stretch;
         FullscreenImage.Stretch = stretch;
+        UpdatePreviewScrollMetrics();
     }
 
     private void IncludeSubfoldersToggle_Click(object sender, RoutedEventArgs e)
@@ -173,8 +226,6 @@ public sealed partial class MainWindow
         {
             _layoutState.IncludeSubfoldersInList = t.IsChecked == true;
             PersistLayout();
-            if (!string.IsNullOrEmpty(_currentFolderPath))
-                _ = LoadImageListForPathAsync(_currentFolderPath);
         }
     }
 
@@ -184,7 +235,7 @@ public sealed partial class MainWindow
         PersistLayout();
         UpdateSortMenuChecks();
         if (!string.IsNullOrEmpty(_currentFolderPath))
-            _ = LoadImageListForPathAsync(_currentFolderPath);
+            _ = RefreshBrowserTreeFromSettingsAsync();
     }
 
     private void SortList_Name_Click(object sender, RoutedEventArgs e)
@@ -193,7 +244,7 @@ public sealed partial class MainWindow
         PersistLayout();
         UpdateSortMenuChecks();
         if (!string.IsNullOrEmpty(_currentFolderPath))
-            _ = LoadImageListForPathAsync(_currentFolderPath);
+            _ = RefreshBrowserTreeFromSettingsAsync();
     }
 
     private void SortList_Date_Click(object sender, RoutedEventArgs e)
@@ -202,7 +253,7 @@ public sealed partial class MainWindow
         PersistLayout();
         UpdateSortMenuChecks();
         if (!string.IsNullOrEmpty(_currentFolderPath))
-            _ = LoadImageListForPathAsync(_currentFolderPath);
+            _ = RefreshBrowserTreeFromSettingsAsync();
     }
 
     private void SortList_Size_Click(object sender, RoutedEventArgs e)
@@ -211,22 +262,33 @@ public sealed partial class MainWindow
         PersistLayout();
         UpdateSortMenuChecks();
         if (!string.IsNullOrEmpty(_currentFolderPath))
-            _ = LoadImageListForPathAsync(_currentFolderPath);
+            _ = RefreshBrowserTreeFromSettingsAsync();
     }
 
-    private void ViewCycleFit_Click(object sender, RoutedEventArgs e)
+    private void ViewFit_Fit_Click(object sender, RoutedEventArgs e)
     {
-        _fitMode = (ImageFitMode)(((int)_fitMode + 1) % 3);
-        UpdatePreviewStretch();
-        if (PreviewImage.Source != null)
-            _ = ReloadCurrentPreviewAsync();
+        _fitMode = ImageFitMode.Fit;
+        ApplyFitModeUi();
     }
 
-    private async Task ReloadCurrentPreviewAsync()
+    private void ViewFit_Fill_Click(object sender, RoutedEventArgs e)
     {
-        if (ImageList.SelectedItem is not ImageRow row)
-            return;
-        await ShowImagePathAsync(row.FullPath);
+        _fitMode = ImageFitMode.Fill;
+        ApplyFitModeUi();
+    }
+
+    private void ViewFit_OneToOne_Click(object sender, RoutedEventArgs e)
+    {
+        _fitMode = ImageFitMode.OneToOne;
+        ApplyFitModeUi();
+    }
+
+    private Task ReloadCurrentPreviewAsync()
+    {
+        if (GetSelectedImageRow() is not { } row)
+            return Task.CompletedTask;
+        EnqueuePreviewNavigation(row.FullPath, false);
+        return Task.CompletedTask;
     }
 
     private async void BrowseGoToPath_Click(object sender, RoutedEventArgs e)
@@ -250,10 +312,7 @@ public sealed partial class MainWindow
             return;
         }
 
-        FolderTree.RootNodes.Clear();
-        SetSingleFolderTreeRoot(path);
-        FolderTree.SelectedNode = FolderTree.RootNodes[0];
-        await LoadImageListForPathAsync(path);
+        await NavigateToFolderAsync(path).ConfigureAwait(true);
     }
 
     private void BrowseAddFavorite_Click(object sender, RoutedEventArgs e)
@@ -268,7 +327,7 @@ public sealed partial class MainWindow
 
     private void BrowseRevealInExplorer_Click(object sender, RoutedEventArgs e)
     {
-        if (ImageList.SelectedItem is not ImageRow row)
+        if (GetSelectedImageRow() is not { } row)
         {
             SetTransientStatus("Select a file first.");
             return;
@@ -313,7 +372,7 @@ public sealed partial class MainWindow
 
     private async void SlideshowStart_Click(object sender, RoutedEventArgs e)
     {
-        var root = _currentFolderPath ?? GetFolderPath(FolderTree.SelectedNode);
+        var root = _currentFolderPath;
         if (string.IsNullOrEmpty(root))
         {
             SetTransientStatus("Select a folder first.");
@@ -342,7 +401,7 @@ public sealed partial class MainWindow
             return;
         }
 
-        await ShowImagePathAsync(first);
+        await CommitPreviewImmediatelyAsync(first);
         if (!_isFullscreen)
             ToggleFullscreen();
         UpdateSlideshowScopeBadge();
@@ -368,7 +427,7 @@ public sealed partial class MainWindow
             return;
         await _slideshow.ToggleScopeAsync(AppServices.FileSystem, _currentImageFullPath).ConfigureAwait(true);
         if (_slideshow.Scope == SlideshowScopeKind.Folder && _slideshow.GetCurrentPath() is { } p)
-            await ShowImagePathAsync(p).ConfigureAwait(true);
+            await CommitPreviewImmediatelyAsync(p).ConfigureAwait(true);
         UpdateSlideshowScopeBadge();
     }
 
@@ -404,7 +463,7 @@ public sealed partial class MainWindow
 
     private void SetSelectedSortFlag(SortFlagState state)
     {
-        if (ImageList.SelectedItem is not ImageRow row)
+        if (GetSelectedImageRow() is not { } row)
             return;
         var current = _sortSession.GetState(row.FullPath);
         var resolved = SortFlagInput.ResolveToggle(current, state);
@@ -432,9 +491,7 @@ public sealed partial class MainWindow
     private void ViewCycleFitFromInput()
     {
         _fitMode = (ImageFitMode)(((int)_fitMode + 1) % 3);
-        UpdatePreviewStretch();
-        if (PreviewImage.Source != null)
-            _ = ReloadCurrentPreviewAsync();
+        ApplyFitModeUi();
     }
 
     private void ToggleIncludeSubfoldersFromInput()
@@ -442,39 +499,31 @@ public sealed partial class MainWindow
         _layoutState.IncludeSubfoldersInList = !_layoutState.IncludeSubfoldersInList;
         IncludeSubfoldersToggle.IsChecked = _layoutState.IncludeSubfoldersInList;
         PersistLayout();
-        if (!string.IsNullOrEmpty(_currentFolderPath))
-            _ = LoadImageListForPathAsync(_currentFolderPath);
     }
 
     private void OptionsPreferences_Click(object sender, RoutedEventArgs e) =>
         PreferencesWindow.ShowOrActivate(this);
 
-    internal async void OpenHotkeysEditor()
+    private async void SortBatchDelete_Click(object sender, RoutedEventArgs e)
     {
+        if (string.IsNullOrEmpty(_currentFolderPath))
+            return;
+        List<string> paths;
         try
         {
-            var builtin = InputProfileBootstrap.TryLoadCombinedShippedBuiltin();
-            if (builtin == null)
-                return;
-
-            var userJson = File.Exists(AppDataPaths.UserInputOverridesPath)
-                ? await File.ReadAllTextAsync(AppDataPaths.UserInputOverridesPath)
-                : null;
-            var merged = InputProfileMerger.MergeWithUserOverrides(builtin, userJson);
-            HotkeysWindow.ShowOrActivate(InputProfileMerger.CloneShallow(builtin), merged, TryLoadInputProfile);
+            paths = await FolderImagePathCollection.CollectAsync(
+                AppServices.FileSystem,
+                _currentFolderPath,
+                _layoutState.IncludeSubfoldersInList).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
-            SetTransientStatus("Hotkeys: " + ex.Message);
-        }
-    }
-
-    private async void SortBatchDelete_Click(object sender, RoutedEventArgs e)
-    {
-        if (ImageList.ItemsSource is not ObservableCollection<ImageRow> rows || rows.Count == 0)
+            SetTransientStatus("Could not list images: " + ex.Message);
             return;
+        }
 
-        var paths = rows.Select(r => r.FullPath).ToList();
+        if (paths.Count == 0)
+            return;
         var (keep, delete, unset) = _sortSession.CountStates(paths);
         if (unset > 0)
         {
@@ -552,7 +601,7 @@ public sealed partial class MainWindow
 
         SetTransientStatus($"Sent {ok} image(s) to the Recycle Bin (not marked Keep).");
         if (!string.IsNullOrEmpty(_currentFolderPath))
-            await LoadImageListForPathAsync(_currentFolderPath);
+            await NavigateToFolderAsync(_currentFolderPath).ConfigureAwait(true);
     }
 
     private async void SortMoveArchive_Click(object sender, RoutedEventArgs e)
@@ -601,7 +650,9 @@ public sealed partial class MainWindow
 
             SetTransientStatus("Folder moved to archive.");
             FolderTree.RootNodes.Clear();
-            ImageList.ItemsSource = null;
+            _browseNavAnchorPath = null;
+            _currentFolderPath = null;
+            UpdateBrowserToolbar();
             _session.LastBrowseFolder = null;
             _session.LastSelectedImage = null;
             PersistLayout();
@@ -632,7 +683,7 @@ public sealed partial class MainWindow
 
     private void HandleSortKeyboardShortcuts(KeyRoutedEventArgs e)
     {
-        if (_isFullscreen || ImageList.SelectedItem is not ImageRow)
+        if (_isFullscreen || GetSelectedImageRow() is null)
             return;
 
         if (e.Key == VirtualKey.K)

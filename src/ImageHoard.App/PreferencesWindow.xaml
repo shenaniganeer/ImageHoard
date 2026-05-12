@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:ImageHoard.App"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
     Title="Preferences">
@@ -18,7 +19,7 @@
             <NavigationViewItem x:Name="NavItemHotkeys" Content="Hotkeys" Tag="hotkeys" />
             <NavigationViewItem Content="Library" Tag="library" />
         </NavigationView.MenuItems>
-        <Grid x:Name="PagesHost" Padding="0,8,16,16">
+        <Grid x:Name="PagesHost" Padding="16,8,16,16">
             <ScrollViewer
                 x:Name="PageGeneral"
                 VerticalScrollBarVisibility="Auto"
@@ -48,12 +49,19 @@
                         OffContent="Off"
                         Toggled="ShowBrowserPaneToggle_Toggled" />
                     <ToggleSwitch
-                        x:Name="ShowPathOverlayToggle"
+                        x:Name="ShowPathOnOverlayWindowedToggle"
+                        Margin="0,16,0,0"
+                        Header="Show file path on image overlay (windowed preview)"
+                        OnContent="On"
+                        OffContent="Off"
+                        Toggled="ShowPathOnOverlayWindowedToggle_Toggled" />
+                    <ToggleSwitch
+                        x:Name="ShowPathOnOverlayFullscreenToggle"
                         Margin="0,16,0,0"
                         Header="Show file path on image overlay (fullscreen)"
                         OnContent="On"
                         OffContent="Off"
-                        Toggled="ShowPathOverlayToggle_Toggled" />
+                        Toggled="ShowPathOnOverlayFullscreenToggle_Toggled" />
                     <ToggleSwitch
                         x:Name="ShowOverlayListPositionToggle"
                         Margin="0,16,0,0"
@@ -66,6 +74,24 @@
                         TextWrapping="Wrap"
                         Opacity="0.7"
                         Text="When on, shows current index and total in the file list (e.g. 2/78) on the overlay when the image is in that list." />
+                    <TextBlock
+                        Margin="0,16,0,4"
+                        FontWeight="SemiBold"
+                        Text="Preview" />
+                    <TextBlock
+                        Margin="0,0,0,8"
+                        TextWrapping="Wrap"
+                        Opacity="0.7"
+                        Text="When stepping quickly through images, each step is shown in order until the queue falls behind; then only the latest image is decoded. Set to 0 to never skip queued steps (full FIFO). Higher values allow skipping only after the backlog has waited longer." />
+                    <NumberBox
+                        x:Name="PreviewNavCatchUpLagNumberBox"
+                        Header="Rapid navigation catch-up (seconds)"
+                        Minimum="0"
+                        Maximum="5"
+                        SmallChange="0.1"
+                        LargeChange="0.5"
+                        SpinButtonPlacementMode="Inline"
+                        ValueChanged="PreviewNavCatchUpLagNumberBox_ValueChanged" />
                     <TextBlock Margin="0,16,0,8" Text="Default list sort" />
                     <StackPanel>
                         <RadioButton
@@ -143,25 +169,44 @@
                         Text="When on, batch delete and move-to-archive write JSON lines to the operation log (if enabled in Settings)." />
                 </StackPanel>
             </ScrollViewer>
-            <ScrollViewer
+            <Grid
                 x:Name="PageHotkeys"
-                VerticalScrollBarVisibility="Auto"
-                HorizontalScrollBarVisibility="Disabled"
+                VerticalAlignment="Stretch"
                 Visibility="Collapsed">
-                <StackPanel MaxWidth="560" HorizontalAlignment="Left">
-                    <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Hotkeys" />
-                    <TextBlock
-                        Margin="0,8,0,16"
-                        TextWrapping="Wrap"
-                        Opacity="0.7"
-                        Text="Customize keyboard, mouse, and wheel shortcuts. Changes merge with shipped defaults; only your differences are saved." />
-                    <Button
-                        x:Name="EditHotkeysButton"
-                        Content="Edit shortcuts…"
-                        HorizontalAlignment="Left"
-                        Click="EditHotkeysButton_Click" />
-                </StackPanel>
-            </ScrollViewer>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock
+                    Grid.Row="0"
+                    Style="{StaticResource TitleTextBlockStyle}"
+                    Text="Hotkeys" />
+                <TextBlock
+                    Grid.Row="1"
+                    Margin="0,8,0,8"
+                    MaxWidth="720"
+                    HorizontalAlignment="Left"
+                    TextWrapping="Wrap"
+                    Opacity="0.7"
+                    Text="Edit shortcuts below. Only your differences from shipped defaults are saved to disk." />
+                <TextBlock
+                    x:Name="HotkeysLoadError"
+                    Grid.Row="2"
+                    Margin="0,8,0,0"
+                    MaxWidth="720"
+                    HorizontalAlignment="Left"
+                    TextWrapping="Wrap"
+                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                    Visibility="Collapsed"
+                    Text="Could not load keyboard and mouse profile. Try again after closing and reopening Preferences." />
+                <local:HotkeysEditorControl
+                    x:Name="HotkeysEditor"
+                    Grid.Row="2"
+                    MaxWidth="720"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Stretch" />
+            </Grid>
             <ScrollViewer
                 x:Name="PageLibrary"
                 VerticalScrollBarVisibility="Auto"

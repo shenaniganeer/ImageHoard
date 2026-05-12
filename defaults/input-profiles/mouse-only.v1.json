@@ -50,6 +50,15 @@
         "notes": "When OS exposes a sixth discrete button; otherwise use on-screen scope control."
       }
     ],
+    "view.panPreview": [
+      {
+        "kind": "mouseButton",
+        "button": "Left",
+        "clickCount": 1,
+        "modifiers": ["Shift"],
+        "notes": "Drag on primary preview to pan when image exceeds the pane (scrollbars also available)."
+      }
+    ],
     "ui.fullscreen": [
       {
         "kind": "mouseButton",

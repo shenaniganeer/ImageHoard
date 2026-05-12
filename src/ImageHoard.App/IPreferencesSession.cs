@@ -1,3 +1,4 @@
+using ImageHoard.Core.Input;
 using Microsoft.UI.Xaml;
 
 namespace ImageHoard.App;
@@ -7,7 +8,9 @@ public interface IPreferencesSession
 {
     bool ShowBrowserPane { get; }
 
-    bool ShowFullscreenPath { get; }
+    bool ShowPathOnOverlayWindowed { get; }
+
+    bool ShowPathOnOverlayFullscreen { get; }
 
     bool ShowOverlayListPosition { get; }
 
@@ -19,11 +22,15 @@ public interface IPreferencesSession
 
     bool SlideshowAllowDelete { get; }
 
+    double PreviewNavCatchUpLagSeconds { get; }
+
     string? ArchiveRoot { get; }
 
     void ApplyShowBrowserPane(bool value);
 
-    void ApplyShowFullscreenPath(bool value);
+    void ApplyShowPathOnOverlayWindowed(bool value);
+
+    void ApplyShowPathOnOverlayFullscreen(bool value);
 
     void ApplyShowOverlayListPosition(bool value);
 
@@ -35,11 +42,16 @@ public interface IPreferencesSession
 
     void ApplySlideshowAllowDelete(bool value);
 
+    void ApplyPreviewNavCatchUpLagSeconds(double value);
+
     Task PromptEditArchiveRootAsync(XamlRoot xamlRoot);
 
     void ClearCaches(bool deleteOperationLog);
 
-    void OpenHotkeysEditor();
+    /// <summary>Shipped builtin plus merged profile for the hotkeys editor; null on failure.</summary>
+    Task<(InputProfileDocument Builtin, InputProfileDocument Merged)?> LoadHotkeysEditDocumentsAsync();
+
+    void ReloadInputBindingsAfterHotkeysPersist();
 
     void SyncChromeFromState();
 }

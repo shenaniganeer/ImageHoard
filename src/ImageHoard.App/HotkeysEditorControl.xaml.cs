@@ -1,33 +1,22 @@
 using System.Text.Json;
 using ImageHoard.Core.Input;
 using Microsoft.UI.Input;
-using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Windows.Graphics;
 using Windows.System;
-using WinRT.Interop;
 
 namespace ImageHoard.App;
 
-/// <summary>Secondary window to edit input overrides (flat list, Enter-to-capture, keyboard and pointer).</summary>
-public sealed class HotkeysWindow : Window
+/// <summary>Embedded editor for input overrides (flat list, Enter-to-capture, keyboard and pointer).</summary>
+public sealed partial class HotkeysEditorControl : UserControl
 {
-    private static HotkeysWindow? _instance;
-
-    private readonly InputProfileDocument _builtinBase;
+    private InputProfileDocument _builtinBase = null!;
     private readonly Dictionary<string, List<JsonElement>> _editable = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TextBox> _chordBoxes = new(StringComparer.Ordinal);
 
-    private readonly Grid _rootLayout;
-    private readonly StackPanel _rowHost;
-    private readonly TextBlock _statusText;
-    private readonly Button _saveButton;
-    private readonly Button _cancelButton;
-    private readonly Button _captureFocusSink;
-
+    private bool _rowsBuilt;
     private string? _armedCommandId;
     private TextBox? _armedSourceTextBox;
     /// <summary>When true, the next committed chord replaces the whole list for that command; when false, it is appended (if not duplicate).</summary>
@@ -35,112 +24,37 @@ public sealed class HotkeysWindow : Window
     private PointerEventHandler? _wheelCaptureHandler;
     private PointerEventHandler? _pointerPressedCaptureHandler;
 
-    public HotkeysWindow(InputProfileDocument builtinBase, InputProfileDocument mergedForEdit)
+    public HotkeysEditorControl()
     {
-        Title = "Hotkeys";
-
-        _rootLayout = new Grid();
-        _rootLayout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _rootLayout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        _rootLayout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _rootLayout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var header = new TextBlock
+        InitializeComponent();
+        Unloaded += (_, _) =>
         {
-            Margin = new Thickness(16, 12, 16, 8),
-            TextWrapping = TextWrapping.WrapWholeWords,
-            Text =
-                "Bindings merge with shipped keyboard and mouse defaults. Save writes only overrides that differ from those defaults. Enter adds another shortcut variant; Shift+Enter replaces all variants for that row with the next capture. Backspace or Delete removes the last variant. Escape cancels recording.",
+            DisarmCapture(restoreFocusToSource: false);
+            DetachCapturePointerHandlers();
         };
-        Grid.SetRow(header, 0);
+    }
 
-        _rowHost = new StackPanel();
-        var scroll = new ScrollViewer
+    /// <summary>Reload merged profile from disk (same shape as initial open).</summary>
+    public Func<Task<(InputProfileDocument Builtin, InputProfileDocument Merged)?>>? LoadEditDocumentsAsync { get; set; }
+
+    /// <summary>Invoked after overrides file was written successfully.</summary>
+    public Action? BindingsPersisted { get; set; }
+
+    public void Reset(InputProfileDocument builtinBase, InputProfileDocument mergedForEdit)
+    {
+        if (!_rowsBuilt)
         {
-            Margin = new Thickness(12, 0, 12, 0),
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Content = _rowHost,
-        };
-        Grid.SetRow(scroll, 1);
-
-        _statusText = new TextBlock
-        {
-            Margin = new Thickness(16, 8, 16, 4),
-            TextWrapping = TextWrapping.WrapWholeWords,
-        };
-        Grid.SetRow(_statusText, 2);
-
-        _saveButton = new Button { Content = "Save", MinWidth = 100, Margin = new Thickness(0, 0, 8, 0) };
-        _saveButton.Click += SaveButton_Click;
-        _cancelButton = new Button { Content = "Cancel", MinWidth = 100 };
-        _cancelButton.Click += CancelButton_Click;
-        var footer = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Padding = new Thickness(16, 8, 16, 16),
-            Children = { _saveButton, _cancelButton },
-        };
-        Grid.SetRow(footer, 3);
-
-        _captureFocusSink = new Button
-        {
-            Width = 1,
-            Height = 1,
-            Margin = new Thickness(0),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Top,
-            Opacity = 0,
-            IsTabStop = true,
-        };
-        _captureFocusSink.KeyDown += CaptureFocusSink_KeyDown;
-        Grid.SetRow(_captureFocusSink, 1);
-
-        _rootLayout.Children.Add(header);
-        _rootLayout.Children.Add(scroll);
-        _rootLayout.Children.Add(_statusText);
-        _rootLayout.Children.Add(footer);
-        _rootLayout.Children.Add(_captureFocusSink);
-
-        Content = _rootLayout;
-
-        try
-        {
-            var hwnd = WindowNative.GetWindowHandle(this);
-            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
-            AppWindow.GetFromWindowId(windowId).Resize(new SizeInt32(720, 640));
-        }
-        catch
-        {
-            // best-effort sizing
+            BuildRows();
+            _rowsBuilt = true;
         }
 
         _builtinBase = InputProfileMerger.CloneShallow(builtinBase);
-
         foreach (var entry in CommandCatalog.All)
             _editable[entry.CommandId] = CloneChordList(mergedForEdit.Bindings, entry.CommandId);
 
-        BuildRows();
+        DisarmCapture(restoreFocusToSource: false);
         RefreshAllChordDisplays();
-        Closed += (_, _) => DisarmCapture(restoreFocusToSource: false);
-    }
-
-    public static void ShowOrActivate(InputProfileDocument builtinBase, InputProfileDocument mergedForEdit, Action? onClosed = null)
-    {
-        if (_instance != null)
-        {
-            _instance.Activate();
-            return;
-        }
-
-        var w = new HotkeysWindow(builtinBase, mergedForEdit);
-        _instance = w;
-        w.Closed += (_, _) =>
-        {
-            _instance = null;
-            onClosed?.Invoke();
-        };
-        w.Activate();
+        StatusText.Text = string.Empty;
     }
 
     private void BuildRows()
@@ -167,7 +81,7 @@ public sealed class HotkeysWindow : Window
                 IsTabStop = true,
                 IsEnabled = entry.AllowUserBinding,
                 VerticalAlignment = VerticalAlignment.Center,
-                PlaceholderText = entry.AllowUserBinding ? "Enter add · Shift+Enter replace all · Backspace remove last" : "(fixed)",
+                PlaceholderText = entry.AllowUserBinding ? "Enter add · Shift+Enter replace all · Backspace/Delete removes selected shortcut" : "(fixed)",
             };
             Grid.SetColumn(box, 1);
             if (entry.AllowUserBinding)
@@ -175,7 +89,7 @@ public sealed class HotkeysWindow : Window
 
             row.Children.Add(label);
             row.Children.Add(box);
-            _rowHost.Children.Add(row);
+            RowHost.Children.Add(row);
             _chordBoxes[entry.CommandId] = box;
         }
     }
@@ -190,7 +104,7 @@ public sealed class HotkeysWindow : Window
 
         if (e.Key is VirtualKey.Delete or VirtualKey.Back)
         {
-            RemoveLastChordVariant(id);
+            TryRemoveChordVariantsFromSelection(id, tb, e.Key);
             e.Handled = true;
             return;
         }
@@ -203,13 +117,33 @@ public sealed class HotkeysWindow : Window
         }
     }
 
-    private void RemoveLastChordVariant(string commandId)
+    private void TryRemoveChordVariantsFromSelection(string commandId, TextBox tb, VirtualKey key)
     {
         if (!_editable.TryGetValue(commandId, out var list) || list.Count == 0)
             return;
-        list.RemoveAt(list.Count - 1);
-        _statusText.Text = "Removed last shortcut variant.";
+
+        var ranges = InputChordDisplay.GetChordListDisplayRanges(list);
+        var displayLength = ranges[^1].EndExclusive;
+        var indices = ChordListRemovalSelection.GetVariantIndicesToRemove(
+            ranges,
+            displayLength,
+            tb.SelectionStart,
+            tb.SelectionLength,
+            isBackspace: key == VirtualKey.Back);
+        if (indices.Count == 0)
+            return;
+
+        var anchor = ranges[indices[^1]].Start;
+        foreach (var idx in indices)
+            list.RemoveAt(idx);
+
+        StatusText.Text = indices.Count == 1
+            ? "Removed shortcut variant."
+            : $"Removed {indices.Count} shortcut variants.";
+
         RefreshChordDisplay(commandId);
+        tb.SelectionStart = Math.Clamp(anchor, 0, tb.Text.Length);
+        tb.SelectionLength = 0;
     }
 
     private void ArmCapture(string commandId, TextBox sourceTextBox, bool replaceAllOnCommit)
@@ -218,12 +152,12 @@ public sealed class HotkeysWindow : Window
         _armedCommandId = commandId;
         _armedReplaceAllOnCommit = replaceAllOnCommit;
         _armedSourceTextBox = sourceTextBox;
-        _saveButton.IsEnabled = false;
-        _statusText.Text = replaceAllOnCommit
+        SaveButton.IsEnabled = false;
+        StatusText.Text = replaceAllOnCommit
             ? "Recording (replace all): press a key chord, mouse button, or wheel. Escape cancels."
             : "Recording (add variant): press a key chord, mouse button, or wheel. Escape cancels.";
         AttachCapturePointerHandlers();
-        _ = _captureFocusSink.Focus(FocusState.Programmatic);
+        _ = CaptureFocusSink.Focus(FocusState.Programmatic);
     }
 
     private void DisarmCapture(bool restoreFocusToSource)
@@ -231,7 +165,7 @@ public sealed class HotkeysWindow : Window
         DetachCapturePointerHandlers();
         _armedCommandId = null;
         _armedReplaceAllOnCommit = false;
-        _saveButton.IsEnabled = true;
+        SaveButton.IsEnabled = true;
         var returnTb = _armedSourceTextBox;
         _armedSourceTextBox = null;
         if (restoreFocusToSource && returnTb != null)
@@ -242,16 +176,16 @@ public sealed class HotkeysWindow : Window
     {
         _wheelCaptureHandler ??= RootLayout_OnPointerWheelCapture;
         _pointerPressedCaptureHandler ??= RootLayout_OnPointerPressedCapture;
-        _rootLayout.AddHandler(UIElement.PointerWheelChangedEvent, _wheelCaptureHandler, true);
-        _rootLayout.AddHandler(UIElement.PointerPressedEvent, _pointerPressedCaptureHandler, true);
+        RootLayout.AddHandler(UIElement.PointerWheelChangedEvent, _wheelCaptureHandler, true);
+        RootLayout.AddHandler(UIElement.PointerPressedEvent, _pointerPressedCaptureHandler, true);
     }
 
     private void DetachCapturePointerHandlers()
     {
         if (_wheelCaptureHandler != null)
-            _rootLayout.RemoveHandler(UIElement.PointerWheelChangedEvent, _wheelCaptureHandler);
+            RootLayout.RemoveHandler(UIElement.PointerWheelChangedEvent, _wheelCaptureHandler);
         if (_pointerPressedCaptureHandler != null)
-            _rootLayout.RemoveHandler(UIElement.PointerPressedEvent, _pointerPressedCaptureHandler);
+            RootLayout.RemoveHandler(UIElement.PointerPressedEvent, _pointerPressedCaptureHandler);
     }
 
     private void RootLayout_OnPointerWheelCapture(object sender, PointerRoutedEventArgs e)
@@ -274,7 +208,7 @@ public sealed class HotkeysWindow : Window
         if (_armedCommandId == null || IsUnderSaveOrCancel(e.OriginalSource))
             return;
 
-        var props = e.GetCurrentPoint(_rootLayout).Properties;
+        var props = e.GetCurrentPoint(RootLayout).Properties;
         var buttonName = MapPointerUpdateKind(props.PointerUpdateKind);
         if (buttonName == null)
             return;
@@ -288,7 +222,7 @@ public sealed class HotkeysWindow : Window
     {
         for (var o = originalSource as DependencyObject; o != null; o = VisualTreeHelper.GetParent(o))
         {
-            if (ReferenceEquals(o, _saveButton) || ReferenceEquals(o, _cancelButton))
+            if (ReferenceEquals(o, SaveButton) || ReferenceEquals(o, CancelButton))
                 return true;
         }
 
@@ -306,21 +240,21 @@ public sealed class HotkeysWindow : Window
         if (replaceAll)
         {
             _editable[id] = new List<JsonElement> { incoming };
-            _statusText.Text = "Shortcuts replaced.";
+            StatusText.Text = "Shortcuts replaced.";
         }
         else
         {
             var list = _editable[id];
             if (list.Any(c => string.Equals(c.GetRawText(), incoming.GetRawText(), StringComparison.Ordinal)))
             {
-                _statusText.Text = "That shortcut is already in the list.";
+                StatusText.Text = "That shortcut is already in the list.";
                 DisarmCapture(restoreFocusToSource: true);
                 RefreshChordDisplay(id);
                 return;
             }
 
             list.Add(incoming);
-            _statusText.Text = "Shortcut variant added.";
+            StatusText.Text = "Shortcut variant added.";
         }
 
         DisarmCapture(restoreFocusToSource: true);
@@ -335,7 +269,7 @@ public sealed class HotkeysWindow : Window
         if (e.Key == VirtualKey.Escape)
         {
             DisarmCapture(restoreFocusToSource: true);
-            _statusText.Text = "Recording cancelled.";
+            StatusText.Text = "Recording cancelled.";
             e.Handled = true;
             return;
         }
@@ -359,7 +293,7 @@ public sealed class HotkeysWindow : Window
         var chordObj = new Dictionary<string, object> { ["kind"] = "keyboard", ["keys"] = keys };
         var json = JsonSerializer.Serialize(chordObj);
         var el = JsonSerializer.Deserialize<JsonElement>(json);
-        CommitChord(el);
+        CommitChord(el!);
         e.Handled = true;
     }
 
@@ -373,7 +307,7 @@ public sealed class HotkeysWindow : Window
         };
         AppendModifiersIfAny(chordObj, c, s, a, w);
         var json = JsonSerializer.Serialize(chordObj);
-        return JsonSerializer.Deserialize<JsonElement>(json);
+        return JsonSerializer.Deserialize<JsonElement>(json)!;
     }
 
     private static JsonElement BuildMouseButtonChord(string buttonName)
@@ -387,7 +321,7 @@ public sealed class HotkeysWindow : Window
         };
         AppendModifiersIfAny(chordObj, c, s, a, w);
         var json = JsonSerializer.Serialize(chordObj);
-        return JsonSerializer.Deserialize<JsonElement>(json);
+        return JsonSerializer.Deserialize<JsonElement>(json)!;
     }
 
     private static void AppendModifiersIfAny(Dictionary<string, object> chordObj, bool c, bool s, bool a, bool w)
@@ -439,13 +373,13 @@ public sealed class HotkeysWindow : Window
         _ = TrySaveAsync();
     }
 
-    private async System.Threading.Tasks.Task TrySaveAsync()
+    private async Task TrySaveAsync()
     {
         var merged = BuildMergedDocument();
         var issues = InputBindingConflictChecker.FindChordKeyConflicts(merged);
         if (issues.Count > 0)
         {
-            _statusText.Text = "Cannot save: " + issues[0];
+            StatusText.Text = "Cannot save: " + issues[0];
             return;
         }
 
@@ -466,18 +400,38 @@ public sealed class HotkeysWindow : Window
                 await File.WriteAllTextAsync(AppDataPaths.UserInputOverridesPath, json);
             }
 
-            DispatcherQueue.TryEnqueue(Close);
+            BindingsPersisted?.Invoke();
+            StatusText.Text = "Saved.";
         }
         catch (Exception ex)
         {
-            _statusText.Text = "Save failed: " + ex.Message;
+            StatusText.Text = "Save failed: " + ex.Message;
         }
     }
 
-    private void CancelButton_Click(object sender, RoutedEventArgs e)
+    private async void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         DisarmCapture(restoreFocusToSource: false);
-        Close();
+        await RevertFromSavedAsync();
+    }
+
+    private async Task RevertFromSavedAsync()
+    {
+        if (LoadEditDocumentsAsync == null)
+        {
+            StatusText.Text = "Cannot revert (not connected).";
+            return;
+        }
+
+        var docs = await LoadEditDocumentsAsync();
+        if (docs == null)
+        {
+            StatusText.Text = "Could not reload bindings from disk.";
+            return;
+        }
+
+        Reset(docs.Value.Builtin, docs.Value.Merged);
+        StatusText.Text = "Reverted to saved bindings.";
     }
 
     private InputProfileDocument BuildMergedDocument()

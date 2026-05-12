@@ -1,9 +1,7 @@
-using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using ImageHoard.App.Imaging;
 using ImageHoard.Core;
 using ImageHoard.Core.Browse;
 using ImageHoard.Core.Input;
@@ -15,7 +13,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Windowing;
 using Windows.UI;
 using Windows.Storage;
@@ -37,6 +34,8 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     private readonly AppSessionSettings _session;
     private string? _currentImageFullPath;
     private string? _pendingSelectImagePath;
+    /// <summary>Last target path for sequential next/prev; avoids relying on TreeView selection updating between rapid commands.</summary>
+    private string? _browseNavAnchorPath;
 
     internal InputKeyboardDispatchTable? KeyboardDispatchTable { get; private set; }
     internal InputProfileDocument? MergedInputProfile { get; private set; }
@@ -53,9 +52,11 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     private double _initPreviewW;
 
     private string? _currentFolderPath;
-    private int _loadImageListGeneration;
+    private int _populateBrowserGeneration;
     private bool _globalPointerHandlersRegistered;
+    private bool _previewPanHandlersRegistered;
     private PointerEventHandler? _pointerWheelCaptureHandler;
+    private PointerEventHandler? _previewScrollContentWheelHandler;
     private PointerEventHandler? _pointerPressedCaptureHandler;
 
     [Conditional("DEBUG")]
@@ -69,6 +70,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     {
         (_layoutState, _session) = AppSettingsStore.LoadAll();
         InitializeComponent();
+        WireBrowserTreeTemplates();
         PreviewHostGrid.SizeChanged += PreviewHostGrid_SizeChanged;
         RootGrid.Loaded += MainWindow_Loaded;
         Closed += (_, _) => PersistLayout();
@@ -80,9 +82,9 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         ApplyLayoutFromState();
-        ShowPathInFullscreenToggle.IsChecked = _layoutState.ShowFullscreenPath;
+        ShowPathOnOverlayWindowedToggle.IsChecked = _layoutState.ShowPathOnOverlayWindowed;
+        ShowPathOnOverlayFullscreenToggle.IsChecked = _layoutState.ShowPathOnOverlayFullscreen;
         ShowBrowserPaneToggle.IsChecked = _layoutState.ShowBrowserPane;
-        FilesExpander.IsExpanded = _layoutState.FilesExpanderOpen;
         UpdatePathOverlays();
         UpdateFullscreenMenuEnabled();
 
@@ -92,51 +94,19 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         RootGrid.Focus(FocusState.Programmatic);
     }
 
-    private void FilesExpander_Expanding(Expander sender, ExpanderExpandingEventArgs args)
-    {
-        _layoutState.FilesExpanderOpen = true;
-        PersistLayout();
-    }
-
-    private void FilesExpander_Collapsed(Expander sender, ExpanderCollapsedEventArgs args)
-    {
-        _layoutState.FilesExpanderOpen = false;
-        PersistLayout();
-    }
-
     private async Task RestoreStartupBrowseAsync()
     {
         var path = _session.LastBrowseFolder;
         if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
         {
+            _browseNavAnchorPath = null;
             FolderTree.RootNodes.Clear();
-            ImageList.ItemsSource = null;
+            UpdateBrowserToolbar();
             return;
         }
 
         _pendingSelectImagePath = _session.LastSelectedImage;
-        SetSingleFolderTreeRoot(path);
-        FolderTree.SelectedNode = FolderTree.RootNodes[0];
-        await LoadImageListForPathAsync(path);
-    }
-
-    internal void SetSingleFolderTreeRoot(string path)
-    {
-        FolderTree.RootNodes.Clear();
-        var root = new TreeViewNode
-        {
-            Content = new FolderTreeEntry { Path = path, DisplayLabel = path },
-        };
-        try
-        {
-            root.HasUnrealizedChildren = Directory.EnumerateDirectories(path).Take(1).Any();
-        }
-        catch
-        {
-            root.HasUnrealizedChildren = false;
-        }
-
-        FolderTree.RootNodes.Add(root);
+        await NavigateToFolderAsync(path).ConfigureAwait(true);
     }
 
     private void RegisterGlobalPointerHandlers()
@@ -146,10 +116,23 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         _globalPointerHandlersRegistered = true;
         _pointerWheelCaptureHandler ??= (_, e) => RootGrid_PointerWheelChanged(_, e);
         RootGrid.AddHandler(UIElement.PointerWheelChangedEvent, _pointerWheelCaptureHandler, handledEventsToo: true);
-        FullscreenLayout.AddHandler(UIElement.PointerWheelChangedEvent, _pointerWheelCaptureHandler, handledEventsToo: true);
+        _previewScrollContentWheelHandler ??= (_, e) =>
+        {
+            if (TryDispatchPointerWheelBindings(e))
+                e.Handled = true;
+        };
+        PreviewScrollContentGrid.AddHandler(
+            UIElement.PointerWheelChangedEvent,
+            _previewScrollContentWheelHandler,
+            handledEventsToo: false);
         _pointerPressedCaptureHandler ??= (_, e) => RootGrid_PointerPressed(_, e);
         RootGrid.AddHandler(UIElement.PointerPressedEvent, _pointerPressedCaptureHandler, handledEventsToo: true);
         FullscreenLayout.AddHandler(UIElement.PointerPressedEvent, _pointerPressedCaptureHandler, handledEventsToo: true);
+        if (!_previewPanHandlersRegistered)
+        {
+            _previewPanHandlersRegistered = true;
+            RegisterPreviewPanPointerHandlers();
+        }
     }
 
     private void ApplyLayoutFromState() => ApplyPaneVisibility();
@@ -171,7 +154,6 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
         BrowserColumnHost.Visibility = showBrowser ? Visibility.Visible : Visibility.Collapsed;
         SplitterBrowserPreview.Visibility = showBrowser ? Visibility.Visible : Visibility.Collapsed;
-        ImageList.Visibility = Visibility.Visible;
         UpdatePathOverlays();
     }
 
@@ -209,191 +191,14 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         return _appWindow;
     }
 
-    private async void FolderTree_OnExpanding(TreeView sender, TreeViewExpandingEventArgs args)
-    {
-        if (_treeExpansionBusy)
-            return;
-        var node = args.Node;
-        if (node.Children.Count > 0)
-        {
-            node.HasUnrealizedChildren = false;
-            return;
-        }
-
-        var path = GetFolderPath(node);
-        if (string.IsNullOrEmpty(path))
-            return;
-
-        _treeExpansionBusy = true;
-        try
-        {
-            IReadOnlyList<FileSystemEntry> entries;
-            try
-            {
-                entries = await AppServices.FileSystem.ListDirectoryAsync(path);
-            }
-            catch (Exception ex)
-            {
-                SetTransientStatus(ex.Message);
-                return;
-            }
-
-            foreach (var dir in entries.Where(x => x.IsDirectory))
-            {
-                var child = new TreeViewNode
-                {
-                    Content = new FolderTreeEntry { Path = dir.FullPath, DisplayLabel = dir.Name },
-                };
-                try
-                {
-                    child.HasUnrealizedChildren = Directory.EnumerateDirectories(dir.FullPath).Take(1).Any();
-                }
-                catch
-                {
-                    child.HasUnrealizedChildren = false;
-                }
-
-                node.Children.Add(child);
-            }
-
-            node.HasUnrealizedChildren = false;
-        }
-        finally
-        {
-            _treeExpansionBusy = false;
-        }
-    }
-
-    private async void FolderTree_SelectionChanged(TreeView sender, TreeViewSelectionChangedEventArgs args)
-    {
-        var path = GetFolderPath(sender.SelectedNode);
-        if (string.IsNullOrEmpty(path))
-        {
-            ImageList.ItemsSource = null;
-            return;
-        }
-
-        await LoadImageListForPathAsync(path);
-    }
-
-    private async Task LoadImageListForPathAsync(string path)
-    {
-        if (!string.IsNullOrEmpty(_currentFolderPath)
-            && string.Equals(path, _currentFolderPath, StringComparison.OrdinalIgnoreCase)
-            && string.IsNullOrEmpty(_pendingSelectImagePath)
-            && !string.IsNullOrEmpty(_currentImageFullPath))
-        {
-            _pendingSelectImagePath = _currentImageFullPath;
-        }
-
-        var gen = Interlocked.Increment(ref _loadImageListGeneration);
-        _currentFolderPath = path;
-        _session.LastBrowseFolder = path;
-        try
-        {
-            List<ImageRow> rows;
-            int? flatEntryCount = null;
-            if (_layoutState.IncludeSubfoldersInList)
-            {
-                var paths = new List<string>();
-                await foreach (var p in RecursiveImageEnumerator.EnumerateAsync(AppServices.FileSystem, path))
-                    paths.Add(p);
-
-                rows = new List<ImageRow>(paths.Count);
-                foreach (var p in paths)
-                    rows.Add(await CreateImageRowAsync(p, SortFlagLabel(p)));
-            }
-            else
-            {
-                var entries = await AppServices.FileSystem.ListDirectoryAsync(path);
-                flatEntryCount = entries.Count;
-                rows = new List<ImageRow>();
-                foreach (var e in entries.Where(x => !x.IsDirectory && ImageExtensions.IsImageFile(x.FullPath)))
-                    rows.Add(CreateImageRowFromEntry(e, SortFlagLabel(e.FullPath)));
-            }
-
-            rows = ApplyListSort(rows).ToList();
-            var status = rows.Count == 0 && flatEntryCount is > 0
-                ? $"0 image(s) · {flatEntryCount} item(s) in folder (none match supported raster extensions)"
-                : $"{rows.Count} image(s)";
-            ApplyLoadImageListUi(gen, rows, status);
-        }
-        catch (Exception ex)
-        {
-            if (gen != Volatile.Read(ref _loadImageListGeneration))
-                return;
-            ApplyLoadImageListErrorUi(gen, ex.Message);
-        }
-    }
-
-    private void ApplyLoadImageListUi(int generation, List<ImageRow> rows, string statusText)
-    {
-        void apply()
-        {
-            if (generation != Volatile.Read(ref _loadImageListGeneration))
-                return;
-            ImageList.ItemsSource = new ObservableCollection<ImageRow>(rows);
-            SetTransientStatus(statusText);
-
-            var selectPath = _pendingSelectImagePath;
-            _pendingSelectImagePath = null;
-
-            var index = 0;
-            if (!string.IsNullOrEmpty(selectPath))
-            {
-                var i = rows.FindIndex(r =>
-                    string.Equals(r.FullPath, selectPath, StringComparison.OrdinalIgnoreCase));
-                if (i >= 0)
-                    index = i;
-            }
-            else if (!_layoutState.ShowBrowserPane && rows.Count > 0)
-            {
-                index = 0;
-            }
-
-            if (rows.Count > 0)
-                ImageList.SelectedIndex = index;
-
-            UpdatePathOverlays();
-        }
-
-        if (DispatcherQueue.HasThreadAccess)
-            apply();
-        else
-            _ = DispatcherQueue.TryEnqueue(apply);
-    }
-
-    private void ApplyLoadImageListErrorUi(int generation, string message)
-    {
-        void apply()
-        {
-            if (generation != Volatile.Read(ref _loadImageListGeneration))
-                return;
-            SetTransientStatus(message);
-            ImageList.ItemsSource = null;
-            UpdatePathOverlays();
-        }
-
-        if (DispatcherQueue.HasThreadAccess)
-            apply();
-        else
-            _ = DispatcherQueue.TryEnqueue(apply);
-    }
-
-    private ImageRow CreateImageRowFromEntry(FileSystemEntry e, string sortFlag)
+    private ImageRow CreateImageRowFromEntry(FileSystemEntry e)
     {
         var size = e.LengthBytes ?? 0;
         var mtime = e.LastWriteTimeUtc ?? DateTimeOffset.MinValue;
-        return new ImageRow(e.FullPath, e.Name, size, mtime, FormatSize(size), mtime.ToLocalTime().ToString("g"), sortFlag);
-    }
-
-    private async Task<ImageRow> CreateImageRowAsync(string fullPath, string sortFlag)
-    {
-        await Task.Yield();
-        var fi = new FileInfo(fullPath);
-        var size = fi.Exists ? fi.Length : 0;
-        var mtime = fi.Exists ? new DateTimeOffset(fi.LastWriteTimeUtc) : DateTimeOffset.UtcNow;
-        return new ImageRow(fullPath, fi.Name, size, mtime, FormatSize(size), mtime.ToLocalTime().ToString("g"), sortFlag);
+        var row = new ImageRow(e.FullPath, e.Name, size, mtime, FormatSize(size), mtime.ToLocalTime().ToString("g"), "·");
+        ApplySortFlagPresentationToRow(row, e.FullPath);
+        ApplyLayoutFileDetailsToImageRow(row);
+        return row;
     }
 
     private static string FormatSize(long bytes)
@@ -418,146 +223,38 @@ public sealed partial class MainWindow : Window, IPreferencesSession
                 .ThenBy(r => r.FullPath, StringComparer.OrdinalIgnoreCase),
         };
 
-    private void RefreshSortFlagDisplayInList(string fullPath)
-    {
-        if (ImageList.ItemsSource is not ObservableCollection<ImageRow> rows)
-            return;
-        for (var i = 0; i < rows.Count; i++)
-        {
-            if (!string.Equals(rows[i].FullPath, fullPath, StringComparison.OrdinalIgnoreCase))
-                continue;
-            rows[i].SortFlagDisplay = SortFlagLabel(fullPath);
-            return;
-        }
-    }
-
-    private async void ImageList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (ImageList.SelectedItem is not ImageRow row)
-        {
-            PreviewImage.Source = null;
-            FullscreenImage.Source = null;
-            _currentImageFullPath = null;
-            _lastDecodeTargetBoxMaxSidePx = -1;
-            _session.LastSelectedImage = null;
-            UpdatePathOverlays();
-            UpdateFullscreenMenuEnabled();
-            return;
-        }
-
-        _session.LastSelectedImage = row.FullPath;
-        UpdateFullscreenMenuEnabled();
-        if (PreviewImage.Source != null
-            && !string.IsNullOrEmpty(_currentImageFullPath)
-            && string.Equals(row.FullPath, _currentImageFullPath, StringComparison.OrdinalIgnoreCase))
-        {
-            PersistLayout();
-            return;
-        }
-
-        SetTransientStatus("Loading preview…");
-        var layout = CreateWicDecodeLayout();
-        var bmp = await WicBitmapLoader.DecodeWithOrientationAsync(row.FullPath, layout);
-        if (bmp == null)
-        {
-            SetTransientStatus("Preview unavailable (codec or format).");
-            PreviewImage.Source = null;
-            FullscreenImage.Source = null;
-            _currentImageFullPath = row.FullPath;
-            _lastDecodeTargetBoxMaxSidePx = -1;
-            UpdatePathOverlays();
-            PersistLayout();
-            return;
-        }
-
-        try
-        {
-            var src = new SoftwareBitmapSource();
-            await src.SetBitmapAsync(bmp);
-            PreviewImage.Source = src;
-            FullscreenImage.Source = src;
-            _currentImageFullPath = row.FullPath;
-            RememberDecodeTargetBox(layout);
-            UpdatePathOverlays();
-            SetTransientStatus(row.DisplayName);
-        }
-        catch
-        {
-            SetTransientStatus("Preview failed.");
-            PreviewImage.Source = null;
-            FullscreenImage.Source = null;
-            _currentImageFullPath = null;
-            _lastDecodeTargetBoxMaxSidePx = -1;
-            UpdatePathOverlays();
-        }
-
-        PersistLayout();
-    }
-
     private void UpdateFullscreenMenuEnabled() =>
-        EnterFullscreenMenuItem.IsEnabled = ImageList.SelectedItem is ImageRow;
+        EnterFullscreenMenuItem.IsEnabled = GetSelectedImageRow() is not null;
 
     private void UpdatePathOverlays()
     {
         var path = _currentImageFullPath ?? string.Empty;
-        var showPathChrome = _layoutState.ShowFullscreenPath && !string.IsNullOrEmpty(path);
+        var hasImage = !string.IsNullOrEmpty(path);
+        var windowedPathDesired = _layoutState.ShowPathOnOverlayWindowed && hasImage;
+        var fullscreenPathDesired = _layoutState.ShowPathOnOverlayFullscreen && hasImage;
+
         NormalPathText.Text = path;
         FullscreenPathText.Text = path;
 
-        ApplyOverlayListPosition();
+        var listPositionVisible = ApplyOverlayListPositionFromTree();
 
-        var flag = string.IsNullOrEmpty(path) ? SortFlagState.Unset : _sortSession.GetState(path);
+        var flag = !hasImage ? SortFlagState.Unset : _sortSession.GetState(path);
         ApplyOverlayFlagGlyph(NormalPathFlagIcon, flag);
         ApplyOverlayFlagGlyph(FullscreenPathFlagIcon, flag);
+        var flagVisible = flag != SortFlagState.Unset;
 
-        FullscreenPathOverlay.Visibility = showPathChrome && _isFullscreen ? Visibility.Visible : Visibility.Collapsed;
-        var showNormalOverlay = showPathChrome && !_layoutState.ShowBrowserPane && !_isFullscreen;
+        NormalPathText.Visibility = windowedPathDesired ? Visibility.Visible : Visibility.Collapsed;
+        FullscreenPathText.Visibility = fullscreenPathDesired ? Visibility.Visible : Visibility.Collapsed;
+
+        var showNormalOverlay = hasImage
+            && !_isFullscreen
+            && (windowedPathDesired || listPositionVisible || flagVisible);
+        var showFullscreenOverlay = hasImage
+            && _isFullscreen
+            && (fullscreenPathDesired || listPositionVisible || flagVisible);
+
         NormalPathOverlay.Visibility = showNormalOverlay ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private void ApplyOverlayListPosition()
-    {
-        void hideBoth()
-        {
-            NormalPathPositionText.Visibility = Visibility.Collapsed;
-            FullscreenPathPositionText.Visibility = Visibility.Collapsed;
-        }
-
-        if (!_layoutState.ShowOverlayListPosition)
-        {
-            hideBoth();
-            return;
-        }
-
-        var path = _currentImageFullPath;
-        if (string.IsNullOrEmpty(path)
-            || ImageList.ItemsSource is not ObservableCollection<ImageRow> rows
-            || rows.Count == 0)
-        {
-            hideBoth();
-            return;
-        }
-
-        var index = -1;
-        for (var i = 0; i < rows.Count; i++)
-        {
-            if (!string.Equals(rows[i].FullPath, path, StringComparison.OrdinalIgnoreCase))
-                continue;
-            index = i;
-            break;
-        }
-
-        if (index < 0)
-        {
-            hideBoth();
-            return;
-        }
-
-        var text = $"{index + 1}/{rows.Count}";
-        NormalPathPositionText.Text = text;
-        FullscreenPathPositionText.Text = text;
-        NormalPathPositionText.Visibility = Visibility.Visible;
-        FullscreenPathPositionText.Visibility = Visibility.Visible;
+        FullscreenPathOverlay.Visibility = showFullscreenOverlay ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static void ApplyOverlayFlagGlyph(SymbolIcon icon, SortFlagState flag)
@@ -612,9 +309,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         }
 
         _pendingSelectImagePath = filePath;
-        SetSingleFolderTreeRoot(parent);
-        FolderTree.SelectedNode = FolderTree.RootNodes[0];
-        await LoadImageListForPathAsync(parent);
+        await NavigateToFolderAsync(parent).ConfigureAwait(true);
     }
 
     private static string? TryGetStorageFilePath(StorageFile file)
@@ -633,11 +328,21 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
     private void EnterFullscreen_Click(object sender, RoutedEventArgs e) => TryEnterFullscreen();
 
-    private void ShowPathToggle_Click(object sender, RoutedEventArgs e)
+    private void ShowPathOnOverlayWindowedToggle_Click(object sender, RoutedEventArgs e)
     {
         if (sender is ToggleMenuFlyoutItem t)
         {
-            _layoutState.ShowFullscreenPath = t.IsChecked == true;
+            _layoutState.ShowPathOnOverlayWindowed = t.IsChecked == true;
+            UpdatePathOverlays();
+            PersistLayout();
+        }
+    }
+
+    private void ShowPathOnOverlayFullscreenToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleMenuFlyoutItem t)
+        {
+            _layoutState.ShowPathOnOverlayFullscreen = t.IsChecked == true;
             UpdatePathOverlays();
             PersistLayout();
         }
@@ -654,7 +359,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
     private void TryEnterFullscreen()
     {
-        if (ImageList.SelectedItem is not ImageRow)
+        if (GetSelectedImageRow() is null)
             return;
         if (!_isFullscreen)
             ToggleFullscreen();
@@ -684,7 +389,13 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             return;
         }
 
-        if (e.Key == VirtualKey.Enter && IsFocusInsideImageList())
+        if (e.Key == VirtualKey.F2 && TryBeginRenameSelectedBrowserItem())
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == VirtualKey.Enter && IsFocusInsideBrowserTree())
         {
             TryEnterFullscreen();
             e.Handled = true;
@@ -706,7 +417,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     }
 
     private bool ShouldSuppressWheelNavForOriginalSource(DependencyObject? source) =>
-        IsDescendantOf(source, ImageList) || IsDescendantOf(source, FolderTree);
+        IsDescendantOf(source, FolderTree);
 
     private static bool IsInsideTextInput(DependencyObject? o)
     {
@@ -736,19 +447,39 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         if (commandId is "sort.commitBatchDelete" or "sort.moveToArchive")
             return !IsInsideTextInput(source);
 
+        if (commandId == ViewPanPreviewCommandId)
+        {
+            return source != null && IsDescendantOf(source, PreviewHostGrid);
+        }
+
         return true;
     }
 
     private void RootGrid_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
     {
+        var origin = e.OriginalSource as DependencyObject;
+        if (IsDescendantOf(origin, PreviewScrollContentGrid))
+            return;
+
+        if (TryDispatchPointerWheelBindings(e))
+            e.Handled = true;
+    }
+
+    /// <summary>
+    /// Tries merged profile mouse-wheel bindings. Preview content dispatches from
+    /// <see cref="PreviewScrollContentGrid"/> so the routed event can be marked handled before
+    /// the preview <see cref="Microsoft.UI.Xaml.Controls.ScrollViewer"/> scrolls.
+    /// </summary>
+    private bool TryDispatchPointerWheelBindings(PointerRoutedEventArgs e)
+    {
         var merged = MergedInputProfile;
         if (merged?.Bindings == null)
-            return;
+            return false;
 
         var suppressNav = ShouldSuppressWheelNavForOriginalSource(e.OriginalSource as DependencyObject);
         var delta = e.GetCurrentPoint(null).Properties.MouseWheelDelta;
         if (delta == 0)
-            return;
+            return false;
         var up = delta > 0;
         var (shift, ctrl, alt, win) = WinUiKeyboardInterop.GetModifierStates();
         foreach (var (commandId, chord) in InputPointerChordMatch.EnumerateMouseWheelBindings(merged))
@@ -758,11 +489,10 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             if (suppressNav && (commandId == "nav.nextImage" || commandId == "nav.prevImage"))
                 continue;
             if (TryExecuteInputCommand(commandId))
-            {
-                e.Handled = true;
-                return;
-            }
+                return true;
         }
+
+        return false;
     }
 
     /// <summary>
@@ -782,8 +512,13 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
         var origin = e.OriginalSource as DependencyObject;
         var (shift, ctrl, alt, win) = WinUiKeyboardInterop.GetModifierStates();
+        if (TryBeginPreviewPan(e, merged, buttonName, shift, ctrl, alt, win, origin))
+            return;
+
         foreach (var (commandId, chord) in InputPointerChordMatch.EnumerateMouseButtonBindings(merged))
         {
+            if (commandId == ViewPanPreviewCommandId)
+                continue;
             if (!InputPointerChordMatch.IsMouseButtonMatch(chord, buttonName, 1, shift, ctrl, alt, win))
                 continue;
             if (!IsPointerChordAllowedForCommand(commandId, origin))
@@ -833,29 +568,29 @@ public sealed partial class MainWindow : Window, IPreferencesSession
                 if (_slideshowUiActive && _slideshow != null)
                 {
                     if (_slideshow.TryMoveNext(out var np) && np != null)
-                        _ = ShowImagePathAsync(np);
+                        EnqueuePreviewNavigation(np, true);
                 }
                 else
-                    SelectNextImage();
+                    BrowseNavigateByStep(BrowseNavStepKind.Next);
                 return true;
             case "nav.prevImage":
                 if (_slideshowUiActive && _slideshow != null)
                 {
                     if (_slideshow.TryMovePrevious(out var pp) && pp != null)
-                        _ = ShowImagePathAsync(pp);
+                        EnqueuePreviewNavigation(pp, true);
                 }
                 else
-                    SelectPreviousImage();
+                    BrowseNavigateByStep(BrowseNavStepKind.Previous);
                 return true;
             case "nav.firstImage":
                 if (_slideshowUiActive && _slideshow != null)
                     return false;
-                SelectFirstImage();
+                BrowseNavigateByStep(BrowseNavStepKind.First);
                 return true;
             case "nav.lastImage":
                 if (_slideshowUiActive && _slideshow != null)
                     return false;
-                SelectLastImage();
+                BrowseNavigateByStep(BrowseNavStepKind.Last);
                 return true;
             case "ui.fullscreen":
                 ToggleFullscreen();
@@ -863,6 +598,13 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             case "ui.escape":
                 if (_isFullscreen)
                     ToggleFullscreen();
+                else
+                    ClearImageSelectionAndPreview();
+                return true;
+            case "view.clearSelection":
+                if (_isFullscreen)
+                    return false;
+                ClearImageSelectionAndPreview();
                 return true;
             case "view.cycleFitMode":
                 ViewCycleFitFromInput();
@@ -888,17 +630,17 @@ public sealed partial class MainWindow : Window, IPreferencesSession
                     SlideshowReshuffle_Click(this, new RoutedEventArgs());
                 return _slideshow != null;
             case "sort.flagKeep":
-                if (_isFullscreen || ImageList.SelectedItem is not ImageRow)
+                if (_isFullscreen || GetSelectedImageRow() is null)
                     return false;
                 SetSelectedSortFlag(SortFlagState.Keep);
                 return true;
             case "sort.flagDelete":
-                if (_isFullscreen || ImageList.SelectedItem is not ImageRow)
+                if (_isFullscreen || GetSelectedImageRow() is null)
                     return false;
                 SetSelectedSortFlag(SortFlagState.Delete);
                 return true;
             case "sort.flagUnset":
-                if (_isFullscreen || ImageList.SelectedItem is not ImageRow)
+                if (_isFullscreen || GetSelectedImageRow() is null)
                     return false;
                 SetSelectedSortFlag(SortFlagState.Unset);
                 return true;
@@ -922,44 +664,6 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         }
     }
 
-    private void SelectNextImage()
-    {
-        if (ImageList.ItemsSource is not ObservableCollection<ImageRow> rows || rows.Count == 0)
-            return;
-        var i = ImageList.SelectedIndex;
-        if (i < 0)
-            i = 0;
-        else
-            i = Math.Min(rows.Count - 1, i + 1);
-        ImageList.SelectedIndex = i;
-    }
-
-    private void SelectPreviousImage()
-    {
-        if (ImageList.ItemsSource is not ObservableCollection<ImageRow> rows || rows.Count == 0)
-            return;
-        var i = ImageList.SelectedIndex;
-        if (i <= 0)
-            i = 0;
-        else
-            i--;
-        ImageList.SelectedIndex = i;
-    }
-
-    private void SelectFirstImage()
-    {
-        if (ImageList.ItemsSource is not ObservableCollection<ImageRow> rows || rows.Count == 0)
-            return;
-        ImageList.SelectedIndex = 0;
-    }
-
-    private void SelectLastImage()
-    {
-        if (ImageList.ItemsSource is not ObservableCollection<ImageRow> rows || rows.Count == 0)
-            return;
-        ImageList.SelectedIndex = rows.Count - 1;
-    }
-
     private void FullscreenLayout_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (!_isFullscreen)
@@ -978,40 +682,12 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         }
     }
 
-    private void ImageList_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
-    {
-        if (_isFullscreen)
-            return;
-
-        if (TryDispatchInputCommand(e))
-            return;
-
-        if (e.Key == VirtualKey.Enter && ImageList.SelectedItem is ImageRow)
-        {
-            TryEnterFullscreen();
-            e.Handled = true;
-        }
-    }
-
-    private bool IsFocusInsideImageList()
-    {
-        var focused = FocusManager.GetFocusedElement(RootGrid.XamlRoot!) as DependencyObject;
-        while (focused != null)
-        {
-            if (focused == ImageList)
-                return true;
-            focused = VisualTreeHelper.GetParent(focused);
-        }
-
-        return false;
-    }
-
     private void ToggleFullscreen()
     {
         var appWindow = GetAppWindow();
         if (!_isFullscreen)
         {
-            if (ImageList.SelectedItem is not ImageRow)
+            if (GetSelectedImageRow() is null)
                 return;
 
             appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
@@ -1020,6 +696,11 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             FullscreenLayout.Visibility = Visibility.Visible;
             UpdatePathOverlays();
             FullscreenLayout.Focus(FocusState.Programmatic);
+            if (!string.IsNullOrEmpty(_currentImageFullPath) && _fitMode != ImageFitMode.OneToOne)
+            {
+                InvalidateDecodeTargetTracking();
+                _ = ReloadIfDecodeTargetBoxChangedAsync();
+            }
         }
         else
         {
@@ -1033,6 +714,11 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             UpdateSlideshowScopeBadge();
             UpdatePathOverlays();
             RootGrid.Focus(FocusState.Programmatic);
+            if (!string.IsNullOrEmpty(_currentImageFullPath) && _fitMode != ImageFitMode.OneToOne)
+            {
+                InvalidateDecodeTargetTracking();
+                _ = ReloadIfDecodeTargetBoxChangedAsync();
+            }
         }
     }
 

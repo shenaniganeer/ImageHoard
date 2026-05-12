@@ -3,18 +3,22 @@ using ImageHoard.App.Native;
 using ImageHoard.Core.Imaging;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Media.Imaging;
+using System.Threading;
 using WinRT.Interop;
 
 namespace ImageHoard.App;
 
 public sealed partial class MainWindow
 {
+    private const int PreviewResizeDebounceMs = 280;
+
     private DispatcherQueueTimer? _previewResizeDebounceTimer;
-    private int _lastDecodeTargetBoxMaxSidePx = -1;
+    private int _lastDecodeTargetBoxWidthPx = -1;
+    private int _lastDecodeTargetBoxHeightPx = -1;
 
     private void PreviewHostGrid_SizeChanged(object sender, SizeChangedEventArgs e)
     {
+        UpdatePreviewScrollMetrics();
         if (string.IsNullOrEmpty(_currentImageFullPath))
             return;
         if (_fitMode == ImageFitMode.OneToOne)
@@ -34,53 +38,82 @@ public sealed partial class MainWindow
         if (dq == null)
             return;
         _previewResizeDebounceTimer = dq.CreateTimer();
-        _previewResizeDebounceTimer.Interval = TimeSpan.FromMilliseconds(280);
+        _previewResizeDebounceTimer.Interval = TimeSpan.FromMilliseconds(PreviewResizeDebounceMs);
         _previewResizeDebounceTimer.Tick += (_, _) =>
         {
             _previewResizeDebounceTimer!.Stop();
-            _ = ReloadIfDecodeTargetGrewAsync();
+            _ = ReloadIfDecodeTargetBoxChangedAsync();
         };
     }
 
-    private async Task ReloadIfDecodeTargetGrewAsync()
+    /// <summary>Clears remembered decode target so the next reload runs unconditionally (e.g. fullscreen toggle).</summary>
+    private void InvalidateDecodeTargetTracking()
+    {
+        _lastDecodeTargetBoxWidthPx = -1;
+        _lastDecodeTargetBoxHeightPx = -1;
+    }
+
+    private async Task ReloadIfDecodeTargetBoxChangedAsync()
     {
         if (string.IsNullOrEmpty(_currentImageFullPath))
             return;
-        if (ImageList.SelectedItem is not ImageRow row
+        if (IsPreviewNavigationQueueNonEmpty())
+            return;
+        if (GetSelectedImageRow() is not { } row
             || !string.Equals(row.FullPath, _currentImageFullPath, StringComparison.OrdinalIgnoreCase))
             return;
 
         var layout = CreateWicDecodeLayout();
-        var newMax = Math.Max(layout.TargetBoxWidthPx, layout.TargetBoxHeightPx);
-        if (_lastDecodeTargetBoxMaxSidePx >= 0 && newMax <= _lastDecodeTargetBoxMaxSidePx * 1.10)
+        if (_lastDecodeTargetBoxWidthPx >= 0
+            && _lastDecodeTargetBoxHeightPx >= 0
+            && !DecodeTargetBoxMeaningfullyChanged(
+                _lastDecodeTargetBoxWidthPx,
+                _lastDecodeTargetBoxHeightPx,
+                layout.TargetBoxWidthPx,
+                layout.TargetBoxHeightPx))
             return;
 
-        var bmp = await WicBitmapLoader.DecodeWithOrientationAsync(_currentImageFullPath, layout);
-        if (bmp == null)
-            return;
-        try
-        {
-            var src = new SoftwareBitmapSource();
-            await src.SetBitmapAsync(bmp);
-            PreviewImage.Source = src;
-            FullscreenImage.Source = src;
-            RememberDecodeTargetBox(layout);
-        }
-        catch
-        {
-            // keep previous bitmap
-        }
+        var path = _currentImageFullPath;
+        Interlocked.Increment(ref _previewInvalidateGeneration);
+        await DecodeAndCommitPreviewAsync(path).ConfigureAwait(true);
+    }
+
+    /// <summary>True when either axis differs by at least 10% from the last decode (grow or shrink).</summary>
+    private static bool DecodeTargetBoxMeaningfullyChanged(int oldW, int oldH, int newW, int newH)
+    {
+        if (oldW <= 0 || oldH <= 0)
+            return true;
+        var dw = Math.Abs(newW - (double)oldW) / oldW;
+        var dh = Math.Abs(newH - (double)oldH) / oldH;
+        return dw >= 0.10 || dh >= 0.10;
     }
 
     private WicDecodeLayout CreateWicDecodeLayout()
     {
         var maxEdge = ResolveMaxDecodeEdgePx();
         var scale = (double)(RootGrid.XamlRoot?.RasterizationScale ?? 1.0);
-        var previewPxW = DipToPhysicalPx(PreviewImage.ActualWidth, scale);
-        var previewPxH = DipToPhysicalPx(PreviewImage.ActualHeight, scale);
+        if (!TryGetPreviewViewportDips(out var dipW, out var dipH))
+        {
+            dipW = PreviewHostGrid.ActualWidth;
+            dipH = PreviewHostGrid.ActualHeight;
+        }
+
+        var previewPxW = DipToPhysicalPx(dipW, scale);
+        var previewPxH = DipToPhysicalPx(dipH, scale);
         TryGetPrimaryWorkAreaPx(out var workW, out var workH);
-        var targetW = Math.Max(previewPxW, workW);
-        var targetH = Math.Max(previewPxH, workH);
+
+        int targetW;
+        int targetH;
+        if (_isFullscreen)
+        {
+            targetW = Math.Max(1, workW);
+            targetH = Math.Max(1, workH);
+        }
+        else
+        {
+            targetW = Math.Max(1, previewPxW);
+            targetH = Math.Max(1, previewPxH);
+        }
 
         if (_fitMode == ImageFitMode.OneToOne)
             return new WicDecodeLayout(int.MaxValue, int.MaxValue, BitmapUniformKind.FullResolution, maxEdge);
@@ -91,9 +124,16 @@ public sealed partial class MainWindow
 
     private void RememberDecodeTargetBox(in WicDecodeLayout layout)
     {
-        _lastDecodeTargetBoxMaxSidePx = layout.UniformKind == BitmapUniformKind.FullResolution
-            ? -1
-            : Math.Max(layout.TargetBoxWidthPx, layout.TargetBoxHeightPx);
+        if (layout.UniformKind == BitmapUniformKind.FullResolution)
+        {
+            _lastDecodeTargetBoxWidthPx = -1;
+            _lastDecodeTargetBoxHeightPx = -1;
+        }
+        else
+        {
+            _lastDecodeTargetBoxWidthPx = layout.TargetBoxWidthPx;
+            _lastDecodeTargetBoxHeightPx = layout.TargetBoxHeightPx;
+        }
     }
 
     private int ResolveMaxDecodeEdgePx()

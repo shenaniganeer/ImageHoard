@@ -1,3 +1,4 @@
+using ImageHoard.Core.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -7,7 +8,9 @@ public sealed partial class MainWindow
 {
     bool IPreferencesSession.ShowBrowserPane => _layoutState.ShowBrowserPane;
 
-    bool IPreferencesSession.ShowFullscreenPath => _layoutState.ShowFullscreenPath;
+    bool IPreferencesSession.ShowPathOnOverlayWindowed => _layoutState.ShowPathOnOverlayWindowed;
+
+    bool IPreferencesSession.ShowPathOnOverlayFullscreen => _layoutState.ShowPathOnOverlayFullscreen;
 
     bool IPreferencesSession.ShowOverlayListPosition => _layoutState.ShowOverlayListPosition;
 
@@ -18,6 +21,8 @@ public sealed partial class MainWindow
     bool IPreferencesSession.LogDestructiveOperations => _session.LogDestructiveOperations;
 
     bool IPreferencesSession.SlideshowAllowDelete => _session.SlideshowAllowDelete;
+
+    double IPreferencesSession.PreviewNavCatchUpLagSeconds => _layoutState.PreviewNavCatchUpLagSeconds;
 
     string? IPreferencesSession.ArchiveRoot => _session.ArchiveRoot;
 
@@ -30,10 +35,19 @@ public sealed partial class MainWindow
         ((IPreferencesSession)this).SyncChromeFromState();
     }
 
-    void IPreferencesSession.ApplyShowFullscreenPath(bool value)
+    void IPreferencesSession.ApplyShowPathOnOverlayWindowed(bool value)
     {
-        _layoutState.ShowFullscreenPath = value;
-        ShowPathInFullscreenToggle.IsChecked = value;
+        _layoutState.ShowPathOnOverlayWindowed = value;
+        ShowPathOnOverlayWindowedToggle.IsChecked = value;
+        UpdatePathOverlays();
+        PersistLayout();
+        ((IPreferencesSession)this).SyncChromeFromState();
+    }
+
+    void IPreferencesSession.ApplyShowPathOnOverlayFullscreen(bool value)
+    {
+        _layoutState.ShowPathOnOverlayFullscreen = value;
+        ShowPathOnOverlayFullscreenToggle.IsChecked = value;
         UpdatePathOverlays();
         PersistLayout();
         ((IPreferencesSession)this).SyncChromeFromState();
@@ -53,7 +67,7 @@ public sealed partial class MainWindow
         IncludeSubfoldersToggle.IsChecked = value;
         PersistLayout();
         if (!string.IsNullOrEmpty(_currentFolderPath))
-            _ = LoadImageListForPathAsync(_currentFolderPath);
+            _ = RefreshBrowserTreeFromSettingsAsync();
         ((IPreferencesSession)this).SyncChromeFromState();
     }
 
@@ -62,7 +76,7 @@ public sealed partial class MainWindow
         _layoutState.ListSort = kind;
         PersistLayout();
         if (!string.IsNullOrEmpty(_currentFolderPath))
-            _ = LoadImageListForPathAsync(_currentFolderPath);
+            _ = RefreshBrowserTreeFromSettingsAsync();
         ((IPreferencesSession)this).SyncChromeFromState();
     }
 
@@ -75,6 +89,14 @@ public sealed partial class MainWindow
     void IPreferencesSession.ApplySlideshowAllowDelete(bool value)
     {
         _session.SlideshowAllowDelete = value;
+        PersistLayout();
+    }
+
+    void IPreferencesSession.ApplyPreviewNavCatchUpLagSeconds(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            return;
+        _layoutState.PreviewNavCatchUpLagSeconds = Math.Clamp(value, 0, 5);
         PersistLayout();
     }
 
@@ -102,11 +124,33 @@ public sealed partial class MainWindow
             deleteOperationLog ? "Caches and operation log cleared." : "Caches cleared (folder metrics).");
     }
 
-    void IPreferencesSession.OpenHotkeysEditor() => OpenHotkeysEditor();
+    async Task<(InputProfileDocument Builtin, InputProfileDocument Merged)?> IPreferencesSession.LoadHotkeysEditDocumentsAsync()
+    {
+        try
+        {
+            var builtin = InputProfileBootstrap.TryLoadCombinedShippedBuiltin();
+            if (builtin == null)
+                return null;
+
+            var userJson = File.Exists(AppDataPaths.UserInputOverridesPath)
+                ? await File.ReadAllTextAsync(AppDataPaths.UserInputOverridesPath)
+                : null;
+            var merged = InputProfileMerger.MergeWithUserOverrides(builtin, userJson);
+            return (InputProfileMerger.CloneShallow(builtin), merged);
+        }
+        catch (Exception ex)
+        {
+            SetTransientStatus("Hotkeys: " + ex.Message);
+            return null;
+        }
+    }
+
+    void IPreferencesSession.ReloadInputBindingsAfterHotkeysPersist() => TryLoadInputProfile();
 
     void IPreferencesSession.SyncChromeFromState()
     {
-        ShowPathInFullscreenToggle.IsChecked = _layoutState.ShowFullscreenPath;
+        ShowPathOnOverlayWindowedToggle.IsChecked = _layoutState.ShowPathOnOverlayWindowed;
+        ShowPathOnOverlayFullscreenToggle.IsChecked = _layoutState.ShowPathOnOverlayFullscreen;
         ShowBrowserPaneToggle.IsChecked = _layoutState.ShowBrowserPane;
         IncludeSubfoldersToggle.IsChecked = _layoutState.IncludeSubfoldersInList;
         UpdateSortMenuChecks();

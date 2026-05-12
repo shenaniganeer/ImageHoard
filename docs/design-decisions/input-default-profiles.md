@@ -27,7 +27,7 @@
 ## Profile model
 
 - **`KeyboardOnly`:** Every command in the minimum command set has at least one **keyboard** chord; mouse is optional and omitted from the shipped file.
-- **`MouseOnly`:** Same command set using **mouse / wheel / chord / tilt only**—no keyboard modifiers in default chords. Where hardware lacks tilt or `X3`, the app exposes **minimal on-screen controls** for `slideshow.toggleScope` (implementation detail; QA uses hardware from [test-plan-reference-hw.md](../test-plan-reference-hw.md) when available).
+- **`MouseOnly`:** Same command set using **mouse / wheel / chord / tilt**; default chords avoid **keyboard modifiers** except **`view.panPreview`** (uses `Shift` + primary button so pan does not collide with unmodified primary click for sort). Where hardware lacks tilt or `X3`, the app exposes **minimal on-screen controls** for `slideshow.toggleScope` (implementation detail; QA uses hardware from [test-plan-reference-hw.md](../test-plan-reference-hw.md) when available).
 
 ## Command IDs (minimum set)
 
@@ -39,8 +39,6 @@ Extended commands (browse, slideshow, viewer, settings): [command-registry.md](.
 | `nav.prevImage` | Previous image |
 | `nav.firstImage` | First image in current folder list |
 | `nav.lastImage` | Last image in current folder list |
-| `nav.firstImage` | First image in current folder list |
-| `nav.lastImage` | Last image in current folder list |
 | `sort.flagKeep` | Set state Keep |
 | `sort.flagDelete` | Set state Delete |
 | `sort.flagUnset` | Clear to Unset |
@@ -49,7 +47,9 @@ Extended commands (browse, slideshow, viewer, settings): [command-registry.md](.
 | `sort.undoLastFlag` | Undo last decision |
 | `slideshow.toggleScope` | Tree session ↔ Folder scope (FR-SL-06) |
 | `ui.fullscreen` | Toggle fullscreen |
-| `ui.escape` | Back / close dialog |
+| `ui.escape` | Back / close dialog (MouseOnly default: left+right chord; see merged note below) |
+| `view.clearSelection` | Clear image selection and blank preview when not fullscreen |
+| `view.panPreview` | Pan primary preview when it scrolls (modifier + drag; see shipped MouseOnly profile) |
 
 ## Pipeline bindings: wheel, X1, X2 (normative)
 
@@ -110,8 +110,6 @@ Identifiers use [keyboard-key-identifiers.md](./keyboard-key-identifiers.md) (`K
 | `nav.prevImage` | `ArrowLeft`, `ArrowUp`, `Backspace` |
 | `nav.firstImage` | `Home` |
 | `nav.lastImage` | `End` |
-| `nav.firstImage` | `Home` |
-| `nav.lastImage` | `End` |
 | `sort.flagKeep` | `KeyK` |
 | `sort.flagDelete` | `KeyD` |
 | `sort.flagUnset` | `KeyU` |
@@ -120,7 +118,10 @@ Identifiers use [keyboard-key-identifiers.md](./keyboard-key-identifiers.md) (`K
 | `sort.undoLastFlag` | `Control`+`KeyZ` |
 | `slideshow.toggleScope` | `Tab` |
 | `ui.fullscreen` | `F11`, `Enter` (when list focused) |
-| `ui.escape` | `Escape` |
+| `view.clearSelection` | `Escape` |
+| `ui.escape` | *(no keyboard chord in KeyboardOnly file; merged profile includes MouseOnly left+right chord only)* |
+
+**Merged built-in profile:** `Escape` is bound to `view.clearSelection` on the keyboard side so the same keyboard chord is not listed twice under different commands (FR-IN-05). Fullscreen still handles `Escape` to exit fullscreen when `view.clearSelection` declines in fullscreen mode.
 
 ## Gaming mice / practical limits (FR-IN-04)
 

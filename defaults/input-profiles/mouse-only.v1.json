@@ -16,23 +16,21 @@
       }
     ],
     "sort.flagUnset": [{ "kind": "mouseButton", "button": "Middle", "clickCount": 1 }],
-    "sort.commitBatchDelete": [
+    "sort.deleteArchiveWizard": [
       {
         "kind": "mouseButton",
         "button": "X1",
         "clickCount": 1,
-        "notes": "First press opens FR-SR-03 summary; second X1 within 2s or primary Confirm completes (double-confirm)."
-      }
-    ],
-    "sort.moveToArchive": [
+        "notes": "Opens delete/archive wizard (scoped to current image parent folder)."
+      },
       {
         "kind": "mouseButton",
         "button": "X2",
         "clickCount": 1,
-        "notes": "Same double-confirm pattern as commitBatchDelete."
+        "notes": "Also opens delete/archive wizard."
       }
     ],
-    "sort.undoLastFlag": [
+    "sort.clearAllFlags": [
       { "kind": "mouseWheelTilt", "tilt": "Right" },
       {
         "kind": "mouseButton",

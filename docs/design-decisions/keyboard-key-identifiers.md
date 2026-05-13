@@ -7,7 +7,7 @@
 
 1. Each `keys` array is ordered **modifiers first**, then **main key** (if any).  
 2. **Modifier tokens** (synthetic, not physical `ControlLeft`/`ControlRight`): `Control`, `Shift`, `Alt`, `Win` — case-sensitive, ASCII as written.  
-3. **Non-modifier keys** use **HTML / MDN `KeyboardEvent.code`** style identifiers where they exist (e.g. `KeyK`, `KeyD`, `ArrowRight`, `F11`, `Space`, `Enter`, `Tab`, `Backspace`, `Delete`, `Escape`, `Digit1` … `Digit0`).  
+3. **Non-modifier keys** use **HTML / MDN `KeyboardEvent.code`** style identifiers where they exist (e.g. `KeyK`, `KeyD`, `ArrowRight`, `F11`, `Space`, `Enter`, `Tab`, `Backspace`, `Delete`, `Escape`, `PageDown`, `PageUp`, `Digit1` … `Digit0`).  
 4. If MDN `code` is ambiguous for a legacy key, prefer the **Key\*** / **Digit\*** / **Arrow\*** / **F\*** spellings from MDN.
 
 ## Examples (valid)

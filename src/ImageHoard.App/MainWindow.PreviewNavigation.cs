@@ -255,6 +255,7 @@ public sealed partial class MainWindow
 
     private Task OnFolderTreeImageRowSelectedAsync(ImageRow row)
     {
+        StopSlideshowSession();
         _session.LastSelectedImage = row.FullPath;
         UpdateFullscreenMenuEnabled();
         if (PreviewImage.Source != null

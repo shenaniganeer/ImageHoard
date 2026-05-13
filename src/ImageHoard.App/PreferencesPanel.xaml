@@ -1,12 +1,11 @@
-<Window
-    x:Class="ImageHoard.App.PreferencesWindow"
+<UserControl
+    x:Class="ImageHoard.App.PreferencesPanel"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="using:ImageHoard.App"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d"
-    Title="Preferences">
+    mc:Ignorable="d">
     <NavigationView
         x:Name="RootNav"
         PaneDisplayMode="Left"
@@ -131,6 +130,18 @@
                         OnContent="On"
                         OffContent="Off"
                         Toggled="IncludeSubfoldersToggle_Toggled" />
+                    <ToggleSwitch
+                        x:Name="CollectFolderStatisticsInBackgroundToggle"
+                        Margin="0,16,0,0"
+                        Header="Collect folder statistics in background"
+                        OnContent="On"
+                        OffContent="Off"
+                        Toggled="CollectFolderStatisticsInBackgroundToggle_Toggled" />
+                    <TextBlock
+                        Margin="0,4,0,0"
+                        TextWrapping="Wrap"
+                        Opacity="0.7"
+                        Text="When on, folder size and image count can update asynchronously while browsing (if those columns are shown under View → Folder details)." />
 
                     <TextBlock
                         Margin="0,24,0,4"
@@ -219,14 +230,14 @@
                         TextWrapping="Wrap"
                         Opacity="0.7"
                         Text="Archive destination and caches." />
-                    <TextBlock Text="Archive root" />
+                    <TextBlock Text="Archive target folder" />
                     <TextBlock
                         x:Name="ArchiveRootDisplay"
                         Margin="0,4,0,8"
                         TextWrapping="Wrap"
                         IsTextSelectionEnabled="True" />
                     <Button
-                        Content="Set archive root…"
+                        Content="Select archive target folder"
                         HorizontalAlignment="Left"
                         Click="SetArchiveRoot_Click" />
                     <TextBlock Margin="0,24,0,8" Text="Caches" />
@@ -243,4 +254,4 @@
             </ScrollViewer>
         </Grid>
     </NavigationView>
-</Window>
+</UserControl>

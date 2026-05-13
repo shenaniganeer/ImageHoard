@@ -56,6 +56,13 @@ internal static class InputChordDisplay
     {
         var w = chord.TryGetProperty("wheel", out var wheel) ? wheel.GetString() ?? "?" : "?";
         var baseText = w is "Up" or "Down" ? $"Wheel {w}" : $"Wheel {w}";
+        if (chord.TryGetProperty("heldButtons", out var hb) && hb.ValueKind == JsonValueKind.Array)
+        {
+            var held = hb.EnumerateArray().Select(x => x.GetString() ?? "").Where(s => s.Length > 0).Distinct(StringComparer.Ordinal).OrderBy(s => s, StringComparer.Ordinal).ToArray();
+            if (held.Length > 0)
+                baseText = string.Join("+", held) + "+" + baseText;
+        }
+
         return baseText + FormatModifiersSuffix(chord);
     }
 

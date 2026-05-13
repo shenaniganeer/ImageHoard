@@ -21,6 +21,30 @@ public sealed class FolderMetricsScannerTests
             Assert.Equal(3, snap.TotalFileCount);
             Assert.Equal(2, snap.ImageFileCount);
             Assert.True(snap.AggregateSizeBytes >= 5);
+            Assert.Equal(FolderMetricsScanScope.FullSubtree, snap.ScanScope);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ScanImmediateFilesAsync_counts_only_direct_files()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ih_metrics_imm_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "sub"));
+        await File.WriteAllTextAsync(Path.Combine(root, "a.jpg"), "x");
+        await File.WriteAllTextAsync(Path.Combine(root, "sub", "b.png"), "yy");
+
+        try
+        {
+            var fs = new LocalFileSystem();
+            var snap = await FolderMetricsScanner.ScanImmediateFilesAsync(fs, root);
+            Assert.Equal(FolderMetricsScanScope.ImmediateChildren, snap.ScanScope);
+            Assert.Equal(1, snap.TotalFileCount);
+            Assert.Equal(1, snap.ImageFileCount);
+            Assert.True(snap.AggregateSizeBytes >= 1);
         }
         finally
         {

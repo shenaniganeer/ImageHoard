@@ -18,7 +18,7 @@
             Margin="0,0,0,8"
             TextWrapping="Wrap"
             Opacity="0.85"
-            Text="Bindings merge with shipped keyboard and mouse defaults. Save writes only overrides that differ from those defaults. Enter adds another shortcut variant; Shift+Enter replaces all variants for that row with the next capture. Backspace or Delete removes the selected shortcut variant (or all variants touched by the selection). Escape cancels recording." />
+            Text="Bindings merge with shipped keyboard and mouse defaults. Save writes only overrides that differ from those defaults. Enter adds another shortcut variant; Shift+Enter replaces all variants for that row with the next capture. Backspace or Delete removes the selected shortcut variant (or all variants touched by the selection). Escape cancels recording. Mouse: you can hold one or more buttons and scroll the wheel to capture combinations (for example X1 and wheel up)." />
         <Grid Grid.Row="1">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel x:Name="RowHost" Margin="0,0,8,0" />
@@ -51,16 +51,16 @@
                 Margin="0,0,8,0"
                 Click="SaveButton_Click" />
             <Button
-                x:Name="CloseButton"
-                Content="Close"
-                MinWidth="100"
-                Margin="0,0,8,0"
-                Click="CloseButton_Click" />
-            <Button
                 x:Name="CancelButton"
                 Content="Cancel"
                 MinWidth="100"
+                Margin="0,0,8,0"
                 Click="CancelButton_Click" />
+            <Button
+                x:Name="CloseButton"
+                Content="Close"
+                MinWidth="100"
+                Click="CloseButton_Click" />
         </StackPanel>
     </Grid>
 </UserControl>

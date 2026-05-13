@@ -19,7 +19,7 @@ Append-only evidence of batch **delete**, **move to archive**, and optional **re
   "schemaVersion": 1,
   "id": "uuid",
   "utc": "2026-05-11T12:00:00Z",
-  "operation": "BatchDelete|MoveToArchive|RenameMove",
+  "operation": "BatchDelete|BatchDeleteDeleteFlaggedOnly|MoveToArchive|RenameMove|DeleteFolderRecycle",
   "summary": { "ok": 42, "failed": 1, "skipped": 0 },
   "entries": [
     { "path": "\\\\server\\share\\a\\b.jpg", "result": "Ok|Failed|Skipped", "detail": "optional message" }

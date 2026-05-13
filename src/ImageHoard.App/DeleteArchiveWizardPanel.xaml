@@ -1,0 +1,106 @@
+<UserControl
+    x:Class="ImageHoard.App.DeleteArchiveWizardPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Loaded="WizardRoot_Loaded">
+        <StackPanel Padding="16">
+            <TextBlock
+                Text="Working folder"
+                FontWeight="SemiBold"
+                Margin="0,0,0,8" />
+            <TextBlock
+                x:Name="FolderPathText"
+                TextWrapping="WrapWholeWords"
+                IsTextSelectionEnabled="True"
+                Margin="0,0,0,8" />
+            <TextBlock x:Name="CountsText" TextWrapping="WrapWholeWords" Margin="0,0,0,12" />
+
+            <TextBlock Text="Images in this folder" FontWeight="SemiBold" Margin="0,0,0,6" />
+            <Grid Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button
+                    x:Name="DeleteNonKeepButton"
+                    Grid.Column="0"
+                    Content="Delete images not marked Keep"
+                    Click="DeleteNonKeep_Click"
+                    HorizontalAlignment="Stretch"
+                    Margin="0,0,8,0" />
+                <ToggleSwitch
+                    x:Name="InverseKeepBeforeArchiveToggle"
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    OffContent="Off"
+                    OnContent="On"
+                    Toggled="InverseKeepBeforeArchiveToggle_Toggled"
+                    ToolTipService.ToolTip="When On, moving the folder to archive runs inverse-keep delete in this folder first." />
+            </Grid>
+            <TextBlock
+                Text="When On, moving the folder to archive runs inverse-keep delete in this folder first."
+                TextWrapping="WrapWholeWords"
+                Opacity="0.85"
+                FontSize="12"
+                Margin="0,0,0,6" />
+            <TextBlock
+                x:Name="UnsetBlockText"
+                TextWrapping="WrapWholeWords"
+                Opacity="0.9"
+                FontSize="12"
+                Visibility="Collapsed"
+                Margin="0,0,0,6" />
+            <Button
+                x:Name="DeleteFlaggedOnlyButton"
+                Content="Delete images marked Delete"
+                Click="DeleteFlaggedOnly_Click"
+                Margin="0,0,0,8" />
+            <Button
+                x:Name="UndoLastDeleteButton"
+                Content="Undo last delete"
+                Click="UndoLastDelete_Click"
+                Visibility="Collapsed"
+                Margin="0,0,0,8" />
+            <InfoBar
+                x:Name="PermanentDeleteInfoBar"
+                Title="Permanent deletion"
+                Message="Recycle Bin was not used for some files; those deletions are permanent."
+                Severity="Informational"
+                IsOpen="False"
+                IsClosable="True"
+                CloseButtonClick="PermanentDeleteInfoBar_CloseButtonClick"
+                Margin="0,0,0,12" />
+
+            <TextBlock Text="Parent folder" FontWeight="SemiBold" Margin="0,0,0,6" />
+            <Button
+                x:Name="RenameFolderButton"
+                Content="Rename parent folder"
+                Click="RenameFolder_Click"
+                Margin="0,0,0,6" />
+            <Button
+                x:Name="DeleteFolderButton"
+                Content="Delete parent folder"
+                Click="DeleteFolder_Click"
+                ToolTipService.ToolTip="Sends the folder to the Recycle Bin when available."
+                Margin="0,0,0,6" />
+
+            <InfoBar
+                x:Name="WizardOperationInfoBar"
+                Margin="0,0,0,8"
+                IsOpen="False"
+                IsClosable="True" />
+
+            <TextBlock Text="Move to archive" FontWeight="SemiBold" Margin="0,0,0,6" />
+            <Button
+                x:Name="MoveToArchiveButton"
+                Content="Move parent folder to archive"
+                Click="MoveToArchive_Click"
+                Margin="0,0,0,16" />
+
+            <Button Content="Close" Click="Close_Click" HorizontalAlignment="Stretch" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

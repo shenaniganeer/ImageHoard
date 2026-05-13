@@ -19,7 +19,7 @@ For each of **P1–P3**, run:
 1. **List** 1k images (virtualized list open).
 2. **Fullscreen next/prev** 50 random files (measure latency vs [test-plan-reference-hw.md](./test-plan-reference-hw.md) NAS target).
 3. **Sort mode:** flag 5, batch delete (Recycle Bin), verify.
-4. **Move to archive** across share boundary if applicable (staging on `Z:`, archive on `\\NAS\...`).
+4. **Move to archive** across share boundary if applicable (staging on `Z:`, archive on `\\NAS\...`). Exercise the delete/archive wizard: confirm **ContentDialog** for move; with a folder that has **subfolders**, confirm the dialog shows **recursive file count** and **total size** (or graceful fallback if enumeration fails on the share).
 5. **Slideshow** Tree session start + Folder scope toggle.
 
 ## Failure injection (NFR-RL-02)

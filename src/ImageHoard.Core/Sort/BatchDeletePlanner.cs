@@ -23,4 +23,18 @@ public static class BatchDeletePlanner
         pathsToDelete = list;
         return true;
     }
+
+    /// <summary>Paths explicitly marked Delete (FR-SR-04 scoped variant; no unset gate).</summary>
+    public static IReadOnlyList<string> GetDeleteFlaggedPaths(
+        IReadOnlyList<string> imagePathsInScope,
+        SortSession session) =>
+        imagePathsInScope.Where(p => session.GetState(p) == SortFlagState.Delete).ToList();
+
+    /// <summary>
+    /// Delete/archive wizard only: inverse-keep set (all non-<see cref="SortFlagState.Keep"/>), without FR-SR-03 unset blocking.
+    /// </summary>
+    public static IReadOnlyList<string> GetInverseKeepDeletionSetIgnoringUnsetGate(
+        IReadOnlyList<string> imagePathsInScope,
+        SortSession session) =>
+        imagePathsInScope.Where(p => session.GetState(p) != SortFlagState.Keep).ToList();
 }

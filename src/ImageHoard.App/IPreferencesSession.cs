@@ -3,7 +3,7 @@ using Microsoft.UI.Xaml;
 
 namespace ImageHoard.App;
 
-/// <summary>Host surface for <see cref="PreferencesWindow"/> to read and apply persisted settings.</summary>
+/// <summary>Host surface for the preferences overlay (<see cref="PreferencesPanel"/>) on <see cref="MainWindow"/>.</summary>
 public interface IPreferencesSession
 {
     bool ShowBrowserPane { get; }
@@ -15,6 +15,8 @@ public interface IPreferencesSession
     bool ShowOverlayListPosition { get; }
 
     bool IncludeSubfoldersInList { get; }
+
+    bool CalculateFolderSizesInBackground { get; }
 
     ListSortKind ListSort { get; }
 
@@ -35,6 +37,8 @@ public interface IPreferencesSession
     void ApplyShowOverlayListPosition(bool value);
 
     void ApplyIncludeSubfolders(bool value);
+
+    void ApplyCalculateFolderSizesInBackground(bool value);
 
     void ApplyListSort(ListSortKind kind);
 

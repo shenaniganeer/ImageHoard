@@ -37,6 +37,8 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     /// <summary>Last target path for sequential next/prev; avoids relying on TreeView selection updating between rapid commands.</summary>
     private string? _browseNavAnchorPath;
 
+    private BrowseNavigationMode _browseNavigationMode = BrowseNavigationMode.AllImages;
+
     internal InputKeyboardDispatchTable? KeyboardDispatchTable { get; private set; }
     internal InputProfileDocument? MergedInputProfile { get; private set; }
 
@@ -55,25 +57,42 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     private int _populateBrowserGeneration;
     private bool _globalPointerHandlersRegistered;
     private bool _previewPanHandlersRegistered;
+    /// <summary>Skips preview clear in <see cref="MainWindow.FolderTree_OnCollapsed"/> during programmatic collapse (e.g. sibling-folder navigation).</summary>
+    private bool _suppressFolderTreeCollapsedClear;
     private PointerEventHandler? _pointerWheelCaptureHandler;
     private PointerEventHandler? _previewScrollContentWheelHandler;
     private PointerEventHandler? _pointerPressedCaptureHandler;
+    private PointerEventHandler? _pointerMovedMouseBindingsHandler;
 
-    [Conditional("DEBUG")]
-    private static void SetTransientStatus(string? message)
+    private void SetTransientStatus(string? message)
     {
-        if (!string.IsNullOrEmpty(message))
-            Debug.WriteLine("[ImageHoard] " + message);
+        if (string.IsNullOrEmpty(message))
+            return;
+        Debug.WriteLine("[ImageHoard] " + message);
+        void apply()
+        {
+            TransientStatusText.Text = message;
+        }
+
+        var dq = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        if (dq != null && !dq.HasThreadAccess)
+        {
+            dq.TryEnqueue(apply);
+            return;
+        }
+
+        apply();
     }
 
     public MainWindow()
     {
         (_layoutState, _session) = AppSettingsStore.LoadAll();
         InitializeComponent();
+        WireModalOverlays();
         WireBrowserTreeTemplates();
         PreviewHostGrid.SizeChanged += PreviewHostGrid_SizeChanged;
         RootGrid.Loaded += MainWindow_Loaded;
-        Closed += (_, _) => PersistLayout();
+        Closed += (_, _) => { PersistLayout(); };
     }
 
     private static string? GetFolderPath(TreeViewNode? node) =>
@@ -87,9 +106,11 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         ShowBrowserPaneToggle.IsChecked = _layoutState.ShowBrowserPane;
         UpdatePathOverlays();
         UpdateFullscreenMenuEnabled();
+        SyncBrowseNavigationModeMenu();
 
         await RestoreStartupBrowseAsync();
         InitializeFeatures();
+        UpdateArchiveTargetBrowserRow();
         RebuildBrowseFavoritesMenu();
         RegisterGlobalPointerHandlers();
         RootGrid.Focus(FocusState.Programmatic);
@@ -134,6 +155,10 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             _previewPanHandlersRegistered = true;
             RegisterPreviewPanPointerHandlers();
         }
+
+        _pointerMovedMouseBindingsHandler ??= (_, e) => RootGrid_PointerMovedForMouseBindings(_, e);
+        RootGrid.AddHandler(UIElement.PointerMovedEvent, _pointerMovedMouseBindingsHandler, handledEventsToo: true);
+        FullscreenLayout.AddHandler(UIElement.PointerMovedEvent, _pointerMovedMouseBindingsHandler, handledEventsToo: true);
     }
 
     private void ApplyLayoutFromState() => ApplyPaneVisibility();
@@ -196,19 +221,10 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     {
         var size = e.LengthBytes ?? 0;
         var mtime = e.LastWriteTimeUtc ?? DateTimeOffset.MinValue;
-        var row = new ImageRow(e.FullPath, e.Name, size, mtime, FormatSize(size), mtime.ToLocalTime().ToString("g"), "·");
+        var row = new ImageRow(e.FullPath, e.Name, size, mtime, DisplayFormat.ByteSize(size), mtime.ToLocalTime().ToString("g"), "·");
         ApplySortFlagPresentationToRow(row, e.FullPath);
         ApplyLayoutFileDetailsToImageRow(row);
         return row;
-    }
-
-    private static string FormatSize(long bytes)
-    {
-        if (bytes < 1024)
-            return $"{bytes} B";
-        if (bytes < 1024 * 1024)
-            return $"{bytes / 1024.0:0.#} KB";
-        return $"{bytes / (1024.0 * 1024.0):0.#} MB";
     }
 
     private IEnumerable<ImageRow> ApplyListSort(IEnumerable<ImageRow> rows) =>
@@ -244,19 +260,44 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         ApplyOverlayFlagGlyph(FullscreenPathFlagIcon, flag);
         var flagVisible = flag != SortFlagState.Unset;
 
+        var navModeLineVisible = hasImage && _browseNavigationMode != BrowseNavigationMode.AllImages;
+        if (navModeLineVisible)
+        {
+            var navLabel = BrowseNavigationModeOverlayLabel(_browseNavigationMode);
+            NormalNavigationModeText.Text = navLabel;
+            FullscreenNavigationModeText.Text = navLabel;
+            NormalNavigationModeText.Visibility = Visibility.Visible;
+            FullscreenNavigationModeText.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            NormalNavigationModeText.Visibility = Visibility.Collapsed;
+            FullscreenNavigationModeText.Visibility = Visibility.Collapsed;
+        }
+
         NormalPathText.Visibility = windowedPathDesired ? Visibility.Visible : Visibility.Collapsed;
         FullscreenPathText.Visibility = fullscreenPathDesired ? Visibility.Visible : Visibility.Collapsed;
 
         var showNormalOverlay = hasImage
             && !_isFullscreen
-            && (windowedPathDesired || listPositionVisible || flagVisible);
+            && (windowedPathDesired || listPositionVisible || flagVisible || navModeLineVisible);
         var showFullscreenOverlay = hasImage
             && _isFullscreen
-            && (fullscreenPathDesired || listPositionVisible || flagVisible);
+            && (fullscreenPathDesired || listPositionVisible || flagVisible || navModeLineVisible);
 
         NormalPathOverlay.Visibility = showNormalOverlay ? Visibility.Visible : Visibility.Collapsed;
         FullscreenPathOverlay.Visibility = showFullscreenOverlay ? Visibility.Visible : Visibility.Collapsed;
     }
+
+    private static string BrowseNavigationModeOverlayLabel(BrowseNavigationMode mode) =>
+        mode switch
+        {
+            BrowseNavigationMode.KeepOnly => "Navigation: Keep only",
+            BrowseNavigationMode.NotKeepOnly => "Navigation: Not Keep",
+            BrowseNavigationMode.UnflaggedOnly => "Navigation: Unflagged only",
+            BrowseNavigationMode.DeleteOnly => "Navigation: Delete only",
+            _ => "",
+        };
 
     private static void ApplyOverlayFlagGlyph(SymbolIcon icon, SortFlagState flag)
     {
@@ -280,44 +321,38 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
     private async void OpenFolder_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FileOpenPicker();
-        foreach (var ext in ImageExtensions.PickerFileTypeExtensions)
-            picker.FileTypeFilter.Add(ext);
+        var picker = new FolderPicker
+        {
+            SuggestedStartLocation = PickerLocationId.ComputerFolder,
+        };
         picker.FileTypeFilter.Add("*");
         InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
-        var file = await picker.PickSingleFileAsync();
-        if (file == null)
+        var folder = await picker.PickSingleFolderAsync();
+        if (folder == null)
             return;
 
-        var filePath = TryGetStorageFilePath(file);
-        if (string.IsNullOrEmpty(filePath))
+        var folderPath = TryGetStorageFolderPath(folder);
+        if (string.IsNullOrEmpty(folderPath))
         {
-            SetTransientStatus("Could not resolve file path for this location.");
+            SetTransientStatus("Could not resolve folder path for this location.");
             return;
         }
 
-        if (!ImageExtensions.IsImageFile(filePath))
+        if (!Directory.Exists(folderPath))
         {
-            SetTransientStatus("Please choose a supported image file.");
+            SetTransientStatus("Folder path not found.");
             return;
         }
 
-        var parent = Path.GetDirectoryName(filePath);
-        if (string.IsNullOrEmpty(parent) || !Directory.Exists(parent))
-        {
-            SetTransientStatus("Could not open parent folder.");
-            return;
-        }
-
-        _pendingSelectImagePath = filePath;
-        await NavigateToFolderAsync(parent).ConfigureAwait(true);
+        _pendingSelectImagePath = null;
+        await NavigateToFolderAsync(folderPath).ConfigureAwait(true);
     }
 
-    private static string? TryGetStorageFilePath(StorageFile file)
+    private static string? TryGetStorageFolderPath(StorageFolder folder)
     {
         try
         {
-            return string.IsNullOrEmpty(file.Path) ? null : file.Path;
+            return string.IsNullOrEmpty(folder.Path) ? null : folder.Path;
         }
         catch
         {
@@ -349,6 +384,21 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         }
     }
 
+    private void BrowseNavModeAll_Click(object sender, RoutedEventArgs e) =>
+        SetBrowseNavigationMode(BrowseNavigationMode.AllImages);
+
+    private void BrowseNavModeKeep_Click(object sender, RoutedEventArgs e) =>
+        SetBrowseNavigationMode(BrowseNavigationMode.KeepOnly);
+
+    private void BrowseNavModeNotKeep_Click(object sender, RoutedEventArgs e) =>
+        SetBrowseNavigationMode(BrowseNavigationMode.NotKeepOnly);
+
+    private void BrowseNavModeUnflagged_Click(object sender, RoutedEventArgs e) =>
+        SetBrowseNavigationMode(BrowseNavigationMode.UnflaggedOnly);
+
+    private void BrowseNavModeDelete_Click(object sender, RoutedEventArgs e) =>
+        SetBrowseNavigationMode(BrowseNavigationMode.DeleteOnly);
+
     private void ShowBrowserPaneToggle_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not ToggleMenuFlyoutItem t)
@@ -368,6 +418,12 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
     private void RootGrid_KeyDown(object sender, KeyRoutedEventArgs e)
     {
+        if (e.Key == VirtualKey.Escape && TryDismissTopModalForEscape())
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (TryDispatchInputCommand(e))
             return;
 
@@ -434,7 +490,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
     private bool IsPointerChordAllowedForCommand(string commandId, DependencyObject? source)
     {
-        if (commandId is "sort.flagKeep" or "sort.flagDelete" or "sort.flagUnset" or "sort.undoLastFlag")
+        if (commandId is "sort.flagKeep" or "sort.flagDelete" or "sort.flagUnset" or "sort.clearAllFlags")
         {
             if (source == null)
                 return false;
@@ -445,7 +501,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             return false;
         }
 
-        if (commandId is "sort.commitBatchDelete" or "sort.moveToArchive")
+        if (commandId is "sort.deleteArchiveWizard" or "sort.commitBatchDelete" or "sort.moveToArchive")
             return !IsInsideTextInput(source);
 
         if (commandId == ViewPanPreviewCommandId)
@@ -483,14 +539,26 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             return false;
         var up = delta > 0;
         var (shift, ctrl, alt, win) = WinUiKeyboardInterop.GetModifierStates();
-        foreach (var (commandId, chord) in InputPointerChordMatch.EnumerateMouseWheelBindings(merged))
+        var pressedSorted = PointerInputMouseHeldButtons.GetPressedSorted(e.GetCurrentPoint(null).Properties);
+        var wheelBindings = InputPointerChordMatch.EnumerateMouseWheelBindings(merged).ToList();
+
+        for (var pass = 1; pass <= 2; pass++)
         {
-            if (!InputPointerChordMatch.IsMouseWheelMatch(chord, shift, ctrl, alt, win, up))
-                continue;
-            if (suppressNav && (commandId == "nav.nextImage" || commandId == "nav.prevImage"))
-                continue;
-            if (TryExecuteInputCommand(commandId))
-                return true;
+            foreach (var (commandId, chord) in wheelBindings)
+            {
+                var specifiesHeld = InputPointerChordMatch.MouseWheelSpecifiesHeldButtons(chord);
+                if (pass == 1 && !specifiesHeld)
+                    continue;
+                if (pass == 2 && specifiesHeld)
+                    continue;
+
+                if (!InputPointerChordMatch.IsMouseWheelMatch(chord, shift, ctrl, alt, win, up, pressedSorted))
+                    continue;
+                if (suppressNav && (commandId == "nav.nextImage" || commandId == "nav.prevImage"))
+                    continue;
+                if (TryExecuteInputCommand(commandId))
+                    return true;
+            }
         }
 
         return false;
@@ -502,18 +570,53 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     /// </summary>
     private void RootGrid_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
+        var refEl = sender as UIElement ?? RootGrid;
+        TryDispatchMousePointerBindings(e, refEl, allowPreviewPanBegin: true);
+    }
+
+    /// <summary>
+    /// Additional mouse buttons while a button is already held are reported on <see cref="UIElement.PointerMoved"/>, not <see cref="UIElement.PointerPressed"/>.
+    /// </summary>
+    private void RootGrid_PointerMovedForMouseBindings(object sender, PointerRoutedEventArgs e)
+    {
+        var refEl = sender as UIElement ?? RootGrid;
+        var props = e.GetCurrentPoint(refEl).Properties;
+        if (MapPointerUpdateKindToSchemaButton(props.PointerUpdateKind) == null)
+            return;
+        TryDispatchMousePointerBindings(e, refEl, allowPreviewPanBegin: false);
+    }
+
+    private void TryDispatchMousePointerBindings(PointerRoutedEventArgs e, UIElement refEl, bool allowPreviewPanBegin)
+    {
         var merged = MergedInputProfile;
         if (merged?.Bindings == null)
             return;
 
-        var refEl = sender as UIElement ?? RootGrid;
-        var buttonName = MapPointerUpdateKindToSchemaButton(e.GetCurrentPoint(refEl).Properties.PointerUpdateKind);
-        if (buttonName == null)
-            return;
+        var props = e.GetCurrentPoint(refEl).Properties;
+        var pressedSorted = PointerInputMouseHeldButtons.GetPressedSorted(props);
+        var buttonName = MapPointerUpdateKindToSchemaButton(props.PointerUpdateKind);
 
         var origin = e.OriginalSource as DependencyObject;
         var (shift, ctrl, alt, win) = WinUiKeyboardInterop.GetModifierStates();
-        if (TryBeginPreviewPan(e, merged, buttonName, shift, ctrl, alt, win, origin))
+        if (allowPreviewPanBegin && buttonName != null && TryBeginPreviewPan(e, merged, buttonName, shift, ctrl, alt, win, origin))
+            return;
+
+        foreach (var (commandId, chord) in InputPointerChordMatch.EnumerateMouseChordBindings(merged))
+        {
+            if (commandId == ViewPanPreviewCommandId)
+                continue;
+            if (!InputPointerChordMatch.IsMouseChordMatch(chord, shift, ctrl, alt, win, pressedSorted))
+                continue;
+            if (!IsPointerChordAllowedForCommand(commandId, origin))
+                continue;
+            if (TryExecuteInputCommand(commandId))
+            {
+                e.Handled = true;
+                return;
+            }
+        }
+
+        if (buttonName == null)
             return;
 
         foreach (var (commandId, chord) in InputPointerChordMatch.EnumerateMouseButtonBindings(merged))
@@ -563,6 +666,12 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         if (string.IsNullOrEmpty(commandId))
             return false;
 
+        if (IsPreferencesOverlayOpen && commandId is not ("ui.escape" or "settings.open"))
+            return false;
+        if (IsDeleteArchiveWizardOverlayOpen
+            && commandId is not ("ui.escape" or "settings.open" or "sort.deleteArchiveWizard" or "sort.commitBatchDelete" or "sort.moveToArchive"))
+            return false;
+
         switch (commandId)
         {
             case "nav.nextImage":
@@ -593,10 +702,27 @@ public sealed partial class MainWindow : Window, IPreferencesSession
                     return false;
                 BrowseNavigateByStep(BrowseNavStepKind.Last);
                 return true;
+            case "nav.nextDirectory":
+                if (_slideshowUiActive && _slideshow != null)
+                    return false;
+                BrowseNavigateSiblingFolderFromInput(1);
+                return true;
+            case "nav.prevDirectory":
+                if (_slideshowUiActive && _slideshow != null)
+                    return false;
+                BrowseNavigateSiblingFolderFromInput(-1);
+                return true;
+            case "nav.cycleNavigationMode":
+                if (_slideshowUiActive && _slideshow != null)
+                    return false;
+                CycleBrowseNavigationModeFromInput();
+                return true;
             case "ui.fullscreen":
                 ToggleFullscreen();
                 return true;
             case "ui.escape":
+                if (TryDismissTopModalForEscape())
+                    return true;
                 if (_isFullscreen)
                     ToggleFullscreen();
                 else
@@ -648,20 +774,19 @@ public sealed partial class MainWindow : Window, IPreferencesSession
                     return false;
                 SetSelectedSortFlag(SortFlagState.Unset);
                 return true;
+            case "sort.deleteArchiveWizard":
             case "sort.commitBatchDelete":
-                SortBatchDelete_Click(this, new RoutedEventArgs());
-                return true;
             case "sort.moveToArchive":
-                SortMoveArchive_Click(this, new RoutedEventArgs());
+                ShowOrActivateDeleteArchiveWizard();
                 return true;
-            case "sort.undoLastFlag":
-                SortUndoLastFlagFromInput();
+            case "sort.clearAllFlags":
+                SortClearAllFlagsFromInput();
                 return true;
             case "settings.clearCaches":
                 SettingsClearCaches_Click(this, new RoutedEventArgs());
                 return true;
             case "settings.open":
-                PreferencesWindow.ShowOrActivate(this);
+                ShowOrActivatePreferences();
                 return true;
             default:
                 return false;
@@ -672,6 +797,12 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     {
         if (!_isFullscreen)
             return;
+
+        if (e.Key == VirtualKey.Escape && TryDismissTopModalForEscape())
+        {
+            e.Handled = true;
+            return;
+        }
 
         if (TryDispatchInputCommand(e))
             return;
@@ -712,10 +843,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             _isFullscreen = false;
             FullscreenLayout.Visibility = Visibility.Collapsed;
             NormalLayout.Visibility = Visibility.Visible;
-            _slideshowUiActive = false;
-            _slideshow?.Tree.StopEnumeration();
-            _slideshow = null;
-            UpdateSlideshowScopeBadge();
+            StopSlideshowSession();
             UpdatePathOverlays();
             RootGrid.Focus(FocusState.Programmatic);
             if (!string.IsNullOrEmpty(_currentImageFullPath) && _fitMode != ImageFitMode.OneToOne)

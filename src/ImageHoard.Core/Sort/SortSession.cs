@@ -15,6 +15,69 @@ public sealed class SortSession
 
     public void Clear() => _byPath.Clear();
 
+    /// <summary>After a directory rename/move on disk, remap stored flag keys under <paramref name="oldDirectoryPath"/>.</summary>
+    public void RelocatePathsForDirectoryRename(string oldDirectoryPath, string newDirectoryPath)
+    {
+        if (string.IsNullOrEmpty(oldDirectoryPath) || string.IsNullOrEmpty(newDirectoryPath))
+            return;
+
+        string oldDir;
+        string newDir;
+        try
+        {
+            oldDir = Path.TrimEndingDirectorySeparator(Path.GetFullPath(oldDirectoryPath));
+            newDir = Path.TrimEndingDirectorySeparator(Path.GetFullPath(newDirectoryPath));
+        }
+        catch
+        {
+            oldDir = oldDirectoryPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            newDir = newDirectoryPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+
+        if (string.Equals(oldDir, newDir, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var sep = Path.DirectorySeparatorChar;
+        var keys = _byPath.Keys.ToList();
+        foreach (var oldKey in keys)
+        {
+            if (!_byPath.TryGetValue(oldKey, out var state))
+                continue;
+            string fileFp;
+            try
+            {
+                fileFp = Path.GetFullPath(oldKey);
+            }
+            catch
+            {
+                fileFp = oldKey;
+            }
+
+            if (!fileFp.StartsWith(oldDir + sep, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(Path.GetDirectoryName(fileFp), oldDir, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            string newKey;
+            try
+            {
+                if (string.Equals(Path.GetDirectoryName(fileFp), oldDir, StringComparison.OrdinalIgnoreCase))
+                    newKey = Path.Combine(newDir, Path.GetFileName(fileFp));
+                else
+                    newKey = newDir + fileFp.Substring(oldDir.Length);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (string.Equals(oldKey, newKey, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            _byPath.Remove(oldKey);
+            _byPath[newKey] = state;
+        }
+    }
+
     public (int Keep, int Delete, int Unset) CountStates(IEnumerable<string> orderedPaths)
     {
         var keep = 0;

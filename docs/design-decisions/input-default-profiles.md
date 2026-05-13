@@ -17,11 +17,11 @@
 
 | ID | How this document + JSON satisfy it |
 |----|-------------------------------------|
-| **FR-IN-01** | Chords use `profile.schema.v1.json` (`keyboard`, `mouseButton`, `mouseWheel`, `mouseChord`, `mouseWheelTilt`); keyboard `keys` use [keyboard-key-identifiers.md](./keyboard-key-identifiers.md). Import/export is one JSON object per profile with `commandId` → chord list (OR semantics within a command). |
+| **FR-IN-01** | Chords use `profile.schema.v1.json` (`keyboard`, `mouseButton`, `mouseWheel` with optional `heldButtons`, `mouseChord`, `mouseWheelTilt`); keyboard `keys` use [keyboard-key-identifiers.md](./keyboard-key-identifiers.md). Import/export is one JSON object per profile with `commandId` → chord list (OR semantics within a command). |
 | **FR-IN-02** | Two built-in profiles: **`KeyboardOnly`** and **`MouseOnly`**, plus aliases above; user profiles duplicate these in user settings (out of scope here). |
-| **FR-IN-03** | Mouse-only profile: wheel advances; primary / middle / right set flags; **X1 / X2** drive high-level pipeline steps (see §Pipeline). |
+| **FR-IN-03** | Mouse-only profile: wheel advances; primary / middle / right set flags; **X1 / X2** open the delete/archive wizard (see §Pipeline). |
 | **FR-IN-04** | `X3`–`X5` enumerated in schema when the OS exposes them; see §Gaming mice / practical limits. |
-| **FR-IN-05** | Destructive commits from **X1 / X2** use **double-confirm**: first press opens FR-SR-03 blocking summary; **second press of the same side button within 2 s** *or* explicit **Confirm** with primary button completes. Duplicates across profiles are avoided by construction; runtime must still warn on user edits. |
+| **FR-IN-05** | Destructive commits use explicit controls in the delete/archive wizard plus **ContentDialog** confirmation before inverse-keep delete, delete-flagged-only, move-to-archive, and enriched confirm for delete-folder when subfolders exist; merged profiles avoid duplicate keyboard chords. |
 | **FR-IN-06** | No gesture-only core action; mouse-only uses buttons, wheel, and optional tilt; slideshow scope has a documented non-gesture fallback (chrome control). |
 
 ## Profile model
@@ -39,12 +39,16 @@ Extended commands (browse, slideshow, viewer, settings): [command-registry.md](.
 | `nav.prevImage` | Previous image |
 | `nav.firstImage` | First image in current folder list |
 | `nav.lastImage` | Last image in current folder list |
+| `nav.nextDirectory` | Next sibling folder under the parent of the folder containing the current image (or browse root when no image context); same sort as folder tree |
+| `nav.prevDirectory` | Previous sibling folder under the parent of the folder containing the current image (or browse root when no image context); same sort as folder tree |
+| `nav.cycleNavigationMode` | Cycle browse navigation mode (folder list filter for sequential navigation) |
 | `sort.flagKeep` | Set state Keep |
 | `sort.flagDelete` | Set state Delete |
 | `sort.flagUnset` | Clear to Unset |
-| `sort.commitBatchDelete` | Open / confirm batch delete (FR-SR-03 / FR-SR-04) |
-| `sort.moveToArchive` | Open / confirm move to archive (FR-SR-05) |
-| `sort.undoLastFlag` | Undo last decision |
+| `sort.deleteArchiveWizard` | Modeless delete/archive wizard: inverse-keep delete, delete-flagged-only, rename/move/delete parent folder of current image; destructive actions require **ContentDialog** confirm; move/delete-folder show **subtree file count + size** when the folder has immediate subfolders | FR-SR-03/04/05 |
+| `sort.commitBatchDelete` | *(legacy)* same as `sort.deleteArchiveWizard` | FR-SR-03/04 |
+| `sort.moveToArchive` | *(legacy)* same as `sort.deleteArchiveWizard` | FR-SR-05 |
+| `sort.clearAllFlags` | Clear all sort flags (in-memory session); **Sort → Clear all flags** menu (P0 chrome) |
 | `slideshow.toggleScope` | Tree session ↔ Folder scope (FR-SL-06) |
 | `ui.fullscreen` | Toggle fullscreen |
 | `ui.escape` | Back / close dialog (MouseOnly default: left+right chord; see merged note below) |
@@ -53,7 +57,7 @@ Extended commands (browse, slideshow, viewer, settings): [command-registry.md](.
 
 ## Pipeline bindings: wheel, X1, X2 (normative)
 
-These are the **mouse-first sort** flows the PRD calls out (FR-IN-03). State machine for **destructive** side buttons is shared.
+These are the **mouse-first sort** flows the PRD calls out (FR-IN-03). Side buttons open the delete/archive wizard (modeless); choosing delete or move there still opens a **modal confirm** on the main window before files change.
 
 ### Wheel (vertical)
 
@@ -64,22 +68,16 @@ These are the **mouse-first sort** flows the PRD calls out (FR-IN-03). State mac
 
 **Modifier + wheel** is reserved for user rebinding and conflict detection (FR-IN-05); **defaults** do not use keyboard modifiers on the mouse-only profile.
 
-### X1 (typical “browser back”)
+**Mouse buttons held during vertical wheel:** `mouseWheel` chords may include optional `heldButtons` (unique button names from the schema: `Left`, `Middle`, `Right`, `X1`, `X2`, …). When `heldButtons` is non-empty, the chord matches only if that exact set of mouse buttons is down when the wheel moves, using buttons observable from the OS (WinUI reports Left through X2; X3+ may appear in JSON but are not read from pointer state). Omitted or empty `heldButtons` means plain wheel regardless of mouse button state. Dispatch tries bindings that specify `heldButtons` before plain `mouseWheel` bindings so combinations such as X1 + wheel can override default wheel navigation when both are bound.
 
-| Phase | Behavior |
-|-------|----------|
-| **First press** | Opens **`sort.commitBatchDelete`** flow: FR-SR-03 summary dialog; **no files deleted yet**. |
-| **Second press** (same button within **2 s** while dialog focused) **or** **Confirm** with primary button | Completes the destructive path per FR-SR-04 semantics locked in [FR-SR-04-batch-delete-semantics.md](./FR-SR-04-batch-delete-semantics.md). |
-| **Cancel / loss of focus** | Returns without delete; next X1 starts a **new** confirmation cycle. |
+### X1 / X2 (side buttons)
 
-### X2 (typical “browser forward”)
+| Button | Behavior |
+|--------|----------|
+| **X1** | Opens the modeless **`sort.deleteArchiveWizard`** window. |
+| **X2** | Opens the same **`sort.deleteArchiveWizard`** window. |
 
-| Phase | Behavior |
-|-------|----------|
-| **First press** | Opens **`sort.moveToArchive`** wizard (dry-run, collision policy, path confirm). |
-| **Second press** within **2 s** while confirm UI focused **or** explicit Confirm | Executes batch move per FR-SR-05. |
-
-**Rationale:** Single accidental side-button bumps must not delete or move (FR-IN-05 + NFR-RL-01).
+**Rationale:** A single press does not delete or move files; the wizard lists scoped actions, and each destructive commit is confirmed in a dialog (see shipped `mouse-only.v1.json` notes).
 
 ### Primary buttons (flags, not pipeline)
 
@@ -95,7 +93,7 @@ These are the **mouse-first sort** flows the PRD calls out (FR-IN-03). State mac
 
 | Command | Default |
 |---------|---------|
-| `sort.undoLastFlag` | **Wheel tilt right**, else **triple middle click** within ~**600 ms** |
+| `sort.clearAllFlags` | **Wheel tilt right**, else **triple middle click** within ~**600 ms** |
 | `slideshow.toggleScope` | **Wheel tilt left**, else **`X3`** if present, else **toolbar / on-screen scope** control |
 | `ui.fullscreen` | **Double left** on viewer chrome / safe hit target |
 | `ui.escape` | **Left + right chord** (simultaneous within ~**50 ms**); must not fire while a drag is active |
@@ -110,12 +108,13 @@ Identifiers use [keyboard-key-identifiers.md](./keyboard-key-identifiers.md) (`K
 | `nav.prevImage` | `ArrowLeft`, `ArrowUp`, `Backspace` |
 | `nav.firstImage` | `Home` |
 | `nav.lastImage` | `End` |
+| `nav.nextDirectory` | `Control`+`Alt`+`PageDown` |
+| `nav.prevDirectory` | `Control`+`Alt`+`PageUp` |
 | `sort.flagKeep` | `KeyK` |
 | `sort.flagDelete` | `KeyD` |
 | `sort.flagUnset` | `KeyU` |
-| `sort.commitBatchDelete` | `Control`+`Shift`+`Delete` |
-| `sort.moveToArchive` | `Control`+`Shift`+`KeyM` |
-| `sort.undoLastFlag` | `Control`+`KeyZ` |
+| `sort.deleteArchiveWizard` | `Control`+`Shift`+`Delete`, `Control`+`Shift`+`KeyM` |
+| `sort.clearAllFlags` | `Control`+`KeyZ` |
 | `slideshow.toggleScope` | `Tab` |
 | `ui.fullscreen` | `F11`, `Enter` (when list focused) |
 | `view.clearSelection` | `Escape` |

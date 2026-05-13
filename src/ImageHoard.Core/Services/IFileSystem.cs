@@ -56,6 +56,11 @@ public interface IFileSystem
 
 
 
+    /// <summary>
+    /// Moves a directory to <paramref name="destinationFullPath"/>.
+    /// When source and destination share the same volume root, uses a single directory rename (fast; preserves metadata).
+    /// When roots differ, copies the full subtree then deletes the source (metadata and hard links may differ from a same-volume rename).
+    /// </summary>
     Task MoveDirectoryAsync(
 
         string sourceFullPath,

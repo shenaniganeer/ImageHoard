@@ -1,6 +1,9 @@
+using System.IO;
 using ImageHoard.Core.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Windows.Storage.Pickers;
+using WinRT.Interop;
 
 namespace ImageHoard.App;
 
@@ -15,6 +18,8 @@ public sealed partial class MainWindow
     bool IPreferencesSession.ShowOverlayListPosition => _layoutState.ShowOverlayListPosition;
 
     bool IPreferencesSession.IncludeSubfoldersInList => _layoutState.IncludeSubfoldersInList;
+
+    bool IPreferencesSession.CalculateFolderSizesInBackground => _layoutState.CalculateFolderSizesInBackground;
 
     ListSortKind IPreferencesSession.ListSort => _layoutState.ListSort;
 
@@ -71,6 +76,23 @@ public sealed partial class MainWindow
         ((IPreferencesSession)this).SyncChromeFromState();
     }
 
+    void IPreferencesSession.ApplyCalculateFolderSizesInBackground(bool value)
+    {
+        _layoutState.CalculateFolderSizesInBackground = value;
+        PersistLayout();
+        if (!_layoutState.CalculateFolderSizesInBackground)
+        {
+            CancelBackgroundFolderMetricsWork();
+            RefreshAllFolderEntrySizingDisplays();
+        }
+        else if (_layoutState.ShowBrowserFolderSize || _layoutState.ShowBrowserFolderImageCount)
+        {
+            EnqueueFolderMetricsForAllVisibleFolderPaths();
+        }
+
+        ApplyBrowserFolderDetailsChrome();
+    }
+
     void IPreferencesSession.ApplyListSort(ListSortKind kind)
     {
         _layoutState.ListSort = kind;
@@ -102,19 +124,34 @@ public sealed partial class MainWindow
 
     async Task IPreferencesSession.PromptEditArchiveRootAsync(XamlRoot xamlRoot)
     {
-        var box = new TextBox { Text = _session.ArchiveRoot ?? "", Width = 420 };
-        var dlg = new ContentDialog
+        _ = xamlRoot;
+        var picker = new FolderPicker
         {
-            Title = "Archive root",
-            Content = box,
-            PrimaryButtonText = "Save",
-            CloseButtonText = "Cancel",
-            XamlRoot = xamlRoot,
+            SuggestedStartLocation = PickerLocationId.ComputerFolder,
         };
-        if (await dlg.ShowAsync() != ContentDialogResult.Primary)
+        picker.FileTypeFilter.Add("*");
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+        var folder = await picker.PickSingleFolderAsync();
+        if (folder == null)
             return;
-        _session.ArchiveRoot = box.Text?.Trim();
+
+        var folderPath = TryGetStorageFolderPath(folder);
+        if (string.IsNullOrEmpty(folderPath))
+        {
+            SetTransientStatus("Could not resolve folder path for this location.");
+            return;
+        }
+
+        if (!Directory.Exists(folderPath))
+        {
+            SetTransientStatus("Folder path not found.");
+            return;
+        }
+
+        _session.ArchiveRoot = folderPath;
         PersistLayout();
+        UpdateArchiveTargetBrowserRow();
+        RefreshPreferencesIfVisible();
     }
 
     void IPreferencesSession.ClearCaches(bool deleteOperationLog)
@@ -154,5 +191,6 @@ public sealed partial class MainWindow
         ShowBrowserPaneToggle.IsChecked = _layoutState.ShowBrowserPane;
         IncludeSubfoldersToggle.IsChecked = _layoutState.IncludeSubfoldersInList;
         UpdateSortMenuChecks();
+        RefreshPreferencesIfVisible();
     }
 }

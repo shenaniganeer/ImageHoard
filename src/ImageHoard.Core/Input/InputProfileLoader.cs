@@ -112,7 +112,30 @@ public static class InputBindingConflictChecker
         if (!chord.TryGetProperty("wheel", out var w))
             return string.Empty;
         var mods = ModifierFingerprint(chord);
-        return "mouseWheel:" + w.GetString() + ":" + mods;
+        var held = HeldButtonsFingerprint(chord);
+        return held.Length > 0
+            ? "mouseWheel:" + w.GetString() + ":" + mods + ":held:" + held
+            : "mouseWheel:" + w.GetString() + ":" + mods;
+    }
+
+    /// <summary>Non-empty sorted unique <c>heldButtons</c> for <c>mouseWheel</c> chords; empty string if absent or empty.</summary>
+    private static string HeldButtonsFingerprint(JsonElement chord)
+    {
+        if (!chord.TryGetProperty("heldButtons", out var hb) || hb.ValueKind != JsonValueKind.Array)
+            return "";
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var b in hb.EnumerateArray())
+        {
+            var s = b.GetString();
+            if (!string.IsNullOrEmpty(s))
+                set.Add(s);
+        }
+
+        if (set.Count == 0)
+            return "";
+        var parts = set.ToArray();
+        Array.Sort(parts, StringComparer.Ordinal);
+        return string.Join("+", parts);
     }
 
     private static string KindMouseChord(JsonElement chord)

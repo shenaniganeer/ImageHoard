@@ -11,12 +11,16 @@ This document extends the **minimum** command set in [input-default-profiles.md]
 | `nav.prevImage` | Previous image | FR-VW-04 | Yes |
 | `nav.firstImage` | First image in folder list | FR-VW-04 | Yes (KeyboardOnly default `Home`) |
 | `nav.lastImage` | Last image in folder list | FR-VW-04 | Yes (KeyboardOnly default `End`) |
+| `nav.nextDirectory` | Next sibling folder under the parent of the folder containing the current image (or browse root when no image context); same sort as folder tree | FR-VW-04 | Yes (KeyboardOnly default `Control+Alt+PageDown`) |
+| `nav.prevDirectory` | Previous sibling folder under the parent of the folder containing the current image (or browse root when no image context); same sort as folder tree | FR-VW-04 | Yes (KeyboardOnly default `Control+Alt+PageUp`) |
+| `nav.cycleNavigationMode` | Cycle browse navigation mode (restrict next/prev/first/last to All / Keep only / Not Keep / Unflagged only / Delete only); **Browse → Navigation mode** shows options and accelerator | FR-VW-04 | Yes (KeyboardOnly default `Control+Shift+N`) |
 | `sort.flagKeep` | Keep | FR-SR-01 | Yes |
 | `sort.flagDelete` | Delete | FR-SR-01 | Yes |
 | `sort.flagUnset` | Unset | FR-SR-01 | Yes |
-| `sort.commitBatchDelete` | Batch delete flow | FR-SR-03/04 | Yes |
-| `sort.moveToArchive` | Move to archive wizard | FR-SR-05 | Yes |
-| `sort.undoLastFlag` | Undo last flag | FR-SR-02 | Yes |
+| `sort.deleteArchiveWizard` | Delete/archive wizard (scoped to parent folder of current image): inverse-keep delete, delete-flagged-only, rename folder, move folder to archive, delete folder to Recycle Bin; **ContentDialog** confirms before delete/move commits; subtree **file count + size** when the folder has immediate subfolders (move + delete folder) | FR-SR-03/04/05 | Yes |
+| `sort.commitBatchDelete` | *(legacy alias)* same handler as `sort.deleteArchiveWizard` | FR-SR-03/04 | Yes |
+| `sort.moveToArchive` | *(legacy alias)* same handler as `sort.deleteArchiveWizard` | FR-SR-05 | Yes |
+| `sort.clearAllFlags` | Clear all sort flags (in-memory session); **Sort → Clear all flags** menu (P0 chrome) | FR-SR-02 | Yes |
 | `slideshow.start` | Start tree slideshow from current browse folder | FR-SL-02 | Yes (KeyboardOnly default `Control+Shift+S`) |
 | `slideshow.toggleScope` | Tree ↔ Folder scope | FR-SL-06 | Yes |
 | `slideshow.reshuffle` | New random session | FR-SL-04 | **P1 default chord** (toolbar in P0) |
@@ -47,6 +51,7 @@ When promoting to shipped profiles:
 
 - `slideshow.start`: `Control+Shift+S` (KeyboardOnly); shipped in `keyboard-only.v1.json`.  
 - `slideshow.reshuffle`: `Control+Shift+R` (KeyboardOnly); mouse: **none** by default (avoid accidents).  
+- `nav.cycleNavigationMode`: `Control+Shift+N` (KeyboardOnly); shipped in `keyboard-only.v1.json`.  
 - `view.cycleFitMode`: `KeyV` (KeyboardOnly).  
 - `view.panPreview`: `Shift` + primary click drag on preview (MouseOnly merged profile; rebinding in Preferences).  
 - `browse.revealInExplorer`: `Control+Shift+E`.

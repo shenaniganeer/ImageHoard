@@ -86,4 +86,144 @@ public sealed class LocalFileSystemTests
             Directory.Delete(root, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task MoveDirectoryAsync_same_volume_nested_tree_with_non_image_file()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ImageHoardMoveDir_" + Guid.NewGuid().ToString("N"));
+        var src = Path.Combine(root, "MoveMe");
+        var nested = Path.Combine(src, "nested");
+        Directory.CreateDirectory(nested);
+        await File.WriteAllTextAsync(Path.Combine(nested, "inner.txt"), "inner");
+        await File.WriteAllTextAsync(Path.Combine(src, "readme.txt"), "not an image");
+
+        var archiveParent = Path.Combine(root, "archive");
+        Directory.CreateDirectory(archiveParent);
+        var dest = Path.Combine(archiveParent, "MoveMe");
+
+        try
+        {
+            var fs = new LocalFileSystem();
+            await fs.MoveDirectoryAsync(src, dest);
+
+            Assert.False(Directory.Exists(src));
+            Assert.True(Directory.Exists(dest));
+            Assert.Equal("inner", await File.ReadAllTextAsync(Path.Combine(dest, "nested", "inner.txt")));
+            Assert.Equal("not an image", await File.ReadAllTextAsync(Path.Combine(dest, "readme.txt")));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(root, recursive: true);
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+    }
+
+    [Fact]
+    public async Task MoveDirectoryAsync_cross_volume_when_second_ready_drive_exists()
+    {
+        // Single-volume CI agents skip the body; dev machines with a second partition/drive get coverage.
+        if (!TryGetOtherReadyDriveRoot(out var otherDriveRoot))
+            return;
+
+        var rootLocal = Path.Combine(Path.GetTempPath(), "ImageHoardMoveCross_" + Guid.NewGuid().ToString("N"));
+        var src = Path.Combine(rootLocal, "MoveMe");
+        var nested = Path.Combine(src, "nested");
+        Directory.CreateDirectory(nested);
+        await File.WriteAllTextAsync(Path.Combine(nested, "inner.txt"), "inner");
+        await File.WriteAllTextAsync(Path.Combine(src, "readme.txt"), "not an image");
+
+        var rootRemote = Path.Combine(otherDriveRoot, "ImageHoardMoveCross_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootRemote);
+        var dest = Path.Combine(rootRemote, "MoveMe");
+
+        try
+        {
+            var fs = new LocalFileSystem();
+            await fs.MoveDirectoryAsync(src, dest);
+
+            Assert.False(Directory.Exists(src));
+            Assert.True(Directory.Exists(dest));
+            Assert.Equal("inner", await File.ReadAllTextAsync(Path.Combine(dest, "nested", "inner.txt")));
+            Assert.Equal("not an image", await File.ReadAllTextAsync(Path.Combine(dest, "readme.txt")));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(rootLocal, recursive: true);
+            }
+            catch
+            {
+                // ignored
+            }
+
+            try
+            {
+                Directory.Delete(rootRemote, recursive: true);
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+    }
+
+    private static bool TryGetOtherReadyDriveRoot(out string otherDriveRoot)
+    {
+        string tempRoot;
+        try
+        {
+            tempRoot = Path.GetPathRoot(Path.GetFullPath(Path.GetTempPath()))!;
+        }
+        catch
+        {
+            otherDriveRoot = string.Empty;
+            return false;
+        }
+
+        foreach (var d in DriveInfo.GetDrives())
+        {
+            if (!d.IsReady)
+                continue;
+
+            string driveRoot;
+            try
+            {
+                driveRoot = Path.GetPathRoot(Path.GetFullPath(d.Name))!;
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (string.Equals(driveRoot, tempRoot, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            // Must include trailing '\' so Path.Combine("G:\", "x") is G:\x — Path.Combine("G:", "x") is wrong (relative path).
+            var root = d.RootDirectory.FullName;
+            try
+            {
+                var probe = Path.Combine(root, "ImageHoardDriveProbe_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(probe);
+                Directory.Delete(probe);
+            }
+            catch
+            {
+                // Some letters report Ready but cannot host a new folder at the volume root (empty card readers, etc.).
+                continue;
+            }
+
+            otherDriveRoot = root;
+            return true;
+        }
+
+        otherDriveRoot = string.Empty;
+        return false;
+    }
 }

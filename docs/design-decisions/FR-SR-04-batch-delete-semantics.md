@@ -18,6 +18,26 @@ This is the **inverse-keep** interpretation (not the “delete only items marked
 - **Persona A** (gallery hoarder): optimize for speed through large folders; the safe mental model is “I marked what I want; everything else goes.”
 - The **`Delete`** flag remains useful for **summary, sorting the list, keyboard flow, and intent** before commit; at commit time it does not *exclude* those files from deletion—they are already not `Keep`.
 
+## Wizard: delete-flagged-only (scoped folder)
+
+The **delete/archive wizard** offers a separate action that recycles **only** paths currently marked **`Delete`** within the **parent folder of the current image** (no `Unset` gate). This does **not** change FR-SR-04 inverse-keep semantics; it is an additional, explicit commit path logged as `BatchDeleteDeleteFlaggedOnly`.
+
+## Delete/archive wizard: confirmations, subtree summary, and inverse-keep before move (shipped)
+
+**Pre-commit `ContentDialog` (main window `XamlRoot`):** Before running destructive work, the user must confirm:
+
+- **Delete images not marked Keep** (inverse-keep in the working folder, non-recursive image list).
+- **Delete images marked Delete** (delete-flagged-only).
+- **Move parent folder to archive** (shows source and destination paths; default button is **Cancel**).
+
+**Delete parent folder to Recycle Bin** already used a confirm dialog; when the working folder has **at least one immediate subdirectory**, the dialog also shows **recursive file count** and **total size** for the entire tree under that folder (same subtree scan as below).
+
+**Move to archive — subfolders:** If the working folder has **at least one immediate subdirectory**, the move confirm dialog includes a **full-tree** line: total **file count** and **aggregate size** under the folder (implementation: [`FolderMetricsScanner.ScanSubtreeAsync`](../../src/ImageHoard.Core/Metrics/FolderMetricsScanner.cs), same symlink depth / cycle rules as other metrics). If subtree enumeration fails, the dialog still allows proceed with a short “could not measure” line (avoids blocking moves on flaky NAS paths).
+
+**Inverse-keep before archive:** When the preference **inverse-keep delete before move** is on, non-keepers are deleted through the **same** recycle / permanent-delete batch path as the inverse-keep button (undo for recycled paths, operation log). If the user cancels the **“Permanent delete may be required”** preflight for that batch, the **move is not performed**.
+
+**Relationship to FR-SR-03 (unset):** Wizard inverse-keep uses **`GetInverseKeepDeletionSetIgnoringUnsetGate`** — images with no decision (`Unset`) are included in the deletion set unless marked **`Keep`**. That differs from the **strict unset block** described in §FR-SR-03 and the blocked-commit copy below, which remain normative for any **other** entry point that adopts that gate. The acceptance scenarios in §Acceptance tests assume the gated policy unless stated otherwise.
+
 ## FR-SR-03 (unset) at commit time
 
 Pre-commit dialog must show counts: **`Keep`**, **`Delete`**, **`Unset`**.
@@ -56,6 +76,8 @@ Optional second line when **`{markedDelete}`** is shown in a detailed summary pa
 - `Batch delete removes every image that is **not** marked **Keep** once you have reviewed them all (no **Unset** left).`
 
 ## Acceptance tests (traceability)
+
+The following assume a **batch delete entry point that implements FR-SR-03 unset blocking** (see §Relationship to FR-SR-03). The delete/archive wizard’s inverse-keep button does **not** apply that block.
 
 1. **Given** three files: `Keep`, `Delete`, `Unset` — **when** user attempts batch delete — **then** commit is **blocked** while `Unset` exists.
 2. **Given** two files: `Keep`, `Delete` (no `Unset`) — **when** user confirms batch delete — **then** only the `Delete` file is recycled; `Keep` remains.

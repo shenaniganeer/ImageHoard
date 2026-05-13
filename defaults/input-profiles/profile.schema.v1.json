@@ -79,6 +79,23 @@
           },
           "description": "Modifier keys held with wheel or button (keyboard modifiers)."
         },
+        "heldButtons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "Left",
+              "Middle",
+              "Right",
+              "X1",
+              "X2",
+              "X3",
+              "X4",
+              "X5"
+            ]
+          },
+          "description": "For kind=mouseWheel: mouse buttons that must be held (exact set among Left/Middle/Right/X1/X2 observable from the OS) while the wheel moves; omit or empty for plain wheel."
+        },
         "buttons": {
           "type": "array",
           "items": { "type": "string" },

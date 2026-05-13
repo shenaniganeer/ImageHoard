@@ -23,6 +23,10 @@ public sealed partial class HotkeysEditorControl : UserControl
     private bool _armedReplaceAllOnCommit;
     private PointerEventHandler? _wheelCaptureHandler;
     private PointerEventHandler? _pointerPressedCaptureHandler;
+    private PointerEventHandler? _pointerMovedCaptureHandler;
+    private PointerEventHandler? _pointerReleasedCaptureHandler;
+    /// <summary>While recording, single-button press is deferred until <see cref="UIElement.PointerReleasedEvent"/>.</summary>
+    private string[]? _mouseRecordPendingSorted;
 
     public HotkeysEditorControl()
     {
@@ -40,8 +44,8 @@ public sealed partial class HotkeysEditorControl : UserControl
     /// <summary>Invoked after overrides file was written successfully.</summary>
     public Action? BindingsPersisted { get; set; }
 
-    /// <summary>Closes the hosting window (e.g. Preferences) without reverting bindings.</summary>
-    public Action? RequestCloseWindow { get; set; }
+    /// <summary>Dismisses the preferences overlay without reverting bindings.</summary>
+    public Action? RequestDismissPreferences { get; set; }
 
     public void Reset(InputProfileDocument builtinBase, InputProfileDocument mergedForEdit)
     {
@@ -179,8 +183,8 @@ public sealed partial class HotkeysEditorControl : UserControl
         _armedSourceTextBox = sourceTextBox;
         SaveButton.IsEnabled = false;
         StatusText.Text = replaceAllOnCommit
-            ? "Recording (replace all): press a key chord, mouse button, or wheel. Escape cancels."
-            : "Recording (add variant): press a key chord, mouse button, or wheel. Escape cancels.";
+            ? "Recording (replace all): key chord; or hold one mouse button and press another for a chord; or single click (release to finish); or hold button(s) and scroll the wheel. Escape cancels."
+            : "Recording (add variant): key chord; or hold one mouse button and press another for a chord; or single click (release to finish); or hold button(s) and scroll the wheel. Escape cancels.";
         AttachCapturePointerHandlers();
         _ = CaptureFocusSink.Focus(FocusState.Programmatic);
     }
@@ -188,6 +192,7 @@ public sealed partial class HotkeysEditorControl : UserControl
     private void DisarmCapture(bool restoreFocusToSource)
     {
         DetachCapturePointerHandlers();
+        ClearMouseRecordPending();
         _armedCommandId = null;
         _armedReplaceAllOnCommit = false;
         SaveButton.IsEnabled = true;
@@ -201,8 +206,12 @@ public sealed partial class HotkeysEditorControl : UserControl
     {
         _wheelCaptureHandler ??= RootLayout_OnPointerWheelCapture;
         _pointerPressedCaptureHandler ??= RootLayout_OnPointerPressedCapture;
+        _pointerMovedCaptureHandler ??= RootLayout_OnPointerMovedCapture;
+        _pointerReleasedCaptureHandler ??= RootLayout_OnPointerReleasedCapture;
         RootLayout.AddHandler(UIElement.PointerWheelChangedEvent, _wheelCaptureHandler, true);
         RootLayout.AddHandler(UIElement.PointerPressedEvent, _pointerPressedCaptureHandler, true);
+        RootLayout.AddHandler(UIElement.PointerMovedEvent, _pointerMovedCaptureHandler, true);
+        RootLayout.AddHandler(UIElement.PointerReleasedEvent, _pointerReleasedCaptureHandler, true);
     }
 
     private void DetachCapturePointerHandlers()
@@ -211,7 +220,13 @@ public sealed partial class HotkeysEditorControl : UserControl
             RootLayout.RemoveHandler(UIElement.PointerWheelChangedEvent, _wheelCaptureHandler);
         if (_pointerPressedCaptureHandler != null)
             RootLayout.RemoveHandler(UIElement.PointerPressedEvent, _pointerPressedCaptureHandler);
+        if (_pointerMovedCaptureHandler != null)
+            RootLayout.RemoveHandler(UIElement.PointerMovedEvent, _pointerMovedCaptureHandler);
+        if (_pointerReleasedCaptureHandler != null)
+            RootLayout.RemoveHandler(UIElement.PointerReleasedEvent, _pointerReleasedCaptureHandler);
     }
+
+    private void ClearMouseRecordPending() => _mouseRecordPendingSorted = null;
 
     private void RootLayout_OnPointerWheelCapture(object sender, PointerRoutedEventArgs e)
     {
@@ -222,8 +237,10 @@ public sealed partial class HotkeysEditorControl : UserControl
         if (delta == 0)
             return;
 
+        ClearMouseRecordPending();
         var up = delta > 0;
-        var el = BuildMouseWheelChord(up);
+        var heldSorted = PointerInputMouseHeldButtons.GetPressedSorted(e.GetCurrentPoint(null).Properties);
+        var el = BuildMouseWheelChord(up, heldSorted);
         CommitChord(el);
         e.Handled = true;
     }
@@ -234,12 +251,53 @@ public sealed partial class HotkeysEditorControl : UserControl
             return;
 
         var props = e.GetCurrentPoint(RootLayout).Properties;
-        var buttonName = MapPointerUpdateKind(props.PointerUpdateKind);
-        if (buttonName == null)
+        var held = PointerInputMouseHeldButtons.GetPressedSorted(props);
+        if (held.Length == 0)
             return;
 
-        var el = BuildMouseButtonChord(buttonName);
-        CommitChord(el);
+        if (held.Length >= 2)
+        {
+            ClearMouseRecordPending();
+            CommitChord(BuildMouseChordChord(held));
+            e.Handled = true;
+            return;
+        }
+
+        _mouseRecordPendingSorted = (string[])held.Clone();
+        e.Handled = true;
+    }
+
+    private void RootLayout_OnPointerMovedCapture(object sender, PointerRoutedEventArgs e)
+    {
+        if (_armedCommandId == null || IsUnderFooterButtons(e.OriginalSource))
+            return;
+
+        var props = e.GetCurrentPoint(RootLayout).Properties;
+        var held = PointerInputMouseHeldButtons.GetPressedSorted(props);
+        if (held.Length < 2)
+            return;
+
+        ClearMouseRecordPending();
+        CommitChord(BuildMouseChordChord(held));
+        e.Handled = true;
+    }
+
+    private void RootLayout_OnPointerReleasedCapture(object sender, PointerRoutedEventArgs e)
+    {
+        if (_armedCommandId == null || IsUnderFooterButtons(e.OriginalSource))
+            return;
+
+        if (_mouseRecordPendingSorted is not { Length: 1 } pending)
+            return;
+
+        var props = e.GetCurrentPoint(RootLayout).Properties;
+        var held = PointerInputMouseHeldButtons.GetPressedSorted(props);
+        var pendingBtn = pending[0];
+        if (Array.IndexOf(held, pendingBtn) >= 0)
+            return;
+
+        ClearMouseRecordPending();
+        CommitChord(BuildMouseButtonChord(pendingBtn));
         e.Handled = true;
     }
 
@@ -322,7 +380,7 @@ public sealed partial class HotkeysEditorControl : UserControl
         e.Handled = true;
     }
 
-    private static JsonElement BuildMouseWheelChord(bool up)
+    private static JsonElement BuildMouseWheelChord(bool up, string[] heldSorted)
     {
         var (c, s, a, w) = WinUiKeyboardInterop.GetModifierStates();
         var chordObj = new Dictionary<string, object>
@@ -330,6 +388,8 @@ public sealed partial class HotkeysEditorControl : UserControl
             ["kind"] = "mouseWheel",
             ["wheel"] = up ? "Up" : "Down",
         };
+        if (heldSorted is { Length: > 0 })
+            chordObj["heldButtons"] = heldSorted;
         AppendModifiersIfAny(chordObj, c, s, a, w);
         var json = JsonSerializer.Serialize(chordObj);
         return JsonSerializer.Deserialize<JsonElement>(json)!;
@@ -343,6 +403,19 @@ public sealed partial class HotkeysEditorControl : UserControl
             ["kind"] = "mouseButton",
             ["button"] = buttonName,
             ["clickCount"] = 1,
+        };
+        AppendModifiersIfAny(chordObj, c, s, a, w);
+        var json = JsonSerializer.Serialize(chordObj);
+        return JsonSerializer.Deserialize<JsonElement>(json)!;
+    }
+
+    private static JsonElement BuildMouseChordChord(string[] sortedUniqueButtons)
+    {
+        var (c, s, a, w) = WinUiKeyboardInterop.GetModifierStates();
+        var chordObj = new Dictionary<string, object>
+        {
+            ["kind"] = "mouseChord",
+            ["buttons"] = sortedUniqueButtons,
         };
         AppendModifiersIfAny(chordObj, c, s, a, w);
         var json = JsonSerializer.Serialize(chordObj);
@@ -363,17 +436,6 @@ public sealed partial class HotkeysEditorControl : UserControl
         if (list.Count > 0)
             chordObj["modifiers"] = list;
     }
-
-    private static string? MapPointerUpdateKind(PointerUpdateKind k) =>
-        k switch
-        {
-            PointerUpdateKind.LeftButtonPressed => "Left",
-            PointerUpdateKind.RightButtonPressed => "Right",
-            PointerUpdateKind.MiddleButtonPressed => "Middle",
-            PointerUpdateKind.XButton1Pressed => "X1",
-            PointerUpdateKind.XButton2Pressed => "X2",
-            _ => null,
-        };
 
     private void RefreshChordDisplay(string commandId)
     {
@@ -437,7 +499,7 @@ public sealed partial class HotkeysEditorControl : UserControl
     private void CloseButton_Click(object sender, RoutedEventArgs e)
     {
         DisarmCapture(restoreFocusToSource: false);
-        RequestCloseWindow?.Invoke();
+        RequestDismissPreferences?.Invoke();
     }
 
     private async void CancelButton_Click(object sender, RoutedEventArgs e)

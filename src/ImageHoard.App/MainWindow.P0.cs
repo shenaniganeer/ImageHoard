@@ -3,8 +3,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using ImageHoard.Core.Browse;
 using ImageHoard.Core.Input;
-using ImageHoard.Core.Logging;
-using ImageHoard.Core.Metrics;
 using ImageHoard.Core.Services;
 using ImageHoard.Core.Slideshow;
 using ImageHoard.Core.Sort;
@@ -20,7 +18,6 @@ namespace ImageHoard.App;
 
 public sealed partial class MainWindow
 {
-    private readonly Stack<(string Path, SortFlagState Previous)> _sortUndoStack = new();
     private SlideshowCoordinator? _slideshow;
     private bool _slideshowUiActive;
     private ImageFitMode _fitMode = ImageFitMode.Fit;
@@ -31,6 +28,16 @@ public sealed partial class MainWindow
         Fit,
         Fill,
         OneToOne,
+    }
+
+    private void StopSlideshowSession()
+    {
+        if (!_slideshowUiActive && _slideshow == null)
+            return;
+        _slideshowUiActive = false;
+        _slideshow?.Tree.StopEnumeration();
+        _slideshow = null;
+        UpdateSlideshowScopeBadge();
     }
 
     internal bool TryHandleSlideshowKeys(KeyRoutedEventArgs e)
@@ -86,9 +93,13 @@ public sealed partial class MainWindow
         IncludeSubfoldersToggle.IsChecked = _layoutState.IncludeSubfoldersInList;
         UpdateSortMenuChecks();
         UpdateFileDetailsMenuChecks();
+        UpdateFolderDetailsMenuChecks();
         UpdatePreviewStretch();
         UpdateFitModeMenuChecks();
         ApplyBrowserFileDetailsChrome();
+        ApplyBrowserFolderDetailsChrome();
+        SyncBrowserFolderListHeaderNodes();
+        SyncBrowserFileListHeaderNodes();
         TryLoadInputProfile();
     }
 
@@ -164,12 +175,21 @@ public sealed partial class MainWindow
         ShowBrowserFileDateToggle.IsChecked = _layoutState.ShowBrowserFileDate;
     }
 
+    private void UpdateFolderDetailsMenuChecks()
+    {
+        ShowBrowserFolderColumnHeadingsToggle.IsChecked = _layoutState.ShowBrowserFolderColumnHeadings;
+        ShowBrowserFolderDateToggle.IsChecked = _layoutState.ShowBrowserFolderDate;
+        ShowBrowserFolderSizeToggle.IsChecked = _layoutState.ShowBrowserFolderSize;
+        ShowBrowserFolderImageCountToggle.IsChecked = _layoutState.ShowBrowserFolderImageCount;
+    }
+
     private void ShowBrowserFileColumnHeadingsToggle_Click(object sender, RoutedEventArgs e)
     {
         if (sender is ToggleMenuFlyoutItem t)
         {
             _layoutState.ShowBrowserFileColumnHeadings = t.IsChecked == true;
             PersistLayout();
+            SyncBrowserFolderListHeaderNodes();
             SyncBrowserFileListHeaderNodes();
             ApplyBrowserFileDetailsChrome();
         }
@@ -193,6 +213,82 @@ public sealed partial class MainWindow
             PersistLayout();
             ApplyBrowserFileDetailsChrome();
         }
+    }
+
+    private void ShowBrowserFolderColumnHeadingsToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleMenuFlyoutItem t)
+        {
+            _layoutState.ShowBrowserFolderColumnHeadings = t.IsChecked == true;
+            PersistLayout();
+            SyncBrowserFolderListHeaderNodes();
+            ApplyBrowserFolderDetailsChrome();
+        }
+    }
+
+    private void ShowBrowserFolderDateToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleMenuFlyoutItem t)
+        {
+            _layoutState.ShowBrowserFolderDate = t.IsChecked == true;
+            PersistLayout();
+            ApplyBrowserFolderDetailsChrome();
+        }
+    }
+
+    private void ShowBrowserFolderSizeToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleMenuFlyoutItem t)
+        {
+            _layoutState.ShowBrowserFolderSize = t.IsChecked == true;
+            PersistLayout();
+            ApplyBrowserFolderDetailsChrome();
+            RefreshAllFolderEntrySizingDisplays();
+            if (_layoutState.CalculateFolderSizesInBackground
+                && (_layoutState.ShowBrowserFolderSize || _layoutState.ShowBrowserFolderImageCount))
+                EnqueueFolderMetricsForAllVisibleFolderPaths();
+        }
+    }
+
+    private void ShowBrowserFolderImageCountToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleMenuFlyoutItem t)
+        {
+            _layoutState.ShowBrowserFolderImageCount = t.IsChecked == true;
+            PersistLayout();
+            ApplyBrowserFolderDetailsChrome();
+            RefreshAllFolderEntrySizingDisplays();
+            if (_layoutState.CalculateFolderSizesInBackground
+                && (_layoutState.ShowBrowserFolderSize || _layoutState.ShowBrowserFolderImageCount))
+                EnqueueFolderMetricsForAllVisibleFolderPaths();
+        }
+    }
+
+    private void FolderBrowserHeaderSort_Name_Click(object sender, RoutedEventArgs e)
+    {
+        _layoutState.FolderListSort = FolderListSortKind.NameNatural;
+        PersistLayout();
+        ResortAllFolderGroups();
+        SyncBrowserFolderListHeaderNodes();
+        ApplyBrowserFolderDetailsChrome();
+    }
+
+    private void FolderBrowserHeaderSort_Date_Click(object sender, RoutedEventArgs e)
+    {
+        _layoutState.FolderListSort = FolderListSortKind.DateModified;
+        PersistLayout();
+        ResortAllFolderGroups();
+        SyncBrowserFolderListHeaderNodes();
+        ApplyBrowserFolderDetailsChrome();
+    }
+
+    private void FolderBrowserHeaderSort_Size_Click(object sender, RoutedEventArgs e)
+    {
+        _layoutState.FolderListSort = FolderListSortKind.AggregateSize;
+        PersistLayout();
+        ResortAllFolderGroups();
+        SyncBrowserFolderListHeaderNodes();
+        ApplyBrowserFolderDetailsChrome();
     }
 
     private void UpdateFitModeMenuChecks()
@@ -450,25 +546,6 @@ public sealed partial class MainWindow
         TryRevealPathInExplorer(row.FullPath, isDirectory: false);
     }
 
-    private async void BrowseComputeMetrics_Click(object sender, RoutedEventArgs e)
-    {
-        if (string.IsNullOrEmpty(_currentFolderPath))
-            return;
-        SetTransientStatus("Computing folder metrics…");
-        try
-        {
-            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-            var snap = await FolderMetricsScanner.ScanSubtreeAsync(AppServices.FileSystem, _currentFolderPath, cts.Token);
-            await FolderMetricsCacheStore.AppendSnapshotAsync(AppDataPaths.FolderMetricsCachePath, snap, cts.Token);
-            SetTransientStatus(
-                $"Metrics: {snap.ImageFileCount} images, {snap.TotalFileCount} files, {snap.AggregateSizeBytes / (1024 * 1024)} MiB (cached)");
-        }
-        catch (Exception ex)
-        {
-            SetTransientStatus("Metrics failed: " + ex.Message);
-        }
-    }
-
     private async void SlideshowStart_Click(object sender, RoutedEventArgs e) =>
         await StartSlideshowFromTreeRootAsync(_currentFolderPath).ConfigureAwait(true);
 
@@ -504,8 +581,7 @@ public sealed partial class MainWindow
         if (!_slideshow.Tree.TryMoveNext(out var first) || first == null)
         {
             SetTransientStatus("No images under that folder.");
-            _slideshowUiActive = false;
-            _slideshow = null;
+            StopSlideshowSession();
             return;
         }
 
@@ -575,26 +651,28 @@ public sealed partial class MainWindow
             return;
         var current = _sortSession.GetState(row.FullPath);
         var resolved = SortFlagInput.ResolveToggle(current, state);
-        _sortUndoStack.Push((row.FullPath, current));
         _sortSession.SetState(row.FullPath, resolved);
         UpdatePathOverlays();
         RefreshSortFlagDisplayInList(row.FullPath);
+        EnsurePreviewMatchesBrowseNavigationMode();
     }
 
-    private void SortUndoLastFlagFromInput()
+    private void SortClearAllFlagsFromInput()
     {
-        if (_sortUndoStack.Count == 0)
+        if (_sortSession.States.Count == 0)
         {
-            SetTransientStatus("Nothing to undo.");
+            SetTransientStatus("No flags to clear.");
             return;
         }
 
-        var (path, prev) = _sortUndoStack.Pop();
-        _sortSession.SetState(path, prev);
+        _sortSession.Clear();
         UpdatePathOverlays();
-        RefreshSortFlagDisplayInList(path);
-        SetTransientStatus("Undid last flag change.");
+        RefreshAllSortFlagDisplaysInList();
+        EnsurePreviewMatchesBrowseNavigationMode();
+        SetTransientStatus("Cleared all sort flags.");
     }
+
+    private void SortClearAllFlags_Click(object sender, RoutedEventArgs e) => SortClearAllFlagsFromInput();
 
     private void ViewCycleFitFromInput()
     {
@@ -610,172 +688,7 @@ public sealed partial class MainWindow
     }
 
     private void OptionsPreferences_Click(object sender, RoutedEventArgs e) =>
-        PreferencesWindow.ShowOrActivate(this);
-
-    private async void SortBatchDelete_Click(object sender, RoutedEventArgs e)
-    {
-        if (string.IsNullOrEmpty(_currentFolderPath))
-            return;
-        List<string> paths;
-        try
-        {
-            paths = await FolderImagePathCollection.CollectAsync(
-                AppServices.FileSystem,
-                _currentFolderPath,
-                _layoutState.IncludeSubfoldersInList).ConfigureAwait(true);
-        }
-        catch (Exception ex)
-        {
-            SetTransientStatus("Could not list images: " + ex.Message);
-            return;
-        }
-
-        if (paths.Count == 0)
-            return;
-        var (keep, delete, unset) = _sortSession.CountStates(paths);
-        if (unset > 0)
-        {
-            var block = new ContentDialog
-            {
-                Title = "Can't delete yet",
-                Content = new TextBlock
-                {
-                    Text =
-                        $"You still have {unset} image(s) with no decision. Mark each image Keep or Delete before running batch delete.",
-                    TextWrapping = TextWrapping.WrapWholeWords,
-                },
-                CloseButtonText = "OK",
-                XamlRoot = RootGrid.XamlRoot,
-            };
-            await block.ShowAsync();
-            return;
-        }
-
-        var notKeep = paths.Count(p => _sortSession.GetState(p) != SortFlagState.Keep);
-        var confirm = new ContentDialog
-        {
-            Title = "Delete non-keepers?",
-            Content = new TextBlock
-            {
-                Text =
-                    $"Recycle Bin will receive {notKeep} image(s) (not marked Keep). {keep} image(s) marked Keep are unchanged.",
-                TextWrapping = TextWrapping.WrapWholeWords,
-            },
-            PrimaryButtonText = $"Delete {notKeep} image(s)",
-            CloseButtonText = "Cancel",
-            XamlRoot = RootGrid.XamlRoot,
-        };
-        if (await confirm.ShowAsync() != ContentDialogResult.Primary)
-            return;
-
-        if (!BatchDeletePlanner.TryGetDeletionSet(paths, _sortSession, out var toDelete, out _))
-            return;
-
-        var entries = new List<OperationLogEntry>();
-        var ok = 0;
-        var failed = 0;
-        foreach (var p in toDelete!)
-        {
-            try
-            {
-                ShellRecycle.SendFileToRecycleBin(p);
-                ok++;
-                entries.Add(new OperationLogEntry { Path = p, Result = "Ok" });
-            }
-            catch (Exception ex)
-            {
-                failed++;
-                entries.Add(new OperationLogEntry { Path = p, Result = "Failed", Detail = ex.Message });
-            }
-        }
-
-        if (_session.LogDestructiveOperations)
-        {
-            var rec = new OperationLogBatchRecord
-            {
-                Operation = "BatchDelete",
-                Summary = new OperationLogSummary { Ok = ok, Failed = failed, Skipped = 0 },
-                Entries = entries,
-            };
-            try
-            {
-                await OperationLogWriter.AppendAsync(AppDataPaths.OperationsLogPath, rec);
-            }
-            catch
-            {
-                // ignored
-            }
-        }
-
-        SetTransientStatus($"Sent {ok} image(s) to the Recycle Bin (not marked Keep).");
-        if (!string.IsNullOrEmpty(_currentFolderPath))
-            await NavigateToFolderAsync(_currentFolderPath).ConfigureAwait(true);
-    }
-
-    private async void SortMoveArchive_Click(object sender, RoutedEventArgs e)
-    {
-        if (string.IsNullOrEmpty(_currentFolderPath))
-            return;
-        if (string.IsNullOrEmpty(_session.ArchiveRoot))
-        {
-            SetTransientStatus("Set archive root in Settings first.");
-            return;
-        }
-
-        var name = new DirectoryInfo(_currentFolderPath).Name;
-        var dest = Path.Combine(_session.ArchiveRoot!, name);
-        var dlg = new ContentDialog
-        {
-            Title = "Move to archive",
-            Content = new TextBlock
-            {
-                Text = $"Move folder:\n{_currentFolderPath}\n→\n{dest}",
-                TextWrapping = TextWrapping.WrapWholeWords,
-            },
-            PrimaryButtonText = "Move",
-            CloseButtonText = "Cancel",
-            XamlRoot = RootGrid.XamlRoot,
-        };
-        if (await dlg.ShowAsync() != ContentDialogResult.Primary)
-            return;
-
-        try
-        {
-            await AppServices.FileSystem.MoveDirectoryAsync(_currentFolderPath, dest);
-            if (_session.LogDestructiveOperations)
-            {
-                var rec = new OperationLogBatchRecord
-                {
-                    Operation = "MoveToArchive",
-                    Summary = new OperationLogSummary { Ok = 1, Failed = 0, Skipped = 0 },
-                    Entries =
-                    {
-                        new OperationLogEntry { Path = _currentFolderPath, Result = "Ok", Detail = dest },
-                    },
-                };
-                await OperationLogWriter.AppendAsync(AppDataPaths.OperationsLogPath, rec);
-            }
-
-            SetTransientStatus("Folder moved to archive.");
-            FolderTree.RootNodes.Clear();
-            _browseNavAnchorPath = null;
-            _currentFolderPath = null;
-            UpdateBrowserToolbar();
-            _session.LastBrowseFolder = null;
-            _session.LastSelectedImage = null;
-            PersistLayout();
-        }
-        catch (Exception ex)
-        {
-            SetTransientStatus("Move failed: " + ex.Message);
-        }
-    }
-
-    private async void SettingsArchiveRoot_Click(object sender, RoutedEventArgs e)
-    {
-        if (RootGrid.XamlRoot != null)
-            await ((IPreferencesSession)this).PromptEditArchiveRootAsync(RootGrid.XamlRoot);
-    }
+        ShowOrActivatePreferences();
 
     private void SettingsClearCaches_Click(object sender, RoutedEventArgs e)
     {

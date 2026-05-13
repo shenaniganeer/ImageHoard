@@ -16,16 +16,59 @@
             <local:InvertedBoolToVisibilityConverter x:Key="InvBoolToVis" />
             <DataTemplate x:Key="BrowserFolderItemTemplate">
                 <Grid
-                    MinHeight="28"
-                    Padding="0,2"
+                    MinHeight="22"
+                    Padding="0"
                     DataContext="{Binding Content}"
                     RightTapped="BrowserTreeRow_RightTapped">
-                    <TextBlock
-                        VerticalAlignment="Center"
-                        Text="{Binding DisplayLabel}"
-                        TextTrimming="CharacterEllipsis"
-                        Visibility="{Binding IsRenaming, Converter={StaticResource InvBoolToVis}}" />
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="120" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid
+                        Grid.Column="0"
+                        Grid.ColumnSpan="4"
+                        ColumnSpacing="10"
+                        Visibility="{Binding IsRenaming, Converter={StaticResource InvBoolToVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="120" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Grid.Column="0"
+                            VerticalAlignment="Center"
+                            Text="{Binding DisplayLabel}"
+                            TextTrimming="CharacterEllipsis" />
+                        <TextBlock
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            MinWidth="56"
+                            TextAlignment="Right"
+                            Text="{Binding SizeDisplay}"
+                            TextTrimming="CharacterEllipsis"
+                            Visibility="{Binding SizeDetailVisibility}" />
+                        <TextBlock
+                            Grid.Column="2"
+                            VerticalAlignment="Center"
+                            MinWidth="48"
+                            TextAlignment="Right"
+                            Text="{Binding ImageCountDisplay}"
+                            TextTrimming="CharacterEllipsis"
+                            Visibility="{Binding ImageCountDetailVisibility}" />
+                        <TextBlock
+                            Grid.Column="3"
+                            VerticalAlignment="Center"
+                            MinWidth="120"
+                            Text="{Binding ModifiedDisplay}"
+                            TextTrimming="CharacterEllipsis"
+                            Visibility="{Binding DateDetailVisibility}" />
+                    </Grid>
                     <TextBox
+                        Grid.Column="0"
+                        Grid.ColumnSpan="4"
                         VerticalAlignment="Center"
                         Text="{Binding EditingName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                         Visibility="{Binding IsRenaming, Converter={StaticResource BoolToVis}}"
@@ -36,8 +79,8 @@
             </DataTemplate>
             <DataTemplate x:Key="BrowserFileItemTemplate">
                 <Grid
-                    MinHeight="28"
-                    Padding="0,2"
+                    MinHeight="22"
+                    Padding="0"
                     DataContext="{Binding Content}"
                     RightTapped="BrowserTreeRow_RightTapped">
                     <Grid.ColumnDefinitions>
@@ -103,7 +146,7 @@
                 </Grid>
             </DataTemplate>
             <DataTemplate x:Key="BrowserFileListHeaderTemplate">
-                <Grid MinHeight="20" Padding="0,0,0,4" ColumnSpacing="10" DataContext="{Binding Content}">
+                <Grid MinHeight="18" Padding="0,0,0,2" ColumnSpacing="10" DataContext="{Binding Content}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" MinWidth="120" />
                         <ColumnDefinition Width="Auto" />
@@ -134,15 +177,109 @@
                         Visibility="{Binding DateHeaderVisibility}" />
                 </Grid>
             </DataTemplate>
+            <DataTemplate x:Key="BrowserFolderListHeaderTemplate">
+                <Grid MinHeight="18" Padding="0,0,0,2" ColumnSpacing="10" DataContext="{Binding Content}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="120" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button
+                        Grid.Column="0"
+                        Padding="0,0,4,0"
+                        HorizontalContentAlignment="Left"
+                        VerticalAlignment="Center"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Click="FolderBrowserHeaderSort_Name_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                Opacity="0.9"
+                                Style="{ThemeResource CaptionTextBlockStyle}"
+                                Text="Name" />
+                            <TextBlock
+                                Margin="4,0,0,0"
+                                VerticalAlignment="Center"
+                                Opacity="0.75"
+                                Style="{ThemeResource CaptionTextBlockStyle}"
+                                Text="▼"
+                                Visibility="{Binding NameSortIndicatorVisibility}" />
+                        </StackPanel>
+                    </Button>
+                    <Button
+                        Grid.Column="1"
+                        Padding="4,0,4,0"
+                        HorizontalContentAlignment="Right"
+                        VerticalAlignment="Center"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Click="FolderBrowserHeaderSort_Size_Click"
+                        Visibility="{Binding SizeHeaderVisibility}">
+                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                            <TextBlock
+                                MinWidth="56"
+                                TextAlignment="Right"
+                                VerticalAlignment="Center"
+                                Opacity="0.9"
+                                Style="{ThemeResource CaptionTextBlockStyle}"
+                                Text="Size" />
+                            <TextBlock
+                                Margin="4,0,0,0"
+                                VerticalAlignment="Center"
+                                Opacity="0.75"
+                                Style="{ThemeResource CaptionTextBlockStyle}"
+                                Text="▼"
+                                Visibility="{Binding SizeSortIndicatorVisibility}" />
+                        </StackPanel>
+                    </Button>
+                    <TextBlock
+                        Grid.Column="2"
+                        VerticalAlignment="Center"
+                        MinWidth="48"
+                        TextAlignment="Right"
+                        Opacity="0.9"
+                        Style="{ThemeResource CaptionTextBlockStyle}"
+                        Text="Images"
+                        Visibility="{Binding ImageCountHeaderVisibility}" />
+                    <Button
+                        Grid.Column="3"
+                        Padding="4,0,0,0"
+                        HorizontalContentAlignment="Left"
+                        VerticalAlignment="Center"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Click="FolderBrowserHeaderSort_Date_Click"
+                        Visibility="{Binding DateHeaderVisibility}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock
+                                MinWidth="120"
+                                VerticalAlignment="Center"
+                                Opacity="0.9"
+                                Style="{ThemeResource CaptionTextBlockStyle}"
+                                Text="Date modified" />
+                            <TextBlock
+                                Margin="4,0,0,0"
+                                VerticalAlignment="Center"
+                                Opacity="0.75"
+                                Style="{ThemeResource CaptionTextBlockStyle}"
+                                Text="▼"
+                                Visibility="{Binding DateSortIndicatorVisibility}" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </DataTemplate>
         </Grid.Resources>
         <Grid x:Name="NormalLayout" Visibility="Visible">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" MinHeight="160" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <MenuBar Grid.Row="0">
                 <MenuBarItem Title="File">
-                    <MenuFlyoutItem Text="Open…" Click="OpenFolder_Click" />
+                    <MenuFlyoutItem Text="Open folder…" Click="OpenFolder_Click" />
                     <MenuFlyoutSubItem x:Name="FileFavoritesSubMenu" Text="Favorites" />
                     <MenuFlyoutSeparator />
                     <MenuFlyoutItem Text="Exit" Click="Exit_Click" />
@@ -192,8 +329,62 @@
                             Text="Show date modified"
                             Click="ShowBrowserFileDateToggle_Click" />
                     </MenuFlyoutSubItem>
-                    <MenuFlyoutSeparator />
-                    <MenuFlyoutSubItem Text="Image overlay">
+                    <MenuFlyoutSubItem Text="Folder details">
+                        <ToggleMenuFlyoutItem
+                            x:Name="ShowBrowserFolderColumnHeadingsToggle"
+                            Text="Show column headings"
+                            Click="ShowBrowserFolderColumnHeadingsToggle_Click" />
+                        <ToggleMenuFlyoutItem
+                            x:Name="ShowBrowserFolderDateToggle"
+                            Text="Show date modified"
+                            Click="ShowBrowserFolderDateToggle_Click" />
+                        <ToggleMenuFlyoutItem
+                            x:Name="ShowBrowserFolderSizeToggle"
+                            Text="Show folder size"
+                            Click="ShowBrowserFolderSizeToggle_Click" />
+                        <ToggleMenuFlyoutItem
+                            x:Name="ShowBrowserFolderImageCountToggle"
+                            Text="Show image count"
+                            Click="ShowBrowserFolderImageCountToggle_Click" />
+                    </MenuFlyoutSubItem>
+                </MenuBarItem>
+                <MenuBarItem Title="Browse">
+                    <MenuFlyoutSubItem Text="Navigation mode">
+                        <MenuFlyoutSubItem.KeyboardAccelerators>
+                            <KeyboardAccelerator Key="N" Modifiers="Control,Shift" />
+                        </MenuFlyoutSubItem.KeyboardAccelerators>
+                        <RadioMenuFlyoutItem
+                            x:Name="BrowseNavModeAllItem"
+                            Text="All images in folder"
+                            GroupName="BrowseNavigationMode"
+                            Click="BrowseNavModeAll_Click" />
+                        <RadioMenuFlyoutItem
+                            x:Name="BrowseNavModeKeepItem"
+                            Text="Only images flagged Keep"
+                            GroupName="BrowseNavigationMode"
+                            Click="BrowseNavModeKeep_Click" />
+                        <RadioMenuFlyoutItem
+                            x:Name="BrowseNavModeNotKeepItem"
+                            Text="Only images not flagged Keep"
+                            GroupName="BrowseNavigationMode"
+                            Click="BrowseNavModeNotKeep_Click" />
+                        <RadioMenuFlyoutItem
+                            x:Name="BrowseNavModeUnflaggedItem"
+                            Text="Only unflagged images"
+                            GroupName="BrowseNavigationMode"
+                            Click="BrowseNavModeUnflagged_Click" />
+                        <RadioMenuFlyoutItem
+                            x:Name="BrowseNavModeDeleteItem"
+                            Text="Only images flagged Delete"
+                            GroupName="BrowseNavigationMode"
+                            Click="BrowseNavModeDelete_Click" />
+                    </MenuFlyoutSubItem>
+                </MenuBarItem>
+                <MenuBarItem Title="Sort">
+                    <MenuFlyoutItem Text="Clear all flags" Click="SortClearAllFlags_Click" />
+                </MenuBarItem>
+                <MenuBarItem Title="Image">
+                    <MenuFlyoutSubItem Text="Info overlay">
                         <ToggleMenuFlyoutItem
                             x:Name="ShowPathOnOverlayWindowedToggle"
                             Text="Show file path (windowed preview)"
@@ -229,10 +420,8 @@
                 <MenuBarItem Title="Settings">
                     <MenuFlyoutItem Text="Preferences…" Click="OptionsPreferences_Click" />
                     <MenuFlyoutSeparator />
-                    <MenuFlyoutItem Text="Set archive root…" Click="SettingsArchiveRoot_Click" />
                     <MenuFlyoutItem Text="Clear caches (metrics)" Click="SettingsClearCaches_Click" />
                     <MenuFlyoutItem Text="Clear caches + operation log" Click="SettingsClearCachesAndLog_Click" />
-                    <MenuFlyoutItem Text="Compute folder metrics…" Click="BrowseComputeMetrics_Click" />
                     <MenuFlyoutItem Text="About random fairness…" Click="SlideshowFairnessHelp_Click" />
                 </MenuBarItem>
             </MenuBar>
@@ -250,6 +439,7 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" MinHeight="80" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Grid
                             Grid.Row="0"
@@ -286,8 +476,37 @@
                             x:Name="FolderTree"
                             Grid.Row="1"
                             MinHeight="80"
+                            Collapsed="FolderTree_OnCollapsed"
                             Expanding="FolderTree_OnExpanding"
-                            SelectionChanged="FolderTree_SelectionChanged" />
+                            SelectionChanged="FolderTree_SelectionChanged">
+                            <TreeView.ItemContainerStyle>
+                                <Style TargetType="TreeViewItem">
+                                    <Setter Property="MinHeight" Value="22" />
+                                    <Setter Property="Padding" Value="0,0,0,0" />
+                                </Style>
+                            </TreeView.ItemContainerStyle>
+                        </TreeView>
+                        <Grid
+                            Grid.Row="2"
+                            MinHeight="32"
+                            Padding="0,4,0,4"
+                            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                            BorderThickness="0,1,0,0">
+                            <Button
+                                x:Name="ArchiveTargetBrowserRowButton"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Left"
+                                VerticalAlignment="Center"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="4,0"
+                                Click="ArchiveTargetBrowserRow_Click">
+                                <TextBlock
+                                    x:Name="ArchiveTargetBrowserPathText"
+                                    VerticalAlignment="Center"
+                                    TextTrimming="CharacterEllipsis" />
+                            </Button>
+                        </Grid>
                     </Grid>
                     <local:BrowserPreviewSplitterGrid
                         x:Name="SplitterBrowserPreview"
@@ -330,28 +549,48 @@
                             Background="#99000000"
                             CornerRadius="4"
                             Visibility="Collapsed">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
+                            <StackPanel Spacing="4">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock
+                                        x:Name="NormalPathText"
+                                        Foreground="White"
+                                        FontSize="12"
+                                        TextWrapping="WrapWholeWords" />
+                                    <TextBlock
+                                        x:Name="NormalPathPositionText"
+                                        Foreground="White"
+                                        FontSize="12"
+                                        VerticalAlignment="Center"
+                                        Visibility="Collapsed" />
+                                    <SymbolIcon
+                                        x:Name="NormalPathFlagIcon"
+                                        Height="14"
+                                        Width="14"
+                                        Visibility="Collapsed" />
+                                </StackPanel>
                                 <TextBlock
-                                    x:Name="NormalPathText"
+                                    x:Name="NormalNavigationModeText"
                                     Foreground="White"
                                     FontSize="12"
-                                    TextWrapping="WrapWholeWords" />
-                                <TextBlock
-                                    x:Name="NormalPathPositionText"
-                                    Foreground="White"
-                                    FontSize="12"
-                                    VerticalAlignment="Center"
-                                    Visibility="Collapsed" />
-                                <SymbolIcon
-                                    x:Name="NormalPathFlagIcon"
-                                    Height="14"
-                                    Width="14"
+                                    Opacity="0.95"
                                     Visibility="Collapsed" />
                             </StackPanel>
                         </Border>
                     </Grid>
                 </Grid>
             </Grid>
+            <Border
+                Grid.Row="2"
+                Padding="8,4"
+                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                BorderThickness="0,1,0,0"
+                Background="{ThemeResource LayerOnMicaBaseAltFillColorDefaultBrush}">
+                <TextBlock
+                    x:Name="TransientStatusText"
+                    Style="{ThemeResource CaptionTextBlockStyle}"
+                    TextWrapping="WrapWholeWords"
+                    Opacity="0.95" />
+            </Border>
         </Grid>
         <Grid
             x:Name="FullscreenLayout"
@@ -373,22 +612,30 @@
                 Background="#99000000"
                 CornerRadius="4"
                 Visibility="Collapsed">
-                <StackPanel Orientation="Horizontal" Spacing="8">
+                <StackPanel Spacing="4">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock
+                            x:Name="FullscreenPathText"
+                            Foreground="White"
+                            FontSize="12"
+                            TextWrapping="WrapWholeWords" />
+                        <TextBlock
+                            x:Name="FullscreenPathPositionText"
+                            Foreground="White"
+                            FontSize="12"
+                            VerticalAlignment="Center"
+                            Visibility="Collapsed" />
+                        <SymbolIcon
+                            x:Name="FullscreenPathFlagIcon"
+                            Height="14"
+                            Width="14"
+                            Visibility="Collapsed" />
+                    </StackPanel>
                     <TextBlock
-                        x:Name="FullscreenPathText"
+                        x:Name="FullscreenNavigationModeText"
                         Foreground="White"
                         FontSize="12"
-                        TextWrapping="WrapWholeWords" />
-                    <TextBlock
-                        x:Name="FullscreenPathPositionText"
-                        Foreground="White"
-                        FontSize="12"
-                        VerticalAlignment="Center"
-                        Visibility="Collapsed" />
-                    <SymbolIcon
-                        x:Name="FullscreenPathFlagIcon"
-                        Height="14"
-                        Width="14"
+                        Opacity="0.95"
                         Visibility="Collapsed" />
                 </StackPanel>
             </Border>
@@ -407,6 +654,68 @@
                     FontSize="12"
                     FontWeight="SemiBold" />
             </Border>
+        </Grid>
+        <Grid
+            x:Name="DeleteArchiveWizardOverlayRoot"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"
+            Background="#B3000000"
+            IsHitTestVisible="True"
+            IsTabStop="True"
+            PreviewKeyDown="DeleteArchiveWizardOverlayRoot_PreviewKeyDown"
+            Visibility="Collapsed">
+            <Border
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                MaxWidth="440"
+                MaxHeight="680"
+                Margin="24"
+                Padding="0"
+                Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8">
+                <local:DeleteArchiveWizardPanel x:Name="DeleteArchiveWizardPanelElement" />
+            </Border>
+        </Grid>
+        <Grid
+            x:Name="PreferencesOverlayRoot"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"
+            Background="#B3000000"
+            IsHitTestVisible="True"
+            IsTabStop="True"
+            PreviewKeyDown="PreferencesOverlayRoot_PreviewKeyDown"
+            Visibility="Collapsed">
+            <Grid
+                MaxWidth="960"
+                MaxHeight="720"
+                Margin="24"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0" Padding="0,0,0,8">
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        Style="{ThemeResource SubtitleTextBlockStyle}"
+                        Text="Preferences" />
+                    <Button
+                        HorizontalAlignment="Right"
+                        Click="PreferencesOverlayClose_Click"
+                        Content="Close" />
+                </Grid>
+                <Border
+                    Grid.Row="1"
+                    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                    BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                    <local:PreferencesPanel x:Name="PreferencesPanelElement" />
+                </Border>
+            </Grid>
         </Grid>
     </Grid>
 </Window>

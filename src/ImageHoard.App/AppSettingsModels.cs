@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using ImageHoard.Core.Browse;
 
 namespace ImageHoard.App;
 
@@ -21,6 +22,10 @@ internal sealed class AppSettingsFile
 
     [JsonPropertyName("slideshowAllowDelete")]
     public bool? SlideshowAllowDelete { get; set; }
+
+    /// <summary>When true, move-to-archive from the delete/archive wizard runs inverse-keep delete in the folder first.</summary>
+    [JsonPropertyName("inverseKeepDeleteBeforeArchiveMove")]
+    public bool? InverseKeepDeleteBeforeArchiveMove { get; set; }
 }
 
 internal sealed class PathsSettingsSection
@@ -89,6 +94,24 @@ internal sealed class UiSettingsSection
     [JsonPropertyName("showBrowserFileColumnHeadings")]
     public bool? ShowBrowserFileColumnHeadings { get; set; }
 
+    [JsonPropertyName("showBrowserFolderColumnHeadings")]
+    public bool? ShowBrowserFolderColumnHeadings { get; set; }
+
+    [JsonPropertyName("showBrowserFolderDate")]
+    public bool? ShowBrowserFolderDate { get; set; }
+
+    [JsonPropertyName("showBrowserFolderSize")]
+    public bool? ShowBrowserFolderSize { get; set; }
+
+    [JsonPropertyName("showBrowserFolderImageCount")]
+    public bool? ShowBrowserFolderImageCount { get; set; }
+
+    [JsonPropertyName("calculateFolderSizesInBackground")]
+    public bool? CalculateFolderSizesInBackground { get; set; }
+
+    [JsonPropertyName("folderListSort")]
+    public string? FolderListSort { get; set; }
+
     /// <summary>Seconds of backlog before coalescing rapid preview navigation (0 or less = never coalesce; show every queued step).</summary>
     [JsonPropertyName("previewNavCatchUpLagSeconds")]
     public double? PreviewNavCatchUpLagSeconds { get; set; }
@@ -124,6 +147,18 @@ internal sealed class UiLayoutState
 
     public bool ShowBrowserFileColumnHeadings { get; set; } = true;
 
+    public bool ShowBrowserFolderColumnHeadings { get; set; } = true;
+
+    public bool ShowBrowserFolderDate { get; set; } = true;
+
+    public bool ShowBrowserFolderSize { get; set; } = true;
+
+    public bool ShowBrowserFolderImageCount { get; set; } = true;
+
+    public bool CalculateFolderSizesInBackground { get; set; }
+
+    public FolderListSortKind FolderListSort { get; set; } = FolderListSortKind.NameNatural;
+
     /// <summary>When the oldest queued preview request exceeds this age (seconds) and more than one is queued, drop to the latest path. Values &lt;= 0 disable this coalescing.</summary>
     public double PreviewNavCatchUpLagSeconds { get; set; } = 0.5;
 }
@@ -151,4 +186,7 @@ internal sealed class AppSessionSettings
     public string? LastBrowseFolder { get; set; }
 
     public string? LastSelectedImage { get; set; }
+
+    /// <summary>Wizard default: delete non-keepers before moving the parent folder to archive.</summary>
+    public bool InverseKeepDeleteBeforeArchiveMove { get; set; }
 }

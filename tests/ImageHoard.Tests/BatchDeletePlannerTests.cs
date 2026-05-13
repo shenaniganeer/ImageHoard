@@ -45,4 +45,38 @@ public sealed class BatchDeletePlannerTests
         BatchDeletePlanner.TryGetDeletionSet(paths, session, out var del, out _);
         Assert.Contains("b.jpg", del!);
     }
+
+    [Fact]
+    public void GetDeleteFlaggedPaths_returns_only_delete_marked()
+    {
+        var paths = new[] { "a.jpg", "b.jpg", "c.jpg" };
+        var session = new SortSession();
+        session.SetState("a.jpg", SortFlagState.Keep);
+        session.SetState("b.jpg", SortFlagState.Delete);
+        // c unset
+
+        var del = BatchDeletePlanner.GetDeleteFlaggedPaths(paths, session);
+        Assert.Single(del);
+        Assert.Equal("b.jpg", del[0]);
+    }
+
+    [Fact]
+    public void GetInverseKeepDeletionSetIgnoringUnsetGate_includes_unset_and_delete_try_get_still_blocks()
+    {
+        var paths = new[] { "a.jpg", "b.jpg", "c.jpg" };
+        var session = new SortSession();
+        session.SetState("a.jpg", SortFlagState.Keep);
+        session.SetState("b.jpg", SortFlagState.Delete);
+        // c unset
+
+        var del = BatchDeletePlanner.GetInverseKeepDeletionSetIgnoringUnsetGate(paths, session);
+        Assert.Equal(2, del.Count);
+        Assert.Contains("b.jpg", del);
+        Assert.Contains("c.jpg", del);
+
+        var ok = BatchDeletePlanner.TryGetDeletionSet(paths, session, out var gated, out var reason);
+        Assert.False(ok);
+        Assert.Null(gated);
+        Assert.Equal("unset", reason);
+    }
 }

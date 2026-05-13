@@ -5,16 +5,86 @@ using ImageHoard.Core.Services;
 
 namespace ImageHoard.Core.Metrics;
 
+/// <summary>What a <see cref="FolderMetricsSnapshot"/> counted on disk (FR-BR-06 depth).</summary>
+public enum FolderMetricsScanScope
+{
+    /// <summary>Default for legacy cache rows: entire directory tree under <see cref="FolderMetricsSnapshot.Path"/>.</summary>
+    FullSubtree = 0,
+    /// <summary>Files directly in the directory only; no subdirectory descent.</summary>
+    ImmediateChildren = 1,
+}
+
 public sealed record FolderMetricsSnapshot(
     string Path,
     long AggregateSizeBytes,
     int TotalFileCount,
     int ImageFileCount,
-    DateTimeOffset? FolderMtimeUtc);
+    DateTimeOffset? FolderMtimeUtc,
+    FolderMetricsScanScope ScanScope = FolderMetricsScanScope.FullSubtree);
 
-/// <summary>FR-BR-06 — single-folder subtree scan (full subtree).</summary>
+/// <summary>FR-BR-06 — folder metrics: immediate listing or full subtree scan.</summary>
 public static class FolderMetricsScanner
 {
+    /// <summary>Counts only non-directory entries in <paramref name="directoryPath"/> (one list call).</summary>
+    public static async Task<FolderMetricsSnapshot> ScanImmediateFilesAsync(
+        IFileSystem fileSystem,
+        string directoryPath,
+        CancellationToken cancellationToken = default)
+    {
+        long size = 0;
+        var files = 0;
+        var images = 0;
+        DateTimeOffset? dirMtime = null;
+
+        try
+        {
+            var di = new DirectoryInfo(directoryPath);
+            if (di.Exists)
+                dirMtime = new DateTimeOffset(di.LastWriteTimeUtc);
+        }
+        catch
+        {
+            // ignored
+        }
+
+        IReadOnlyList<FileSystemEntry> entries;
+        try
+        {
+            entries = await fileSystem.ListDirectoryAsync(directoryPath, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            return new FolderMetricsSnapshot(directoryPath, 0, 0, 0, dirMtime, FolderMetricsScanScope.ImmediateChildren);
+        }
+
+        foreach (var entry in entries.Where(e => !e.IsDirectory))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            files++;
+            try
+            {
+                long len;
+                if (entry.LengthBytes is { } lb)
+                    len = lb;
+                else
+                {
+                    var fi = new FileInfo(entry.FullPath);
+                    len = fi.Length;
+                }
+
+                size += len;
+                if (ImageExtensions.IsImageFile(entry.FullPath))
+                    images++;
+            }
+            catch
+            {
+                // skip unreadable
+            }
+        }
+
+        return new FolderMetricsSnapshot(directoryPath, size, files, images, dirMtime, FolderMetricsScanScope.ImmediateChildren);
+    }
+
     public static async Task<FolderMetricsSnapshot> ScanSubtreeAsync(
         IFileSystem fileSystem,
         string directoryPath,
@@ -54,7 +124,7 @@ public static class FolderMetricsScanner
             }
         }
 
-        return new FolderMetricsSnapshot(directoryPath, size, files, images, dirMtime);
+        return new FolderMetricsSnapshot(directoryPath, size, files, images, dirMtime, FolderMetricsScanScope.FullSubtree);
     }
 
     private static async IAsyncEnumerable<string> EnumerateAllFilesRecursiveAsync(

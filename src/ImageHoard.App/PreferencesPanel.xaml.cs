@@ -1,34 +1,37 @@
 using Microsoft.UI.Dispatching;
-using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Foundation;
-using WinRT.Interop;
 
 namespace ImageHoard.App;
 
-public sealed partial class PreferencesWindow : Window
+public sealed partial class PreferencesPanel : UserControl
 {
-    private const double PreferencesNavPaneWidthBuffer = 16;
-    private const double PreferencesNavPaneMinOpenLength = 140;
+    private const double PreferencesNavPaneTextMargin = 24;
+    private const double PreferencesNavPaneListChrome = 40;
+    private const double PreferencesNavPaneMinOpenLength = 96;
 
-    private static PreferencesWindow? _instance;
-    private IPreferencesSession _host;
+    private IPreferencesSession _host = null!;
     private bool _suppressEvents;
     private bool _hotkeysTabPrimed;
 
-    public PreferencesWindow(IPreferencesSession host)
+    public PreferencesPanel() => InitializeComponent();
+
+    internal void SetHost(IPreferencesSession host) => _host = host;
+
+    /// <summary>Raised when the user dismisses preferences (e.g. Close on hotkeys tab).</summary>
+    public event EventHandler? RequestDismiss;
+
+    internal void OnOverlayShown()
     {
-        InitializeComponent();
-        _host = host;
-        Closed += (_, _) =>
-        {
-            _instance = null;
-            HotkeysEditor.RequestCloseWindow = null;
-        };
-        this.Activated += PreferencesWindow_Activated;
-        TryResize();
+        RefreshFromHost();
+        _ = DispatcherQueue.GetForCurrentThread().TryEnqueue(
+            DispatcherQueuePriority.Low,
+            ApplyMenuPaneWidthFromTitles);
     }
+
+    internal void OnOverlayHidden() =>
+        HotkeysEditor.RequestDismissPreferences = null;
 
     private void RootNav_Loaded(object sender, RoutedEventArgs e)
     {
@@ -44,55 +47,34 @@ public sealed partial class PreferencesWindow : Window
     private void ApplyMenuPaneWidthFromTitles()
     {
         RootNav.UpdateLayout();
-        var maxItem = 0.0;
+        var maxTextWidth = 0.0;
         foreach (var item in RootNav.MenuItems)
         {
             if (item is not NavigationViewItem nvi)
                 continue;
-            nvi.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            maxItem = Math.Max(maxItem, nvi.DesiredSize.Width);
-            if (nvi.ActualWidth > 0)
-                maxItem = Math.Max(maxItem, nvi.ActualWidth);
+            var title = nvi.Content as string ?? nvi.Content?.ToString() ?? string.Empty;
+            maxTextWidth = Math.Max(maxTextWidth, MeasureNavigationPaneTitleWidth(title));
         }
 
         RootNav.OpenPaneLength = Math.Max(
             PreferencesNavPaneMinOpenLength,
-            maxItem + PreferencesNavPaneWidthBuffer);
+            maxTextWidth + PreferencesNavPaneTextMargin + PreferencesNavPaneListChrome);
     }
 
-    public static void ShowOrActivate(IPreferencesSession host)
+    private double MeasureNavigationPaneTitleWidth(string text)
     {
-        if (_instance != null)
+        var tb = new TextBlock
         {
-            _instance._host = host;
-            _instance.RefreshFromHost();
-            _instance.Activate();
-            return;
-        }
+            Text = text,
+            XamlRoot = RootNav.XamlRoot,
+        };
 
-        var w = new PreferencesWindow(host);
-        _instance = w;
-        w.Activate();
-    }
+        if (Application.Current?.Resources.TryGetValue("BodyTextBlockStyle", out var bodyResource) == true
+            && bodyResource is Style bodyStyle)
+            tb.Style = bodyStyle;
 
-    private void PreferencesWindow_Activated(object sender, WindowActivatedEventArgs args)
-    {
-        if (args.WindowActivationState != WindowActivationState.Deactivated)
-            RefreshFromHost();
-    }
-
-    private void TryResize()
-    {
-        try
-        {
-            var hwnd = WindowNative.GetWindowHandle(this);
-            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
-            AppWindow.GetFromWindowId(windowId).Resize(new Windows.Graphics.SizeInt32(880, 640));
-        }
-        catch
-        {
-            // best-effort
-        }
+        tb.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        return tb.DesiredSize.Width;
     }
 
     private void RootNav_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
@@ -110,7 +92,7 @@ public sealed partial class PreferencesWindow : Window
             _ = EnsureHotkeysEditorLoadedAsync();
     }
 
-    private void RefreshFromHost()
+    internal void RefreshFromHost()
     {
         _suppressEvents = true;
         try
@@ -121,6 +103,7 @@ public sealed partial class PreferencesWindow : Window
             ShowPathOnOverlayFullscreenToggle.IsOn = _host.ShowPathOnOverlayFullscreen;
             ShowOverlayListPositionToggle.IsOn = _host.ShowOverlayListPosition;
             IncludeSubfoldersToggle.IsOn = _host.IncludeSubfoldersInList;
+            CollectFolderStatisticsInBackgroundToggle.IsOn = _host.CalculateFolderSizesInBackground;
             SlideshowAllowDeleteToggle.IsOn = _host.SlideshowAllowDelete;
             PreviewNavCatchUpLagNumberBox.Value = _host.PreviewNavCatchUpLagSeconds;
 
@@ -167,7 +150,7 @@ public sealed partial class PreferencesWindow : Window
         HotkeysEditor.Visibility = Visibility.Visible;
         HotkeysEditor.LoadEditDocumentsAsync = () => _host.LoadHotkeysEditDocumentsAsync();
         HotkeysEditor.BindingsPersisted = () => _host.ReloadInputBindingsAfterHotkeysPersist();
-        HotkeysEditor.RequestCloseWindow = Close;
+        HotkeysEditor.RequestDismissPreferences = () => RequestDismiss?.Invoke(this, EventArgs.Empty);
         HotkeysEditor.Reset(docs.Value.Builtin, docs.Value.Merged);
         _hotkeysTabPrimed = true;
     }
@@ -212,6 +195,13 @@ public sealed partial class PreferencesWindow : Window
         if (_suppressEvents)
             return;
         _host.ApplyIncludeSubfolders(IncludeSubfoldersToggle.IsOn);
+    }
+
+    private void CollectFolderStatisticsInBackgroundToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_suppressEvents)
+            return;
+        _host.ApplyCalculateFolderSizesInBackground(CollectFolderStatisticsInBackgroundToggle.IsOn);
     }
 
     private void SlideshowAllowDeleteToggle_Toggled(object sender, RoutedEventArgs e)

@@ -43,6 +43,8 @@ internal static class WinUiKeyboardInterop
             VirtualKey.Back => "Backspace",
             VirtualKey.Home => "Home",
             VirtualKey.End => "End",
+            VirtualKey.PageDown => "PageDown",
+            VirtualKey.PageUp => "PageUp",
             VirtualKey.Delete => "Delete",
             VirtualKey.F1 => "F1",
             VirtualKey.F2 => "F2",

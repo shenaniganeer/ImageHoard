@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using ImageHoard.Core.Browse;
 using ImageHoard.Core.Logging;
 using ImageHoard.Core.Metrics;
@@ -7,6 +9,7 @@ using ImageHoard.Core.Services;
 using ImageHoard.Core.Sort;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace ImageHoard.App;
 
@@ -69,6 +72,14 @@ public sealed partial class MainWindow
         if (bytes < 1024 * 1024)
             return $"{bytes / 1024.0:0.#} KB";
         return $"{bytes / (1024.0 * 1024.0):0.#} MB";
+    }
+
+    internal async Task<bool> DeleteArchiveWizardWorkingFolderHasImmediateSubfoldersAsync()
+    {
+        var work = TryGetDeleteArchiveWizardWorkingFolder();
+        if (string.IsNullOrEmpty(work))
+            return false;
+        return await HasImmediateSubdirectoryAsync(AppServices.FileSystem, work).ConfigureAwait(true);
     }
 
     private static async Task<bool> HasImmediateSubdirectoryAsync(
@@ -242,7 +253,7 @@ public sealed partial class MainWindow
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = RootGrid.XamlRoot,
         };
-        if (await confirmDlg.ShowAsync() != ContentDialogResult.Primary)
+        if (await ShowWizardContentDialogAsync(confirmDlg) != ContentDialogResult.Primary)
             return;
 
         await WizardExecuteImageRecycleOrPermanentBatchAsync(toDelete, recordUndoForRecycledPaths: true, "BatchDelete")
@@ -295,7 +306,7 @@ public sealed partial class MainWindow
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = RootGrid.XamlRoot,
         };
-        if (await confirmDlg.ShowAsync() != ContentDialogResult.Primary)
+        if (await ShowWizardContentDialogAsync(confirmDlg) != ContentDialogResult.Primary)
             return;
 
         await WizardExecuteImageRecycleOrPermanentBatchAsync(
@@ -303,6 +314,28 @@ public sealed partial class MainWindow
                 recordUndoForRecycledPaths: true,
                 "BatchDeleteDeleteFlaggedOnly")
             .ConfigureAwait(true);
+    }
+
+    private async Task<string?> TryComputePreferredNextSiblingFolderAsync(string removedFolderFullPath)
+    {
+        var parent = Directory.GetParent(removedFolderFullPath)?.FullName;
+        if (string.IsNullOrEmpty(parent) || !Directory.Exists(parent))
+            return null;
+        try
+        {
+            var entries = await AppServices.FileSystem.ListDirectoryAsync(parent).ConfigureAwait(true);
+            var sorted = FolderDirectorySort.SortDirectories(
+                entries,
+                _layoutState.FolderListSort,
+                _folderAggregateBytesByPath,
+                _folderImageFileCountByPath);
+            var pick = FolderDirectorySort.PickAdjacentSiblingAfterRemoval(sorted, removedFolderFullPath);
+            return pick?.FullPath;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     internal async Task<bool> WizardExecuteMoveWorkingFolderToArchiveAsync()
@@ -328,6 +361,40 @@ public sealed partial class MainWindow
         var name = new DirectoryInfo(work).Name;
         var dest = Path.Combine(_session.ArchiveRoot!, name);
 
+        var hasSubfolders = await HasImmediateSubdirectoryAsync(AppServices.FileSystem, work).ConfigureAwait(true);
+        if (hasSubfolders)
+        {
+            const string msg =
+                "Move to archive is only available for folders without subfolders. Flatten or reorganize this folder first.";
+            SetTransientStatus(msg);
+            ActiveDeleteArchiveWizardPanel?.ShowWizardOperationInfo("Move to archive", msg, InfoBarSeverity.Warning);
+            return false;
+        }
+
+        try
+        {
+            var preMerge = await GalleryArchiveTargetAnalyzer.AnalyzeAsync(
+                    AppServices.FileSystem,
+                    _session.ArchiveRoot,
+                    work,
+                    CancellationToken.None)
+                .ConfigureAwait(true);
+            if (preMerge.HasContentConflict)
+            {
+                const string msg =
+                    "The archive already has file(s) with the same name(s) but different content. Resolve differences manually, then try again.";
+                SetTransientStatus(msg);
+                ActiveDeleteArchiveWizardPanel?.ShowWizardOperationInfo("Move to archive", msg, InfoBarSeverity.Warning);
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            SetTransientStatus("Could not compare folder with archive: " + ex.Message);
+            ActiveDeleteArchiveWizardPanel?.ShowWizardOperationInfo("Move to archive", ex.Message, InfoBarSeverity.Warning);
+            return false;
+        }
+
         IReadOnlyList<string> toDeleteBeforeMove = Array.Empty<string>();
         if (_session.InverseKeepDeleteBeforeArchiveMove)
         {
@@ -349,42 +416,37 @@ public sealed partial class MainWindow
                 toDeleteBeforeMove = BatchDeletePlanner.GetInverseKeepDeletionSetIgnoringUnsetGate(paths, _sortSession);
         }
 
-        var hasSubfolders = await HasImmediateSubdirectoryAsync(AppServices.FileSystem, work).ConfigureAwait(true);
-        string? subtreeLine = null;
-        if (hasSubfolders)
-        {
-            var metrics = await TryGetWizardSubtreeMetricsAsync(work).ConfigureAwait(true);
-            subtreeLine = metrics.HasValue
-                ? $"This folder contains subfolders. Entire tree: {metrics.Value.FileCount} files, {FormatWizardByteSize(metrics.Value.SizeBytes)}."
-                : "This folder contains subfolders. Could not measure the full folder tree (file count and size unavailable).";
-        }
+        var redBrush = new SolidColorBrush(Microsoft.UI.Colors.Red);
+        var moveDialogContent = new StackPanel();
+        moveDialogContent.Children.Add(
+            new TextBlock
+            {
+                Text = $"Move this folder into the archive?\n\nFrom:\n{work}\n\nTo:\n{dest}",
+                TextWrapping = TextWrapping.WrapWholeWords,
+            });
 
-        var moveBodyParts = new List<string>
-        {
-            $"Move this folder into the archive?\n\nFrom:\n{work}\n\nTo:\n{dest}",
-        };
-        if (subtreeLine != null)
-            moveBodyParts.Add(subtreeLine);
         if (_session.InverseKeepDeleteBeforeArchiveMove && toDeleteBeforeMove.Count > 0)
         {
-            moveBodyParts.Add(
-                $"First, {toDeleteBeforeMove.Count} image(s) not marked Keep will be deleted (Recycle Bin or permanent delete per follow-up prompts).");
+            moveDialogContent.Children.Add(
+                new TextBlock
+                {
+                    Text = $"{toDeleteBeforeMove.Count} image(s) not marked Keep will be deleted.",
+                    Foreground = redBrush,
+                    TextWrapping = TextWrapping.WrapWholeWords,
+                    Margin = new Thickness(0, 12, 0, 0),
+                });
         }
 
         var moveDlg = new ContentDialog
         {
             Title = "Move to archive?",
-            Content = new TextBlock
-            {
-                Text = string.Join("\n\n", moveBodyParts),
-                TextWrapping = TextWrapping.WrapWholeWords,
-            },
+            Content = moveDialogContent,
             PrimaryButtonText = "Move to archive",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = RootGrid.XamlRoot,
         };
-        if (await moveDlg.ShowAsync() != ContentDialogResult.Primary)
+        if (await ShowWizardContentDialogAsync(moveDlg) != ContentDialogResult.Primary)
             return false;
 
         if (_session.InverseKeepDeleteBeforeArchiveMove && toDeleteBeforeMove.Count > 0)
@@ -396,9 +458,11 @@ public sealed partial class MainWindow
                 return false;
         }
 
+        var preferredNext = await TryComputePreferredNextSiblingFolderAsync(work).ConfigureAwait(true);
+
         try
         {
-            await AppServices.FileSystem.MoveDirectoryAsync(work, dest).ConfigureAwait(true);
+            await AppServices.FileSystem.MergeMoveDirectoryAsync(work, dest).ConfigureAwait(true);
             if (_session.LogDestructiveOperations)
             {
                 var rec = new OperationLogBatchRecord
@@ -415,19 +479,38 @@ public sealed partial class MainWindow
 
             SetTransientStatus("Folder moved to archive.");
             _deleteArchiveWizardCapturedWorkingFolder = null;
+            var parent = Directory.GetParent(work)?.FullName;
             if (string.Equals(_currentFolderPath, work, StringComparison.OrdinalIgnoreCase))
             {
-                FolderTree.RootNodes.Clear();
-                _browseNavAnchorPath = null;
-                _currentFolderPath = null;
-                UpdateBrowserToolbar();
-                _session.LastBrowseFolder = null;
-                _session.LastSelectedImage = null;
-                PersistLayout();
+                if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent))
+                {
+                    await NavigateToFolderAsync(parent).ConfigureAwait(true);
+                    ClearImageSelectionAndPreviewCore();
+                    await RefreshBrowserPaneAfterWizardImageDeletesAsync(
+                            Array.Empty<WizardPredeletedFileStat>(),
+                            new BrowserTreeRefocusAfterWizardContext(preferredNext))
+                        .ConfigureAwait(true);
+                    PersistLayout();
+                }
+                else
+                {
+                    FolderTree.RootNodes.Clear();
+                    _browseNavAnchorPath = null;
+                    _currentFolderPath = null;
+                    UpdateBrowserToolbar();
+                    _session.LastBrowseFolder = null;
+                    _session.LastSelectedImage = null;
+                    ClearImageSelectionAndPreviewCore();
+                    PersistLayout();
+                }
             }
             else if (!string.IsNullOrEmpty(_currentFolderPath))
             {
-                await NavigateToFolderAsync(_currentFolderPath).ConfigureAwait(true);
+                TryRemoveFolderTreeNodeByPath(work);
+                await RefreshBrowserPaneAfterWizardImageDeletesAsync(
+                        Array.Empty<WizardPredeletedFileStat>(),
+                        new BrowserTreeRefocusAfterWizardContext(preferredNext))
+                    .ConfigureAwait(true);
             }
 
             return true;
@@ -441,7 +524,7 @@ public sealed partial class MainWindow
         }
     }
 
-    internal async Task WizardExecuteDeleteWorkingFolderToRecycleAsync()
+    internal async Task<bool> WizardExecuteDeleteWorkingFolderToRecycleAsync()
     {
         var work = TryGetDeleteArchiveWizardWorkingFolder();
         if (string.IsNullOrEmpty(work))
@@ -450,7 +533,7 @@ public sealed partial class MainWindow
                 "Could not resolve the working folder. Select an image in the folder, or close and reopen the wizard.";
             SetTransientStatus(msg);
             ActiveDeleteArchiveWizardPanel?.ShowWizardOperationInfo("Working folder", msg, InfoBarSeverity.Warning);
-            return;
+            return false;
         }
 
         var deleteFolderParts = new List<string> { "Send this folder and its contents to the Recycle Bin?", work };
@@ -477,8 +560,10 @@ public sealed partial class MainWindow
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = RootGrid.XamlRoot,
         };
-        if (await dlg.ShowAsync() != ContentDialogResult.Primary)
-            return;
+        if (await ShowWizardContentDialogAsync(dlg) != ContentDialogResult.Primary)
+            return false;
+
+        var preferredNext = await TryComputePreferredNextSiblingFolderAsync(work).ConfigureAwait(true);
 
         try
         {
@@ -503,24 +588,46 @@ public sealed partial class MainWindow
 
             SetTransientStatus("Folder sent to the Recycle Bin.");
             _deleteArchiveWizardCapturedWorkingFolder = null;
+            var parent = Directory.GetParent(work)?.FullName;
             if (string.Equals(_currentFolderPath, work, StringComparison.OrdinalIgnoreCase))
             {
-                FolderTree.RootNodes.Clear();
-                _browseNavAnchorPath = null;
-                _currentFolderPath = null;
-                UpdateBrowserToolbar();
-                _session.LastBrowseFolder = null;
-                _session.LastSelectedImage = null;
-                PersistLayout();
+                if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent))
+                {
+                    await NavigateToFolderAsync(parent).ConfigureAwait(true);
+                    ClearImageSelectionAndPreviewCore();
+                    await RefreshBrowserPaneAfterWizardImageDeletesAsync(
+                            Array.Empty<WizardPredeletedFileStat>(),
+                            new BrowserTreeRefocusAfterWizardContext(preferredNext))
+                        .ConfigureAwait(true);
+                    PersistLayout();
+                }
+                else
+                {
+                    FolderTree.RootNodes.Clear();
+                    _browseNavAnchorPath = null;
+                    _currentFolderPath = null;
+                    UpdateBrowserToolbar();
+                    _session.LastBrowseFolder = null;
+                    _session.LastSelectedImage = null;
+                    ClearImageSelectionAndPreviewCore();
+                    PersistLayout();
+                }
             }
             else if (!string.IsNullOrEmpty(_currentFolderPath))
             {
-                await NavigateToFolderAsync(_currentFolderPath).ConfigureAwait(true);
+                TryRemoveFolderTreeNodeByPath(work);
+                await RefreshBrowserPaneAfterWizardImageDeletesAsync(
+                        Array.Empty<WizardPredeletedFileStat>(),
+                        new BrowserTreeRefocusAfterWizardContext(preferredNext))
+                    .ConfigureAwait(true);
             }
+
+            return true;
         }
         catch (Exception ex)
         {
             SetTransientStatus("Delete folder failed: " + ex.Message);
+            return false;
         }
     }
 
@@ -564,7 +671,7 @@ public sealed partial class MainWindow
                 CloseButtonText = "Cancel",
                 XamlRoot = RootGrid.XamlRoot,
             };
-            if (await preDlg.ShowAsync() != ContentDialogResult.Primary)
+            if (await ShowWizardContentDialogAsync(preDlg) != ContentDialogResult.Primary)
                 return false;
             userApprovedPermanentForFailures = true;
         }
@@ -576,12 +683,32 @@ public sealed partial class MainWindow
         var skippedDeclined = 0;
         var failed = 0;
 
+        var preByPath = new Dictionary<string, WizardPredeletedFileStat>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in toDelete)
+        {
+            try
+            {
+                var fi = new FileInfo(p);
+                if (!fi.Exists)
+                    continue;
+                preByPath[p] = new WizardPredeletedFileStat(p, fi.Length, ImageExtensions.IsImageFile(p));
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+
+        var succeededStats = new List<WizardPredeletedFileStat>();
+
         foreach (var p in toDelete)
         {
             if (ShellRecycle.TrySendFileToRecycleBin(p))
             {
                 toRecycleBin++;
                 entries.Add(new OperationLogEntry { Path = p, Result = "Ok" });
+                if (preByPath.TryGetValue(p, out var st))
+                    succeededStats.Add(st);
                 if (recordUndoForRecycledPaths &&
                     !_wizardSessionUndoRecycledPaths.Contains(p, StringComparer.OrdinalIgnoreCase))
                     _wizardSessionUndoRecycledPaths.Add(p);
@@ -605,7 +732,7 @@ public sealed partial class MainWindow
                     CloseButtonText = "Cancel",
                     XamlRoot = RootGrid.XamlRoot,
                 };
-                if (await midDlg.ShowAsync() != ContentDialogResult.Primary)
+                if (await ShowWizardContentDialogAsync(midDlg) != ContentDialogResult.Primary)
                 {
                     skippedDeclined++;
                     entries.Add(new OperationLogEntry
@@ -625,6 +752,8 @@ public sealed partial class MainWindow
                 ShellRecycle.DeleteFilePermanently(p);
                 permanentDeleted++;
                 entries.Add(new OperationLogEntry { Path = p, Result = "Ok", Detail = "Permanent delete" });
+                if (preByPath.TryGetValue(p, out var st))
+                    succeededStats.Add(st);
             }
             catch (Exception ex)
             {
@@ -686,7 +815,18 @@ public sealed partial class MainWindow
         }
 
         if (!string.IsNullOrEmpty(_currentFolderPath))
-            await NavigateToFolderAsync(_currentFolderPath).ConfigureAwait(true);
+        {
+            string? imageDeletionWorkingFolder = null;
+            if (!string.IsNullOrEmpty(work)
+                && Directory.Exists(work)
+                && IsSameOrDescendantDirectory(_currentFolderPath, work))
+                imageDeletionWorkingFolder = work;
+
+            await RefreshBrowserPaneAfterWizardImageDeletesAsync(
+                    succeededStats,
+                    new BrowserTreeRefocusAfterWizardContext(null, imageDeletionWorkingFolder))
+                .ConfigureAwait(true);
+        }
 
         ActiveDeleteArchiveWizardPanel?.RefreshUndoAndNoticeUi();
         return true;
@@ -701,16 +841,20 @@ public sealed partial class MainWindow
         {
             var list = _wizardSessionUndoRecycledPaths.ToList();
             var restored = 0;
+            var restoredPaths = new List<string>();
             foreach (var p in list)
             {
                 if (RecycleBinRestore.TryRestoreOriginalPath(p))
+                {
                     restored++;
+                    restoredPaths.Add(p);
+                }
             }
 
             _wizardSessionUndoRecycledPaths.Clear();
             SetTransientStatus($"Restored {restored} of {list.Count} file(s) from the Recycle Bin.");
             if (!string.IsNullOrEmpty(_currentFolderPath))
-                await NavigateToFolderAsync(_currentFolderPath).ConfigureAwait(true);
+                await RefreshBrowserPaneAfterWizardUndoAsync(restoredPaths).ConfigureAwait(true);
         }
         finally
         {
@@ -738,5 +882,18 @@ public sealed partial class MainWindow
 
         _skipNavigateAfterFolderCommit = true;
         Activate();
+    }
+
+    private async Task<ContentDialogResult> ShowWizardContentDialogAsync(ContentDialog dialog)
+    {
+        Interlocked.Increment(ref _contentDialogModalDepth);
+        try
+        {
+            return await dialog.ShowAsync();
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _contentDialogModalDepth);
+        }
     }
 }

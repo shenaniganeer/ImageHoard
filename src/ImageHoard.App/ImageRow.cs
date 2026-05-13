@@ -216,6 +216,15 @@ public sealed class ImageRow : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
+    /// <summary>Updates size and modified time from disk (same folder path).</summary>
+    internal void ApplyRefreshedFileStats(long sizeBytes, DateTimeOffset modifiedUtc)
+    {
+        SizeBytes = sizeBytes;
+        ModifiedUtc = modifiedUtc;
+        SizeDisplay = FormatSizeStatic(sizeBytes);
+        ModifiedDisplay = modifiedUtc.ToLocalTime().ToString("g");
+    }
+
     /// <summary>Updates path and display metadata after a successful rename on disk.</summary>
     internal void ApplyRenamedPath(string newFullPath, string newDisplayName, long sizeBytes, DateTimeOffset modifiedUtc)
     {

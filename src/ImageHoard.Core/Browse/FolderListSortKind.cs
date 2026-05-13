@@ -6,4 +6,5 @@ public enum FolderListSortKind
     NameNatural,
     DateModified,
     AggregateSize,
+    ImageFileCount,
 }

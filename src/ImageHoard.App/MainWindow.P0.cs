@@ -166,6 +166,11 @@ public sealed partial class MainWindow
         SortNameItem.IsChecked = _layoutState.ListSort == ListSortKind.Name;
         SortDateItem.IsChecked = _layoutState.ListSort == ListSortKind.DateModified;
         SortSizeItem.IsChecked = _layoutState.ListSort == ListSortKind.Size;
+
+        FolderSortNameNaturalItem.IsChecked = _layoutState.FolderListSort == FolderListSortKind.NameNatural;
+        FolderSortDateItem.IsChecked = _layoutState.FolderListSort == FolderListSortKind.DateModified;
+        FolderSortTotalSizeItem.IsChecked = _layoutState.FolderListSort == FolderListSortKind.AggregateSize;
+        FolderSortImageCountItem.IsChecked = _layoutState.FolderListSort == FolderListSortKind.ImageFileCount;
     }
 
     private void UpdateFileDetailsMenuChecks()
@@ -264,32 +269,41 @@ public sealed partial class MainWindow
         }
     }
 
-    private void FolderBrowserHeaderSort_Name_Click(object sender, RoutedEventArgs e)
+    private void ApplyFolderListSort(FolderListSortKind kind)
     {
-        _layoutState.FolderListSort = FolderListSortKind.NameNatural;
+        CancelFolderResortCoalesceState();
+        _layoutState.FolderListSort = kind;
         PersistLayout();
         ResortAllFolderGroups();
         SyncBrowserFolderListHeaderNodes();
+        ScheduleAlignBrowsedFolderTreeRowToTopAfterResort();
         ApplyBrowserFolderDetailsChrome();
+        UpdateSortMenuChecks();
     }
 
-    private void FolderBrowserHeaderSort_Date_Click(object sender, RoutedEventArgs e)
-    {
-        _layoutState.FolderListSort = FolderListSortKind.DateModified;
-        PersistLayout();
-        ResortAllFolderGroups();
-        SyncBrowserFolderListHeaderNodes();
-        ApplyBrowserFolderDetailsChrome();
-    }
+    private void FolderBrowserHeaderSort_Name_Click(object sender, RoutedEventArgs e) =>
+        ApplyFolderListSort(FolderListSortKind.NameNatural);
 
-    private void FolderBrowserHeaderSort_Size_Click(object sender, RoutedEventArgs e)
-    {
-        _layoutState.FolderListSort = FolderListSortKind.AggregateSize;
-        PersistLayout();
-        ResortAllFolderGroups();
-        SyncBrowserFolderListHeaderNodes();
-        ApplyBrowserFolderDetailsChrome();
-    }
+    private void FolderBrowserHeaderSort_Date_Click(object sender, RoutedEventArgs e) =>
+        ApplyFolderListSort(FolderListSortKind.DateModified);
+
+    private void FolderBrowserHeaderSort_Size_Click(object sender, RoutedEventArgs e) =>
+        ApplyFolderListSort(FolderListSortKind.AggregateSize);
+
+    private void FolderSortMenu_NameNatural_Click(object sender, RoutedEventArgs e) =>
+        ApplyFolderListSort(FolderListSortKind.NameNatural);
+
+    private void FolderSortMenu_DateModified_Click(object sender, RoutedEventArgs e) =>
+        ApplyFolderListSort(FolderListSortKind.DateModified);
+
+    private void FolderSortMenu_TotalSize_Click(object sender, RoutedEventArgs e) =>
+        ApplyFolderListSort(FolderListSortKind.AggregateSize);
+
+    private void FolderSortMenu_ImageCount_Click(object sender, RoutedEventArgs e) =>
+        ApplyFolderListSort(FolderListSortKind.ImageFileCount);
+
+    private void FolderBrowserHeaderSort_ImageCount_Click(object sender, RoutedEventArgs e) =>
+        ApplyFolderListSort(FolderListSortKind.ImageFileCount);
 
     private void UpdateFitModeMenuChecks()
     {
@@ -704,7 +718,7 @@ public sealed partial class MainWindow
 
     private void HandleSortKeyboardShortcuts(KeyRoutedEventArgs e)
     {
-        if (_isFullscreen || GetSelectedImageRow() is null)
+        if (GetSelectedImageRow() is null)
             return;
 
         if (e.Key == VirtualKey.K)

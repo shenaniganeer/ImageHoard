@@ -44,6 +44,117 @@ public sealed class FolderDirectorySortTests
         Assert.Equal("b", sorted[0].Name);
         Assert.Equal("a", sorted[1].Name);
     }
+
+    [Fact]
+    public void SortDirectories_ImageFileCount_KnownBeforeUnknown()
+    {
+        var known = new FileSystemEntry(@"C:\root\known", "known", true, null, DateTimeOffset.UtcNow);
+        var unknown = new FileSystemEntry(@"C:\root\unknown", "unknown", true, null, DateTimeOffset.UtcNow);
+        var counts = new Dictionary<string, int?>(StringComparer.OrdinalIgnoreCase)
+        {
+            [known.FullPath] = 5,
+        };
+        var emptyAgg = new Dictionary<string, long?>(StringComparer.OrdinalIgnoreCase);
+
+        var sorted = FolderDirectorySort.SortDirectories(
+            new[] { unknown, known },
+            FolderListSortKind.ImageFileCount,
+            emptyAgg,
+            counts);
+
+        Assert.Equal("known", sorted[0].Name);
+        Assert.Equal("unknown", sorted[1].Name);
+    }
+
+    [Fact]
+    public void SortDirectories_ImageFileCount_DescendingThenNameTieBreak()
+    {
+        var small = new FileSystemEntry(@"C:\root\a", "a", true, null, null);
+        var big = new FileSystemEntry(@"C:\root\b", "b", true, null, null);
+        var counts = new Dictionary<string, int?>(StringComparer.OrdinalIgnoreCase)
+        {
+            [small.FullPath] = 2,
+            [big.FullPath] = 99,
+        };
+        var emptyAgg = new Dictionary<string, long?>(StringComparer.OrdinalIgnoreCase);
+
+        var sorted = FolderDirectorySort.SortDirectories(
+            new[] { small, big },
+            FolderListSortKind.ImageFileCount,
+            emptyAgg,
+            counts);
+
+        Assert.Equal("b", sorted[0].Name);
+        Assert.Equal("a", sorted[1].Name);
+    }
+
+    [Fact]
+    public void PickAdjacentSiblingAfterRemoval_ReturnsNextWhenNotLast()
+    {
+        var a = new FileSystemEntry(@"C:\root\a", "a", true, null, null);
+        var b = new FileSystemEntry(@"C:\root\b", "b", true, null, null);
+        var c = new FileSystemEntry(@"C:\root\c", "c", true, null, null);
+        var sorted = new[] { a, b, c };
+
+        var next = FolderDirectorySort.PickAdjacentSiblingAfterRemoval(sorted, @"C:\root\a");
+        Assert.NotNull(next);
+        Assert.Equal("b", next.Name);
+    }
+
+    [Fact]
+    public void PickAdjacentSiblingAfterRemoval_WhenLast_ReturnsPrevious()
+    {
+        var a = new FileSystemEntry(@"C:\root\a", "a", true, null, null);
+        var b = new FileSystemEntry(@"C:\root\b", "b", true, null, null);
+        var sorted = new[] { a, b };
+
+        var adj = FolderDirectorySort.PickAdjacentSiblingAfterRemoval(sorted, @"C:\root\b");
+        Assert.NotNull(adj);
+        Assert.Equal("a", adj.Name);
+    }
+
+    [Fact]
+    public void PickAdjacentSiblingAfterRemoval_SoleChild_ReturnsNull()
+    {
+        var only = new FileSystemEntry(@"C:\root\only", "only", true, null, null);
+        var adj = FolderDirectorySort.PickAdjacentSiblingAfterRemoval(new[] { only }, @"C:\root\only");
+        Assert.Null(adj);
+    }
+
+    [Fact]
+    public void PickAdjacentSiblingAfterRemoval_UnknownRemoved_ReturnsNull()
+    {
+        var a = new FileSystemEntry(@"C:\root\a", "a", true, null, null);
+        Assert.Null(FolderDirectorySort.PickAdjacentSiblingAfterRemoval(new[] { a }, @"C:\root\missing"));
+    }
+}
+
+public sealed class ChunkPlannerTests
+{
+    [Fact]
+    public void EnumerateChunks_Empty_YieldsNothing()
+    {
+        Assert.Empty(ChunkPlanner.EnumerateChunks(0, 10).ToList());
+        Assert.Empty(ChunkPlanner.EnumerateChunks(5, 0).ToList());
+    }
+
+    [Fact]
+    public void EnumerateChunks_SingleChunk_WhenTotalLessThanChunkSize()
+    {
+        var chunks = ChunkPlanner.EnumerateChunks(3, 10).ToList();
+        Assert.Single(chunks);
+        Assert.Equal((0, 3), chunks[0]);
+    }
+
+    [Fact]
+    public void EnumerateChunks_MultipleChunks_LastMayBeShort()
+    {
+        var chunks = ChunkPlanner.EnumerateChunks(10, 4).ToList();
+        Assert.Equal(3, chunks.Count);
+        Assert.Equal((0, 4), chunks[0]);
+        Assert.Equal((4, 4), chunks[1]);
+        Assert.Equal((8, 2), chunks[2]);
+    }
 }
 
 public sealed class FolderMetricsCacheStoreTests

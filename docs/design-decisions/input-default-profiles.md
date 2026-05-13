@@ -116,6 +116,7 @@ Identifiers use [keyboard-key-identifiers.md](./keyboard-key-identifiers.md) (`K
 | `sort.deleteArchiveWizard` | `Control`+`Shift`+`Delete`, `Control`+`Shift`+`KeyM` |
 | `sort.clearAllFlags` | `Control`+`KeyZ` |
 | `slideshow.toggleScope` | `Tab` |
+| `settings.open` | `Control`+`KeyP` |
 | `ui.fullscreen` | `F11`, `Enter` (when list focused) |
 | `view.clearSelection` | `Escape` |
 | `ui.escape` | *(no keyboard chord in KeyboardOnly file; merged profile includes MouseOnly left+right chord only)* |

@@ -60,6 +60,7 @@ internal sealed class BrowserFolderListHeaderMarker : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(NameSortIndicatorVisibility));
             OnPropertyChanged(nameof(SizeSortIndicatorVisibility));
+            OnPropertyChanged(nameof(ImageCountSortIndicatorVisibility));
             OnPropertyChanged(nameof(DateSortIndicatorVisibility));
         }
     }
@@ -69,6 +70,9 @@ internal sealed class BrowserFolderListHeaderMarker : INotifyPropertyChanged
 
     public Visibility SizeSortIndicatorVisibility =>
         ActiveSort == FolderListSortKind.AggregateSize ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility ImageCountSortIndicatorVisibility =>
+        ActiveSort == FolderListSortKind.ImageFileCount ? Visibility.Visible : Visibility.Collapsed;
 
     public Visibility DateSortIndicatorVisibility =>
         ActiveSort == FolderListSortKind.DateModified ? Visibility.Visible : Visibility.Collapsed;

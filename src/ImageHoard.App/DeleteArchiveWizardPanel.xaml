@@ -8,7 +8,7 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto" Loaded="WizardRoot_Loaded">
         <StackPanel Padding="16">
             <TextBlock
-                Text="Working folder"
+                Text="Current Gallery:"
                 FontWeight="SemiBold"
                 Margin="0,0,0,8" />
             <TextBlock
@@ -18,7 +18,7 @@
                 Margin="0,0,0,8" />
             <TextBlock x:Name="CountsText" TextWrapping="WrapWholeWords" Margin="0,0,0,12" />
 
-            <TextBlock Text="Images in this folder" FontWeight="SemiBold" Margin="0,0,0,6" />
+            <TextBlock Text="Image Culling" FontWeight="SemiBold" Margin="0,0,0,6" />
             <Grid Margin="0,0,0,6">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -38,21 +38,8 @@
                     OffContent="Off"
                     OnContent="On"
                     Toggled="InverseKeepBeforeArchiveToggle_Toggled"
-                    ToolTipService.ToolTip="When On, moving the folder to archive runs inverse-keep delete in this folder first." />
+                    ToolTipService.ToolTip="When On, moving the folder to archive runs delete !Keep first." />
             </Grid>
-            <TextBlock
-                Text="When On, moving the folder to archive runs inverse-keep delete in this folder first."
-                TextWrapping="WrapWholeWords"
-                Opacity="0.85"
-                FontSize="12"
-                Margin="0,0,0,6" />
-            <TextBlock
-                x:Name="UnsetBlockText"
-                TextWrapping="WrapWholeWords"
-                Opacity="0.9"
-                FontSize="12"
-                Visibility="Collapsed"
-                Margin="0,0,0,6" />
             <Button
                 x:Name="DeleteFlaggedOnlyButton"
                 Content="Delete images marked Delete"
@@ -94,6 +81,21 @@
                 IsClosable="True" />
 
             <TextBlock Text="Move to archive" FontWeight="SemiBold" Margin="0,0,0,6" />
+            <Button
+                x:Name="ArchiveTargetRowButton"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Left"
+                VerticalAlignment="Center"
+                Background="Transparent"
+                BorderThickness="0"
+                Padding="4,0"
+                Margin="0,0,0,8"
+                Click="ArchiveTargetRow_Click">
+                <TextBlock
+                    x:Name="ArchiveTargetPathText"
+                    VerticalAlignment="Center"
+                    TextWrapping="WrapWholeWords" />
+            </Button>
             <Button
                 x:Name="MoveToArchiveButton"
                 Content="Move parent folder to archive"

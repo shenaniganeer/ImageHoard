@@ -46,7 +46,7 @@ internal static class CommandCatalog
         new("view.panPreview", "View: pan primary preview (hold chord and drag)", true, HotkeySection.View),
         new("view.zoomIn", "View: zoom in", true, HotkeySection.View),
         new("view.zoomOut", "View: zoom out", true, HotkeySection.View),
-        new("settings.open", "Settings: open settings", false, HotkeySection.Settings),
+        new("settings.open", "Settings: open settings", true, HotkeySection.Settings),
         new("settings.clearCaches", "Settings: clear caches", true, HotkeySection.Settings),
         new("ui.fullscreen", "Toggle fullscreen", true, HotkeySection.Other),
         new("ui.escape", "Exit fullscreen; clear preview when not fullscreen", true, HotkeySection.Other),

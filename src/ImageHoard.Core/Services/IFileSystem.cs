@@ -69,6 +69,22 @@ public interface IFileSystem
 
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Moves <paramref name="sourceFullPath"/> into <paramref name="destinationFullPath"/>.
+    /// When the destination directory does not exist, behaves like <see cref="MoveDirectoryAsync"/>.
+    /// When it already exists, merges the source tree into the destination: non-colliding files and directories
+    /// are moved or copied; when a file exists at the same relative path in both trees, SHA-256 must match or
+    /// an <see cref="IOException"/> is thrown (resolve manually). When hashes match, the source file is removed
+    /// and the destination file is kept.
+    /// </summary>
+    Task MergeMoveDirectoryAsync(
+
+        string sourceFullPath,
+
+        string destinationFullPath,
+
+        CancellationToken cancellationToken = default);
+
 }
 
 

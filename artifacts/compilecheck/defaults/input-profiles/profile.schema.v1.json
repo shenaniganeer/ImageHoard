@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://imagehoard.local/schemas/input-profile.v1.json",
+  "title": "ImageHoard input profile (v1)",
+  "type": "object",
+  "required": ["schemaVersion", "profileId", "displayName", "bindings"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "profileId": {
+      "type": "string",
+      "description": "Stable id for FR-ST-02 and import/export."
+    },
+    "displayName": { "type": "string" },
+    "description": { "type": "string" },
+    "bindings": {
+      "type": "object",
+      "description": "Map of commandId to alternate input chords (OR semantics).",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "$ref": "#/$defs/inputChord" }
+      }
+    }
+  },
+  "$defs": {
+    "inputChord": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "keyboard",
+            "mouseButton",
+            "mouseWheel",
+            "mouseChord",
+            "mouseWheelTilt"
+          ]
+        },
+        "keys": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "For kind=keyboard: key identifiers per docs/design-decisions/keyboard-key-identifiers.md — modifier tokens Control, Shift, Alt, Win (optional prefix), then MDN-style codes e.g. ArrowRight, KeyK, F11, Delete, Space, Enter, Tab, Backspace, Escape."
+        },
+        "button": {
+          "type": "string",
+          "enum": [
+            "Left",
+            "Middle",
+            "Right",
+            "X1",
+            "X2",
+            "X3",
+            "X4",
+            "X5"
+          ],
+          "description": "For kind=mouseButton."
+        },
+        "clickCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "description": "Single, double, triple click; default 1."
+        },
+        "wheel": {
+          "type": "string",
+          "enum": ["Up", "Down"],
+          "description": "For kind=mouseWheel vertical delta."
+        },
+        "tilt": {
+          "type": "string",
+          "enum": ["Left", "Right"],
+          "description": "For kind=mouseWheelTilt (hardware-dependent)."
+        },
+        "modifiers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["Shift", "Control", "Alt", "Win"]
+          },
+          "description": "Modifier keys held with wheel or button (keyboard modifiers)."
+        },
+        "heldButtons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "Left",
+              "Middle",
+              "Right",
+              "X1",
+              "X2",
+              "X3",
+              "X4",
+              "X5"
+            ]
+          },
+          "description": "For kind=mouseWheel: mouse buttons that must be held (exact set among Left/Middle/Right/X1/X2 observable from the OS) while the wheel moves; omit or empty for plain wheel."
+        },
+        "buttons": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "For kind=mouseChord: simultaneous buttons, e.g. [\"Left\",\"Right\"]."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Non-normative UX hint for QA or onboarding."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "keyboard" } } },
+          "then": { "required": ["keys"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "mouseButton" } } },
+          "then": { "required": ["button"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "mouseWheel" } } },
+          "then": { "required": ["wheel"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "mouseWheelTilt" } } },
+          "then": { "required": ["tilt"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "mouseChord" } } },
+          "then": { "required": ["buttons"] }
+        }
+      ]
+    }
+  }
+}

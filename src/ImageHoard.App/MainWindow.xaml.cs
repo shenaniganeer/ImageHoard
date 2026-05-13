@@ -29,7 +29,6 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
     private AppWindow? _appWindow;
     private bool _isFullscreen;
-    private bool _treeExpansionBusy;
     private readonly UiLayoutState _layoutState;
     private readonly AppSessionSettings _session;
     private string? _currentImageFullPath;
@@ -59,6 +58,8 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     private bool _previewPanHandlersRegistered;
     /// <summary>Skips preview clear in <see cref="MainWindow.FolderTree_OnCollapsed"/> during programmatic collapse (e.g. sibling-folder navigation).</summary>
     private bool _suppressFolderTreeCollapsedClear;
+    /// <summary>Non-zero while a <see cref="ContentDialog"/> shown from delete/archive wizard flows is active, to ignore spurious tree collapse during modal focus changes.</summary>
+    private int _contentDialogModalDepth;
     private PointerEventHandler? _pointerWheelCaptureHandler;
     private PointerEventHandler? _previewScrollContentWheelHandler;
     private PointerEventHandler? _pointerPressedCaptureHandler;
@@ -247,6 +248,15 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     {
         var path = _currentImageFullPath ?? string.Empty;
         var hasImage = !string.IsNullOrEmpty(path);
+        if (!hasImage)
+        {
+            _archiveOverlayRefreshCts?.Cancel();
+            _archiveOverlayRefreshCts?.Dispose();
+            _archiveOverlayRefreshCts = null;
+            _archiveOverlayPreview = null;
+            _archiveOverlayCompletedForKey = null;
+        }
+
         var windowedPathDesired = _layoutState.ShowPathOnOverlayWindowed && hasImage;
         var fullscreenPathDesired = _layoutState.ShowPathOnOverlayFullscreen && hasImage;
 
@@ -278,12 +288,15 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         NormalPathText.Visibility = windowedPathDesired ? Visibility.Visible : Visibility.Collapsed;
         FullscreenPathText.Visibility = fullscreenPathDesired ? Visibility.Visible : Visibility.Collapsed;
 
+        var archiveLinesVisible = ApplyArchiveOverlayLines(hasImage);
+        EnsureArchiveOverlayPreviewScheduled();
+
         var showNormalOverlay = hasImage
             && !_isFullscreen
-            && (windowedPathDesired || listPositionVisible || flagVisible || navModeLineVisible);
+            && (windowedPathDesired || listPositionVisible || flagVisible || navModeLineVisible || archiveLinesVisible);
         var showFullscreenOverlay = hasImage
             && _isFullscreen
-            && (fullscreenPathDesired || listPositionVisible || flagVisible || navModeLineVisible);
+            && (fullscreenPathDesired || listPositionVisible || flagVisible || navModeLineVisible || archiveLinesVisible);
 
         NormalPathOverlay.Visibility = showNormalOverlay ? Visibility.Visible : Visibility.Collapsed;
         FullscreenPathOverlay.Visibility = showFullscreenOverlay ? Visibility.Visible : Visibility.Collapsed;
@@ -760,17 +773,17 @@ public sealed partial class MainWindow : Window, IPreferencesSession
                     SlideshowReshuffle_Click(this, new RoutedEventArgs());
                 return _slideshow != null;
             case "sort.flagKeep":
-                if (_isFullscreen || GetSelectedImageRow() is null)
+                if (GetSelectedImageRow() is null)
                     return false;
                 SetSelectedSortFlag(SortFlagState.Keep);
                 return true;
             case "sort.flagDelete":
-                if (_isFullscreen || GetSelectedImageRow() is null)
+                if (GetSelectedImageRow() is null)
                     return false;
                 SetSelectedSortFlag(SortFlagState.Delete);
                 return true;
             case "sort.flagUnset":
-                if (_isFullscreen || GetSelectedImageRow() is null)
+                if (GetSelectedImageRow() is null)
                     return false;
                 SetSelectedSortFlag(SortFlagState.Unset);
                 return true;

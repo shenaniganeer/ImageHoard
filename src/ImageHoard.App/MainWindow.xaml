@@ -234,15 +234,32 @@
                                 Visibility="{Binding SizeSortIndicatorVisibility}" />
                         </StackPanel>
                     </Button>
-                    <TextBlock
+                    <Button
                         Grid.Column="2"
+                        Padding="4,0,4,0"
+                        HorizontalContentAlignment="Right"
                         VerticalAlignment="Center"
-                        MinWidth="48"
-                        TextAlignment="Right"
-                        Opacity="0.9"
-                        Style="{ThemeResource CaptionTextBlockStyle}"
-                        Text="Images"
-                        Visibility="{Binding ImageCountHeaderVisibility}" />
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Click="FolderBrowserHeaderSort_ImageCount_Click"
+                        Visibility="{Binding ImageCountHeaderVisibility}">
+                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                            <TextBlock
+                                MinWidth="48"
+                                TextAlignment="Right"
+                                VerticalAlignment="Center"
+                                Opacity="0.9"
+                                Style="{ThemeResource CaptionTextBlockStyle}"
+                                Text="Images" />
+                            <TextBlock
+                                Margin="4,0,0,0"
+                                VerticalAlignment="Center"
+                                Opacity="0.75"
+                                Style="{ThemeResource CaptionTextBlockStyle}"
+                                Text="▼"
+                                Visibility="{Binding ImageCountSortIndicatorVisibility}" />
+                        </StackPanel>
+                    </Button>
                     <Button
                         Grid.Column="3"
                         Padding="4,0,0,0"
@@ -293,7 +310,20 @@
                         x:Name="IncludeSubfoldersToggle"
                         Text="Include subfolders in list"
                         Click="IncludeSubfoldersToggle_Click" />
-                    <MenuFlyoutSubItem Text="Sort list by">
+                    <MenuFlyoutSubItem Text="File details">
+                        <ToggleMenuFlyoutItem
+                            x:Name="ShowBrowserFileColumnHeadingsToggle"
+                            Text="Show column headings"
+                            Click="ShowBrowserFileColumnHeadingsToggle_Click" />
+                        <ToggleMenuFlyoutItem
+                            x:Name="ShowBrowserFileSizeToggle"
+                            Text="Show file size"
+                            Click="ShowBrowserFileSizeToggle_Click" />
+                        <ToggleMenuFlyoutItem
+                            x:Name="ShowBrowserFileDateToggle"
+                            Text="Show date modified"
+                            Click="ShowBrowserFileDateToggle_Click" />
+                        <MenuFlyoutSeparator />
                         <RadioMenuFlyoutItem
                             x:Name="SortNameNaturalItem"
                             Text="Name (natural order)"
@@ -315,20 +345,6 @@
                             GroupName="ListSort"
                             Click="SortList_Size_Click" />
                     </MenuFlyoutSubItem>
-                    <MenuFlyoutSubItem Text="File details">
-                        <ToggleMenuFlyoutItem
-                            x:Name="ShowBrowserFileColumnHeadingsToggle"
-                            Text="Show column headings"
-                            Click="ShowBrowserFileColumnHeadingsToggle_Click" />
-                        <ToggleMenuFlyoutItem
-                            x:Name="ShowBrowserFileSizeToggle"
-                            Text="Show file size"
-                            Click="ShowBrowserFileSizeToggle_Click" />
-                        <ToggleMenuFlyoutItem
-                            x:Name="ShowBrowserFileDateToggle"
-                            Text="Show date modified"
-                            Click="ShowBrowserFileDateToggle_Click" />
-                    </MenuFlyoutSubItem>
                     <MenuFlyoutSubItem Text="Folder details">
                         <ToggleMenuFlyoutItem
                             x:Name="ShowBrowserFolderColumnHeadingsToggle"
@@ -346,6 +362,27 @@
                             x:Name="ShowBrowserFolderImageCountToggle"
                             Text="Show image count"
                             Click="ShowBrowserFolderImageCountToggle_Click" />
+                        <MenuFlyoutSeparator />
+                        <RadioMenuFlyoutItem
+                            x:Name="FolderSortNameNaturalItem"
+                            Text="Name (natural order)"
+                            GroupName="FolderListSort"
+                            Click="FolderSortMenu_NameNatural_Click" />
+                        <RadioMenuFlyoutItem
+                            x:Name="FolderSortDateItem"
+                            Text="Date modified"
+                            GroupName="FolderListSort"
+                            Click="FolderSortMenu_DateModified_Click" />
+                        <RadioMenuFlyoutItem
+                            x:Name="FolderSortTotalSizeItem"
+                            Text="Total size"
+                            GroupName="FolderListSort"
+                            Click="FolderSortMenu_TotalSize_Click" />
+                        <RadioMenuFlyoutItem
+                            x:Name="FolderSortImageCountItem"
+                            Text="Image count"
+                            GroupName="FolderListSort"
+                            Click="FolderSortMenu_ImageCount_Click" />
                     </MenuFlyoutSubItem>
                 </MenuBarItem>
                 <MenuBarItem Title="Browse">
@@ -574,6 +611,26 @@
                                     FontSize="12"
                                     Opacity="0.95"
                                     Visibility="Collapsed" />
+                                <TextBlock
+                                    x:Name="NormalArchiveDestExistsText"
+                                    FontSize="12"
+                                    TextWrapping="WrapWholeWords"
+                                    Visibility="Collapsed" />
+                                <TextBlock
+                                    x:Name="NormalArchiveSubfolderText"
+                                    FontSize="12"
+                                    TextWrapping="WrapWholeWords"
+                                    Visibility="Collapsed" />
+                                <TextBlock
+                                    x:Name="NormalArchiveConflictText"
+                                    FontSize="12"
+                                    TextWrapping="WrapWholeWords"
+                                    Visibility="Collapsed" />
+                                <TextBlock
+                                    x:Name="NormalArchiveIdenticalSummaryText"
+                                    FontSize="12"
+                                    TextWrapping="WrapWholeWords"
+                                    Visibility="Collapsed" />
                             </StackPanel>
                         </Border>
                     </Grid>
@@ -636,6 +693,26 @@
                         Foreground="White"
                         FontSize="12"
                         Opacity="0.95"
+                        Visibility="Collapsed" />
+                    <TextBlock
+                        x:Name="FullscreenArchiveDestExistsText"
+                        FontSize="12"
+                        TextWrapping="WrapWholeWords"
+                        Visibility="Collapsed" />
+                    <TextBlock
+                        x:Name="FullscreenArchiveSubfolderText"
+                        FontSize="12"
+                        TextWrapping="WrapWholeWords"
+                        Visibility="Collapsed" />
+                    <TextBlock
+                        x:Name="FullscreenArchiveConflictText"
+                        FontSize="12"
+                        TextWrapping="WrapWholeWords"
+                        Visibility="Collapsed" />
+                    <TextBlock
+                        x:Name="FullscreenArchiveIdenticalSummaryText"
+                        FontSize="12"
+                        TextWrapping="WrapWholeWords"
                         Visibility="Collapsed" />
                 </StackPanel>
             </Border>

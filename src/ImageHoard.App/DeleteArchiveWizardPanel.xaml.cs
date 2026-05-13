@@ -12,7 +12,7 @@ public sealed partial class DeleteArchiveWizardPanel : UserControl
 
     internal void Connect(MainWindow owner) => _owner = owner;
 
-    /// <summary>Raised when the user closes the wizard or after a successful move to archive.</summary>
+    /// <summary>Raised when the user closes the wizard or after a successful move to archive or delete parent folder.</summary>
     public event EventHandler? RequestClose;
 
     private void WizardRoot_Loaded(object sender, RoutedEventArgs e)
@@ -21,9 +21,32 @@ public sealed partial class DeleteArchiveWizardPanel : UserControl
         InverseKeepBeforeArchiveToggle.IsOn = _owner.SessionInverseKeepDeleteBeforeArchiveMove;
         _wizardUiPrimed = true;
         RefreshUndoAndNoticeUi();
+        RefreshArchiveTargetDisplay();
     }
 
-    internal void OnOverlayShown() => _ = RefreshCountsAsync();
+    internal void OnOverlayShown()
+    {
+        RefreshArchiveTargetDisplay();
+        _ = RefreshCountsAsync();
+    }
+
+    internal void RefreshArchiveTargetDisplay()
+    {
+        var session = (IPreferencesSession)_owner;
+        var path = session.ArchiveRoot;
+        if (string.IsNullOrEmpty(path))
+        {
+            ArchiveTargetPathText.Text = "(not set)";
+            ToolTipService.SetToolTip(
+                ArchiveTargetRowButton,
+                "Click to select archive target folder");
+        }
+        else
+        {
+            ArchiveTargetPathText.Text = path;
+            ToolTipService.SetToolTip(ArchiveTargetRowButton, path);
+        }
+    }
 
     internal void SetFolderPathDisplay(string path) => FolderPathText.Text = path;
 
@@ -50,6 +73,7 @@ public sealed partial class DeleteArchiveWizardPanel : UserControl
 
     private async Task RefreshCountsAsync()
     {
+        var blockSubfolders = await _owner.DeleteArchiveWizardWorkingFolderHasImmediateSubfoldersAsync().ConfigureAwait(true);
         var snap = await _owner.GetDeleteArchiveWizardCountsAsync().ConfigureAwait(true);
         if (snap == null)
         {
@@ -59,11 +83,9 @@ public sealed partial class DeleteArchiveWizardPanel : UserControl
                 CountsText.Text = canWork
                     ? "Could not enumerate images in this folder (counts unavailable)."
                     : "Could not load counts (folder may be unavailable or no image path is set).";
-                UnsetBlockText.Visibility = Visibility.Collapsed;
-                UnsetBlockText.Text = string.Empty;
                 DeleteNonKeepButton.IsEnabled = false;
                 DeleteFlaggedOnlyButton.IsEnabled = false;
-                MoveToArchiveButton.IsEnabled = canWork && _owner.HasArchiveRootConfigured;
+                MoveToArchiveButton.IsEnabled = canWork && _owner.HasArchiveRootConfigured && !blockSubfolders;
                 DeleteFolderButton.IsEnabled = canWork;
                 RenameFolderButton.IsEnabled = canWork;
                 RefreshUndoAndNoticeUi();
@@ -79,27 +101,16 @@ public sealed partial class DeleteArchiveWizardPanel : UserControl
         void Apply(MainWindow.DeleteArchiveWizardCountSnap s)
         {
             CountsText.Text =
-                $"Keep: {s.Keep} · Delete: {s.Delete} · Unset: {s.Unset} · Not Keep (inverse-keep set): {s.NotKeepCount}";
-            if (s.Unset > 0)
-            {
-                UnsetBlockText.Visibility = Visibility.Visible;
-                UnsetBlockText.Text =
-                    $"{s.Unset} image(s) have no Keep/Delete decision. Inverse-keep delete will include them.";
-            }
-            else
-            {
-                UnsetBlockText.Visibility = Visibility.Collapsed;
-                UnsetBlockText.Text = string.Empty;
-            }
+                $"Keep: {s.Keep} · Delete: {s.Delete} · Unset: {s.Unset} · Not Keep: {s.NotKeepCount}";
 
             var hasImages = s.TotalImages > 0;
             DeleteNonKeepButton.IsEnabled = hasImages;
             DeleteFlaggedOnlyButton.IsEnabled = hasImages;
             DeleteFlaggedOnlyButton.Content =
                 s.DeleteFlaggedCount > 0
-                    ? $"Delete {s.DeleteFlaggedCount} image(s) marked Delete (Recycle Bin)"
-                    : "Delete images marked Delete (Recycle Bin)";
-            MoveToArchiveButton.IsEnabled = _owner.HasArchiveRootConfigured;
+                    ? $"Delete {s.DeleteFlaggedCount} image(s) marked Delete"
+                    : "Delete images marked Delete";
+            MoveToArchiveButton.IsEnabled = _owner.HasArchiveRootConfigured && !blockSubfolders;
             DeleteFolderButton.IsEnabled = true;
             RenameFolderButton.IsEnabled = true;
             RefreshUndoAndNoticeUi();
@@ -151,7 +162,13 @@ public sealed partial class DeleteArchiveWizardPanel : UserControl
 
     private async void DeleteFolder_Click(object sender, RoutedEventArgs e)
     {
-        await _owner.WizardExecuteDeleteWorkingFolderToRecycleAsync().ConfigureAwait(true);
+        var ok = await _owner.WizardExecuteDeleteWorkingFolderToRecycleAsync().ConfigureAwait(true);
+        if (ok)
+        {
+            RequestClose?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
         await RefreshCountsAsync().ConfigureAwait(true);
     }
 
@@ -160,4 +177,15 @@ public sealed partial class DeleteArchiveWizardPanel : UserControl
 
     private void Close_Click(object sender, RoutedEventArgs e) =>
         RequestClose?.Invoke(this, EventArgs.Empty);
+
+    private async void ArchiveTargetRow_Click(object sender, RoutedEventArgs e)
+    {
+        if (XamlRoot == null)
+            return;
+        await ((IPreferencesSession)_owner).PromptEditArchiveRootAsync(XamlRoot).ConfigureAwait(true);
+        RefreshArchiveTargetDisplay();
+        var canWork = _owner.HasResolvedDeleteArchiveWizardWorkingFolder();
+        var blockSubfolders = await _owner.DeleteArchiveWizardWorkingFolderHasImmediateSubfoldersAsync().ConfigureAwait(true);
+        MoveToArchiveButton.IsEnabled = canWork && _owner.HasArchiveRootConfigured && !blockSubfolders;
+    }
 }

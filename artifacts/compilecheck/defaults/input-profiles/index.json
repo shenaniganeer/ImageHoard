@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "builtinProfiles": [
+    {
+      "profileId": "KeyboardOnly",
+      "path": "keyboard-only.v1.json",
+      "role": "keyboard-only-default"
+    },
+    {
+      "profileId": "MouseOnly",
+      "path": "mouse-only.v1.json",
+      "role": "mouse-only-default"
+    }
+  ],
+  "aliases": {
+    "KeyboardFirst": "KeyboardOnly",
+    "MouseFirstSort": "MouseOnly"
+  },
+  "notes": "aliases preserve FR-IN-02 naming from earlier drafts; profileId is canonical for persistence (FR-ST-02)."
+}

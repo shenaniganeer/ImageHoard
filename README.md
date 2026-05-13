@@ -12,6 +12,8 @@ dotnet build ImageHoard.sln -c Debug
 dotnet test ImageHoard.sln -c Debug
 ```
 
+If **ImageHoard** is already running (including from `dotnet run` below), close it before `dotnet build` or `dotnet test`, or those commands may fail or waste time on locked files under `src/ImageHoard.App/bin/`. Check: `Get-Process -Name ImageHoard.App -ErrorAction SilentlyContinue`.
+
 Run the WinUI host (x64):
 
 ```powershell

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using ImageHoard.Core.Browse;
 using ImageHoard.Core.Input;
@@ -9,6 +10,7 @@ using ImageHoard.Core.Slideshow;
 using ImageHoard.Core.Sort;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.System;
@@ -319,10 +321,122 @@ public sealed partial class MainWindow
     {
         if (string.IsNullOrEmpty(_currentFolderPath))
             return;
-        if (!_session.Favorites.Contains(_currentFolderPath, StringComparer.OrdinalIgnoreCase))
-            _session.Favorites.Add(_currentFolderPath);
+        AddFolderToFavorites(_currentFolderPath);
+    }
+
+    private void AddFolderToFavorites(string folderPath)
+    {
+        if (string.IsNullOrEmpty(folderPath) || !Directory.Exists(folderPath))
+        {
+            SetTransientStatus("Folder not found.");
+            return;
+        }
+
+        if (_session.Favorites.Contains(folderPath, StringComparer.OrdinalIgnoreCase))
+        {
+            SetTransientStatus("Already in favorites.");
+            return;
+        }
+
+        _session.Favorites.Add(folderPath);
         PersistLayout();
+        RebuildBrowseFavoritesMenu();
         SetTransientStatus("Added to favorites.");
+    }
+
+    private void RemoveFolderFromFavorites(string folderPath)
+    {
+        if (string.IsNullOrEmpty(folderPath))
+            return;
+
+        var match = _session.Favorites.FirstOrDefault(p =>
+            string.Equals(p, folderPath, StringComparison.OrdinalIgnoreCase));
+        if (match is null)
+        {
+            SetTransientStatus("Favorite not found.");
+            return;
+        }
+
+        _session.Favorites.Remove(match);
+        PersistLayout();
+        RebuildBrowseFavoritesMenu();
+        SetTransientStatus("Removed from favorites.");
+    }
+
+    private void RebuildBrowseFavoritesMenu()
+    {
+        FileFavoritesSubMenu.Items.Clear();
+        if (_session.Favorites.Count == 0)
+        {
+            FileFavoritesSubMenu.Items.Add(new MenuFlyoutItem { Text = "(none)", IsEnabled = false });
+            return;
+        }
+
+        foreach (var path in _session.Favorites.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+        {
+            var pathCopy = path;
+            var label = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (string.IsNullOrEmpty(label))
+                label = pathCopy;
+            var item = new MenuFlyoutItem { Text = label };
+            ToolTipService.SetToolTip(item, pathCopy);
+            item.Click += async (_, _) => await NavigateToFolderAsync(pathCopy).ConfigureAwait(true);
+
+            // Use ContextRequested + manual ShowAt instead of ContextFlyout so File > Favorites
+            // stays open until this flyout is dismissed or Remove is chosen (default ContextFlyout
+            // dismisses the parent menu when the secondary flyout opens).
+            item.ContextRequested += (favoriteSender, args) =>
+            {
+                args.Handled = true;
+                var removeFlyout = new MenuFlyout();
+                var removeFromFavorites = new MenuFlyoutItem { Text = "Remove from favorites" };
+                removeFromFavorites.Click += (_, _) =>
+                {
+                    var p = pathCopy;
+                    _ = this.DispatcherQueue.TryEnqueue(
+                        Microsoft.UI.Dispatching.DispatcherQueuePriority.Normal,
+                        () => RemoveFolderFromFavorites(p));
+                };
+                removeFlyout.Items.Add(removeFromFavorites);
+                var showOptions = new FlyoutShowOptions { Placement = FlyoutPlacementMode.Auto };
+                if (args.TryGetPosition(item, out var pt))
+                    showOptions.Position = pt;
+                removeFlyout.ShowAt(item, showOptions);
+            };
+
+            FileFavoritesSubMenu.Items.Add(item);
+        }
+    }
+
+    private void TryRevealPathInExplorer(string path, bool isDirectory)
+    {
+        if (string.IsNullOrEmpty(path))
+            return;
+        try
+        {
+            if (isDirectory)
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"\"{path}\"",
+                    UseShellExecute = true,
+                });
+            }
+            else
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"/select,\"{path}\"",
+                    UseShellExecute = true,
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            SetTransientStatus("Reveal failed: " + ex.Message);
+        }
     }
 
     private void BrowseRevealInExplorer_Click(object sender, RoutedEventArgs e)
@@ -333,22 +447,7 @@ public sealed partial class MainWindow
             return;
         }
 
-        var folder = Path.GetDirectoryName(row.FullPath);
-        if (string.IsNullOrEmpty(folder))
-            return;
-        try
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "explorer.exe",
-                Arguments = $"/select,\"{row.FullPath}\"",
-                UseShellExecute = true,
-            });
-        }
-        catch (Exception ex)
-        {
-            SetTransientStatus("Reveal failed: " + ex.Message);
-        }
+        TryRevealPathInExplorer(row.FullPath, isDirectory: false);
     }
 
     private async void BrowseComputeMetrics_Click(object sender, RoutedEventArgs e)
@@ -370,18 +469,27 @@ public sealed partial class MainWindow
         }
     }
 
-    private async void SlideshowStart_Click(object sender, RoutedEventArgs e)
+    private async void SlideshowStart_Click(object sender, RoutedEventArgs e) =>
+        await StartSlideshowFromTreeRootAsync(_currentFolderPath).ConfigureAwait(true);
+
+    /// <summary>Tree-scope slideshow from <paramref name="rootDirectory"/> including subfolders (Algorithm A).</summary>
+    private async Task StartSlideshowFromTreeRootAsync(string? rootDirectory, string? missingFolderMessage = null)
     {
-        var root = _currentFolderPath;
-        if (string.IsNullOrEmpty(root))
+        if (string.IsNullOrEmpty(rootDirectory))
         {
-            SetTransientStatus("Select a folder first.");
+            SetTransientStatus(missingFolderMessage ?? "Select a folder first.");
+            return;
+        }
+
+        if (!Directory.Exists(rootDirectory))
+        {
+            SetTransientStatus("Folder not found.");
             return;
         }
 
         var tree = new TreeSlideshowSession(AppServices.FileSystem);
         _slideshow = new SlideshowCoordinator(tree);
-        _slideshow.Tree.Start(root);
+        _slideshow.Tree.Start(rootDirectory);
         _slideshowUiActive = true;
         SetTransientStatus("Starting slideshow…");
         try

@@ -19,7 +19,7 @@ Algorithm C (persistent index) is **P2** per PRD.
 
 ## User-facing disclosure (FR-SL-03)
 
-Ship in **Settings → Slideshow** (or help panel) under **“Random order fairness”**:
+Ship in **Settings → About random fairness…** (or help panel) under **“Random order fairness”**:
 
 > **Random slideshow** picks images from a **running sample** of files discovered so far under your chosen folder. Until enough files have been discovered, order is **approximately random**; over time and across the whole session it evens out. **Reshuffle** starts a new random session. For perfectly uniform random over the entire tree before any image shows, use a future **index** option (when available).
 

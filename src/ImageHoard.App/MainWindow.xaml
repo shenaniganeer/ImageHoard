@@ -15,7 +15,11 @@
             <local:BoolToVisibilityConverter x:Key="BoolToVis" />
             <local:InvertedBoolToVisibilityConverter x:Key="InvBoolToVis" />
             <DataTemplate x:Key="BrowserFolderItemTemplate">
-                <Grid MinHeight="28" Padding="0,2" DataContext="{Binding Content}">
+                <Grid
+                    MinHeight="28"
+                    Padding="0,2"
+                    DataContext="{Binding Content}"
+                    RightTapped="BrowserTreeRow_RightTapped">
                     <TextBlock
                         VerticalAlignment="Center"
                         Text="{Binding DisplayLabel}"
@@ -31,7 +35,11 @@
                 </Grid>
             </DataTemplate>
             <DataTemplate x:Key="BrowserFileItemTemplate">
-                <Grid MinHeight="28" Padding="0,2" DataContext="{Binding Content}">
+                <Grid
+                    MinHeight="28"
+                    Padding="0,2"
+                    DataContext="{Binding Content}"
+                    RightTapped="BrowserTreeRow_RightTapped">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" MinWidth="120" />
                         <ColumnDefinition Width="Auto" />
@@ -135,41 +143,19 @@
             <MenuBar Grid.Row="0">
                 <MenuBarItem Title="File">
                     <MenuFlyoutItem Text="Open…" Click="OpenFolder_Click" />
+                    <MenuFlyoutSubItem x:Name="FileFavoritesSubMenu" Text="Favorites" />
                     <MenuFlyoutSeparator />
                     <MenuFlyoutItem Text="Exit" Click="Exit_Click" />
-                </MenuBarItem>
-                <MenuBarItem Title="Browse">
-                    <ToggleMenuFlyoutItem
-                        x:Name="IncludeSubfoldersToggle"
-                        Text="Include subfolders in list"
-                        Click="IncludeSubfoldersToggle_Click" />
-                    <MenuFlyoutSeparator />
-                    <MenuFlyoutItem Text="Go to path…" Click="BrowseGoToPath_Click" />
-                    <MenuFlyoutItem Text="Add current folder to favorites" Click="BrowseAddFavorite_Click" />
-                    <MenuFlyoutSubItem Text="Favorites">
-                        <MenuFlyoutItem x:Name="FavoritePlaceholder" Text="(none)" IsEnabled="False" />
-                    </MenuFlyoutSubItem>
-                    <MenuFlyoutSeparator />
-                    <MenuFlyoutItem Text="Reveal in Explorer" Click="BrowseRevealInExplorer_Click" />
-                    <MenuFlyoutSeparator />
-                    <MenuFlyoutItem Text="Compute folder metrics…" Click="BrowseComputeMetrics_Click" />
                 </MenuBarItem>
                 <MenuBarItem Title="View">
                     <ToggleMenuFlyoutItem
                         x:Name="ShowBrowserPaneToggle"
                         Text="Show browser pane"
                         Click="ShowBrowserPaneToggle_Click" />
-                    <MenuFlyoutSubItem Text="Image overlay">
-                        <ToggleMenuFlyoutItem
-                            x:Name="ShowPathOnOverlayWindowedToggle"
-                            Text="Show file path (windowed preview)"
-                            Click="ShowPathOnOverlayWindowedToggle_Click" />
-                        <ToggleMenuFlyoutItem
-                            x:Name="ShowPathOnOverlayFullscreenToggle"
-                            Text="Show file path (fullscreen)"
-                            Click="ShowPathOnOverlayFullscreenToggle_Click" />
-                    </MenuFlyoutSubItem>
-                    <MenuFlyoutSeparator />
+                    <ToggleMenuFlyoutItem
+                        x:Name="IncludeSubfoldersToggle"
+                        Text="Include subfolders in list"
+                        Click="IncludeSubfoldersToggle_Click" />
                     <MenuFlyoutSubItem Text="Sort list by">
                         <RadioMenuFlyoutItem
                             x:Name="SortNameNaturalItem"
@@ -207,6 +193,16 @@
                             Click="ShowBrowserFileDateToggle_Click" />
                     </MenuFlyoutSubItem>
                     <MenuFlyoutSeparator />
+                    <MenuFlyoutSubItem Text="Image overlay">
+                        <ToggleMenuFlyoutItem
+                            x:Name="ShowPathOnOverlayWindowedToggle"
+                            Text="Show file path (windowed preview)"
+                            Click="ShowPathOnOverlayWindowedToggle_Click" />
+                        <ToggleMenuFlyoutItem
+                            x:Name="ShowPathOnOverlayFullscreenToggle"
+                            Text="Show file path (fullscreen)"
+                            Click="ShowPathOnOverlayFullscreenToggle_Click" />
+                    </MenuFlyoutSubItem>
                     <MenuFlyoutSubItem Text="Image fit">
                         <RadioMenuFlyoutItem
                             x:Name="FitModeFitItem"
@@ -230,27 +226,14 @@
                         Text="Enter fullscreen"
                         Click="EnterFullscreen_Click" />
                 </MenuBarItem>
-                <MenuBarItem Title="Slideshow">
-                    <MenuFlyoutItem Text="Start slideshow (tree)…" Click="SlideshowStart_Click" />
-                    <MenuFlyoutItem Text="Toggle Tree / Folder scope" Click="SlideshowToggleScope_Click" />
-                    <MenuFlyoutItem Text="Reshuffle session" Click="SlideshowReshuffle_Click" />
-                    <MenuFlyoutSeparator />
-                    <MenuFlyoutItem Text="About random fairness…" Click="SlideshowFairnessHelp_Click" />
-                </MenuBarItem>
-                <MenuBarItem Title="Sort">
-                    <MenuFlyoutItem Text="Flag selection: Keep" Click="SortFlagKeep_Click" />
-                    <MenuFlyoutItem Text="Flag selection: Delete" Click="SortFlagDelete_Click" />
-                    <MenuFlyoutItem Text="Flag selection: Unset" Click="SortFlagUnset_Click" />
-                    <MenuFlyoutSeparator />
-                    <MenuFlyoutItem Text="Batch delete (non-keepers)…" Click="SortBatchDelete_Click" />
-                    <MenuFlyoutItem Text="Move current folder to archive…" Click="SortMoveArchive_Click" />
-                </MenuBarItem>
                 <MenuBarItem Title="Settings">
                     <MenuFlyoutItem Text="Preferences…" Click="OptionsPreferences_Click" />
                     <MenuFlyoutSeparator />
                     <MenuFlyoutItem Text="Set archive root…" Click="SettingsArchiveRoot_Click" />
                     <MenuFlyoutItem Text="Clear caches (metrics)" Click="SettingsClearCaches_Click" />
                     <MenuFlyoutItem Text="Clear caches + operation log" Click="SettingsClearCachesAndLog_Click" />
+                    <MenuFlyoutItem Text="Compute folder metrics…" Click="BrowseComputeMetrics_Click" />
+                    <MenuFlyoutItem Text="About random fairness…" Click="SlideshowFairnessHelp_Click" />
                 </MenuBarItem>
             </MenuBar>
             <Grid x:Name="ContentBelowMenu" Grid.Row="1" MinHeight="160">
@@ -272,7 +255,8 @@
                             Grid.Row="0"
                             MinHeight="36"
                             Padding="0,4,0,4"
-                            ColumnSpacing="4">
+                            ColumnSpacing="4"
+                            RightTapped="BrowserBrowseToolbar_RightTapped">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
@@ -305,7 +289,7 @@
                             Expanding="FolderTree_OnExpanding"
                             SelectionChanged="FolderTree_SelectionChanged" />
                     </Grid>
-                    <Border
+                    <local:BrowserPreviewSplitterGrid
                         x:Name="SplitterBrowserPreview"
                         Grid.Column="1"
                         HorizontalAlignment="Stretch"

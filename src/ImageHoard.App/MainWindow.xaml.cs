@@ -90,6 +90,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
         await RestoreStartupBrowseAsync();
         InitializeFeatures();
+        RebuildBrowseFavoritesMenu();
         RegisterGlobalPointerHandlers();
         RootGrid.Focus(FocusState.Programmatic);
     }
@@ -621,6 +622,9 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             case "browse.revealInExplorer":
                 BrowseRevealInExplorer_Click(this, new RoutedEventArgs());
                 return true;
+            case "slideshow.start":
+                SlideshowStart_Click(this, new RoutedEventArgs());
+                return true;
             case "slideshow.toggleScope":
                 if (_isFullscreen && _slideshowUiActive && _slideshow != null)
                     _ = SlideshowToggleScopeFromKeysAsync();
@@ -753,7 +757,10 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         EndSplitDrag();
     }
 
-    private void Splitter_PointerCaptureLost(object sender, PointerRoutedEventArgs e) => EndSplitDrag();
+    private void Splitter_PointerCaptureLost(object sender, PointerRoutedEventArgs e)
+    {
+        EndSplitDrag();
+    }
 
     private void EndSplitDrag()
     {

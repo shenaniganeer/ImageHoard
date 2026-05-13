@@ -80,7 +80,14 @@ public sealed partial class MainWindow
                 if (!_slideshowUiActive && didCoalesce)
                     SyncTreeSelectionToImagePath(path);
 
-                await DecodeAndCommitPreviewAsync(path).ConfigureAwait(true);
+                try
+                {
+                    await DecodeAndCommitPreviewAsync(path).ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("[ImageHoard] Preview drain: " + ex);
+                }
             }
         }
         finally
@@ -122,23 +129,31 @@ public sealed partial class MainWindow
         }
 
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        if (!dq.TryEnqueue(DispatcherQueuePriority.High, async () =>
-            {
-                try
-                {
-                    await work().ConfigureAwait(true);
-                }
-                finally
-                {
-                    tcs.TrySetResult();
-                }
-            }))
+        if (!dq.TryEnqueue(DispatcherQueuePriority.High, () => _ = CompletePreviewUiEnqueueAsync(tcs, work)))
         {
             await work().ConfigureAwait(true);
             return;
         }
 
         await tcs.Task.ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="work"/> on the enqueued dispatcher turn and completes <paramref name="tcs"/>
+    /// so <see cref="RunPreviewUiCommitHighAsync"/> can await failures (avoids fire-and-forget async delegate
+    /// that always called TrySetResult and swallowed exceptions from preview commit).
+    /// </summary>
+    private static async Task CompletePreviewUiEnqueueAsync(TaskCompletionSource tcs, Func<Task> work)
+    {
+        try
+        {
+            await work().ConfigureAwait(true);
+            tcs.TrySetResult();
+        }
+        catch (Exception ex)
+        {
+            tcs.TrySetException(ex);
+        }
     }
 
     private async Task DecodeAndCommitPreviewAsync(string path)

@@ -51,6 +51,12 @@
                 Margin="0,0,8,0"
                 Click="SaveButton_Click" />
             <Button
+                x:Name="CloseButton"
+                Content="Close"
+                MinWidth="100"
+                Margin="0,0,8,0"
+                Click="CloseButton_Click" />
+            <Button
                 x:Name="CancelButton"
                 Content="Cancel"
                 MinWidth="100"

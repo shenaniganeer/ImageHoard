@@ -22,6 +22,7 @@
     "sort.commitBatchDelete": [{ "kind": "keyboard", "keys": ["Control", "Shift", "Delete"] }],
     "sort.moveToArchive": [{ "kind": "keyboard", "keys": ["Control", "Shift", "KeyM"] }],
     "sort.undoLastFlag": [{ "kind": "keyboard", "keys": ["Control", "KeyZ"] }],
+    "slideshow.start": [{ "kind": "keyboard", "keys": ["Control", "Shift", "KeyS"] }],
     "slideshow.toggleScope": [{ "kind": "keyboard", "keys": ["Tab"] }],
     "ui.fullscreen": [
       { "kind": "keyboard", "keys": ["F11"] },

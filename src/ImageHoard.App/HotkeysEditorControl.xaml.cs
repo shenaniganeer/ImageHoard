@@ -9,7 +9,7 @@ using Windows.System;
 
 namespace ImageHoard.App;
 
-/// <summary>Embedded editor for input overrides (flat list, Enter-to-capture, keyboard and pointer).</summary>
+/// <summary>Embedded editor for input overrides (grouped list, Enter-to-capture, keyboard and pointer).</summary>
 public sealed partial class HotkeysEditorControl : UserControl
 {
     private InputProfileDocument _builtinBase = null!;
@@ -40,6 +40,9 @@ public sealed partial class HotkeysEditorControl : UserControl
     /// <summary>Invoked after overrides file was written successfully.</summary>
     public Action? BindingsPersisted { get; set; }
 
+    /// <summary>Closes the hosting window (e.g. Preferences) without reverting bindings.</summary>
+    public Action? RequestCloseWindow { get; set; }
+
     public void Reset(InputProfileDocument builtinBase, InputProfileDocument mergedForEdit)
     {
         if (!_rowsBuilt)
@@ -59,39 +62,61 @@ public sealed partial class HotkeysEditorControl : UserControl
 
     private void BuildRows()
     {
-        foreach (var entry in CommandCatalog.All)
+        foreach (var section in CommandCatalog.SectionDisplayOrder)
         {
-            var row = new Grid { MinHeight = 36, Margin = new Thickness(0, 0, 0, 6) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
+            var entries = CommandCatalog.All.Where(e => e.Section == section).ToList();
+            if (entries.Count == 0)
+                continue;
 
-            var label = new TextBlock
+            var sectionPanel = new StackPanel();
+            foreach (var entry in entries)
+                AddChordRow(entry, sectionPanel);
+
+            var expander = new Expander
             {
-                Text = entry.Description,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextWrapping = TextWrapping.WrapWholeWords,
-                Margin = new Thickness(0, 2, 8, 2),
+                Header = CommandCatalog.SectionHeader(section),
+                IsExpanded = true,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Margin = new Thickness(0, 0, 0, 8),
+                Content = sectionPanel,
             };
-            Grid.SetColumn(label, 0);
-
-            var box = new TextBox
-            {
-                Tag = entry.CommandId,
-                IsReadOnly = true,
-                IsTabStop = true,
-                IsEnabled = entry.AllowUserBinding,
-                VerticalAlignment = VerticalAlignment.Center,
-                PlaceholderText = entry.AllowUserBinding ? "Enter add · Shift+Enter replace all · Backspace/Delete removes selected shortcut" : "(fixed)",
-            };
-            Grid.SetColumn(box, 1);
-            if (entry.AllowUserBinding)
-                box.KeyDown += ChordBox_KeyDown;
-
-            row.Children.Add(label);
-            row.Children.Add(box);
-            RowHost.Children.Add(row);
-            _chordBoxes[entry.CommandId] = box;
+            RowHost.Children.Add(expander);
         }
+    }
+
+    private void AddChordRow(CommandCatalog.Entry entry, Panel host)
+    {
+        var row = new Grid { MinHeight = 36, Margin = new Thickness(0, 0, 0, 6) };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
+
+        var label = new TextBlock
+        {
+            Text = entry.Description,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.WrapWholeWords,
+            Margin = new Thickness(0, 2, 8, 2),
+        };
+        Grid.SetColumn(label, 0);
+
+        var box = new TextBox
+        {
+            Tag = entry.CommandId,
+            IsReadOnly = true,
+            IsTabStop = true,
+            IsEnabled = entry.AllowUserBinding,
+            VerticalAlignment = VerticalAlignment.Center,
+            PlaceholderText = entry.AllowUserBinding ? "Enter add · Shift+Enter replace all · Backspace/Delete removes selected shortcut" : "(fixed)",
+        };
+        Grid.SetColumn(box, 1);
+        if (entry.AllowUserBinding)
+            box.KeyDown += ChordBox_KeyDown;
+
+        row.Children.Add(label);
+        row.Children.Add(box);
+        host.Children.Add(row);
+        _chordBoxes[entry.CommandId] = box;
     }
 
     private void ChordBox_KeyDown(object sender, KeyRoutedEventArgs e)
@@ -190,7 +215,7 @@ public sealed partial class HotkeysEditorControl : UserControl
 
     private void RootLayout_OnPointerWheelCapture(object sender, PointerRoutedEventArgs e)
     {
-        if (_armedCommandId == null || IsUnderSaveOrCancel(e.OriginalSource))
+        if (_armedCommandId == null || IsUnderFooterButtons(e.OriginalSource))
             return;
 
         var delta = e.GetCurrentPoint(null).Properties.MouseWheelDelta;
@@ -205,7 +230,7 @@ public sealed partial class HotkeysEditorControl : UserControl
 
     private void RootLayout_OnPointerPressedCapture(object sender, PointerRoutedEventArgs e)
     {
-        if (_armedCommandId == null || IsUnderSaveOrCancel(e.OriginalSource))
+        if (_armedCommandId == null || IsUnderFooterButtons(e.OriginalSource))
             return;
 
         var props = e.GetCurrentPoint(RootLayout).Properties;
@@ -218,11 +243,11 @@ public sealed partial class HotkeysEditorControl : UserControl
         e.Handled = true;
     }
 
-    private bool IsUnderSaveOrCancel(object originalSource)
+    private bool IsUnderFooterButtons(object originalSource)
     {
         for (var o = originalSource as DependencyObject; o != null; o = VisualTreeHelper.GetParent(o))
         {
-            if (ReferenceEquals(o, SaveButton) || ReferenceEquals(o, CancelButton))
+            if (ReferenceEquals(o, SaveButton) || ReferenceEquals(o, CloseButton) || ReferenceEquals(o, CancelButton))
                 return true;
         }
 
@@ -407,6 +432,12 @@ public sealed partial class HotkeysEditorControl : UserControl
         {
             StatusText.Text = "Save failed: " + ex.Message;
         }
+    }
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        DisarmCapture(restoreFocusToSource: false);
+        RequestCloseWindow?.Invoke();
     }
 
     private async void CancelButton_Click(object sender, RoutedEventArgs e)

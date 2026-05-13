@@ -2,12 +2,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using ImageHoard.Core;
 using ImageHoard.Core.Browse;
 using ImageHoard.Core.Models;
 using ImageHoard.Core.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.System;
@@ -20,6 +22,10 @@ public sealed partial class MainWindow
     private TreeViewNode? _renameTargetNode;
     private bool _renameCommitInProgress;
 
+    private TreeViewNode? _browserContextMenuTargetNode;
+    private MenuFlyout? _browserTreeContextMenu;
+    private bool _browserContextMenuIsToolbarCurrentFolder;
+
     private void WireBrowserTreeTemplates()
     {
         FolderTree.ItemTemplateSelector = new BrowserTreeItemTemplateSelector
@@ -30,7 +36,150 @@ public sealed partial class MainWindow
         };
         FolderTree.DoubleTapped += FolderTree_DoubleTapped;
         FolderTree.PreviewKeyDown += FolderTree_PreviewKeyDown;
+
+        _browserTreeContextMenu = new MenuFlyout();
+        var renameItem = new MenuFlyoutItem { Text = "Rename" };
+        renameItem.Click += (_, _) => BrowserContextRename_Click();
+        _browserTreeContextMenu.Items.Add(renameItem);
+        var revealItem = new MenuFlyoutItem { Text = "Reveal in Explorer" };
+        revealItem.Click += (_, _) => BrowserContextReveal_Click();
+        _browserTreeContextMenu.Items.Add(revealItem);
+        var slideshowItem = new MenuFlyoutItem { Text = "Start slideshow from folder" };
+        slideshowItem.Click += (_, _) => BrowserContextStartSlideshowFromFolder_Click();
+        _browserTreeContextMenu.Items.Add(slideshowItem);
+        var favoriteItem = new MenuFlyoutItem { Text = "Add folder to favorites" };
+        favoriteItem.Click += (_, _) => BrowserContextAddFavorite_Click();
+        _browserTreeContextMenu.Items.Add(favoriteItem);
     }
+
+    private void BrowserTreeRow_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        var item = FindAncestorTreeViewItem(sender as DependencyObject);
+        var node = FindNodeForTreeViewItem(item);
+        if (node?.Content is BrowserFileListHeaderMarker)
+            return;
+        if (node?.Content is not FolderTreeEntry && node?.Content is not ImageRow)
+            return;
+
+        e.Handled = true;
+        _browserContextMenuIsToolbarCurrentFolder = false;
+        _browserContextMenuTargetNode = node;
+        if (sender is not FrameworkElement anchor || _browserTreeContextMenu == null)
+            return;
+
+        var options = new FlyoutShowOptions { Position = e.GetPosition(anchor) };
+        _browserTreeContextMenu.ShowAt(anchor, options);
+    }
+
+    private void BrowserBrowseToolbar_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_currentFolderPath) || !Directory.Exists(_currentFolderPath))
+            return;
+
+        e.Handled = true;
+        _browserContextMenuIsToolbarCurrentFolder = true;
+        _browserContextMenuTargetNode = null;
+        if (sender is not FrameworkElement anchor || _browserTreeContextMenu == null)
+            return;
+
+        var options = new FlyoutShowOptions { Position = e.GetPosition(anchor) };
+        _browserTreeContextMenu.ShowAt(anchor, options);
+    }
+
+    private void BrowserContextRename_Click()
+    {
+        if (_browserContextMenuIsToolbarCurrentFolder)
+        {
+            _browserContextMenuIsToolbarCurrentFolder = false;
+            BrowserContextRenameCurrentBrowseFolderAsync();
+            return;
+        }
+
+        if (_browserContextMenuTargetNode == null)
+            return;
+        FolderTree.SelectedNode = _browserContextMenuTargetNode;
+        TryBeginRenameSelectedBrowserItem();
+    }
+
+    private async void BrowserContextRenameCurrentBrowseFolderAsync()
+    {
+        var oldPath = _currentFolderPath;
+        if (string.IsNullOrEmpty(oldPath) || !Directory.Exists(oldPath))
+            return;
+
+        var name = Path.GetFileName(oldPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (string.IsNullOrEmpty(name))
+            return;
+
+        var box = new TextBox { Text = name, Width = 400 };
+        var dlg = new ContentDialog
+        {
+            Title = "Rename folder",
+            Content = box,
+            PrimaryButtonText = "Rename",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = RootGrid.XamlRoot,
+        };
+        if (await dlg.ShowAsync() != ContentDialogResult.Primary)
+            return;
+
+        var synthetic = new FolderTreeEntry(oldPath, name);
+        await CommitFolderRenameAsync(synthetic, box.Text).ConfigureAwait(true);
+    }
+
+    private void BrowserContextReveal_Click()
+    {
+        if (_browserContextMenuIsToolbarCurrentFolder)
+        {
+            _browserContextMenuIsToolbarCurrentFolder = false;
+            if (!string.IsNullOrEmpty(_currentFolderPath) && Directory.Exists(_currentFolderPath))
+                TryRevealPathInExplorer(_currentFolderPath, isDirectory: true);
+            return;
+        }
+
+        if (_browserContextMenuTargetNode?.Content is ImageRow row)
+            TryRevealPathInExplorer(row.FullPath, isDirectory: false);
+        else if (_browserContextMenuTargetNode?.Content is FolderTreeEntry fe)
+            TryRevealPathInExplorer(fe.Path, isDirectory: true);
+    }
+
+    private void BrowserContextAddFavorite_Click()
+    {
+        if (_browserContextMenuIsToolbarCurrentFolder)
+        {
+            _browserContextMenuIsToolbarCurrentFolder = false;
+            if (!string.IsNullOrEmpty(_currentFolderPath))
+                AddFolderToFavorites(_currentFolderPath);
+            return;
+        }
+
+        var folder = ResolveFolderPathForFavoriteFromNode(_browserContextMenuTargetNode);
+        if (!string.IsNullOrEmpty(folder))
+            AddFolderToFavorites(folder);
+    }
+
+    private async void BrowserContextStartSlideshowFromFolder_Click()
+    {
+        string? root;
+        if (_browserContextMenuIsToolbarCurrentFolder)
+        {
+            _browserContextMenuIsToolbarCurrentFolder = false;
+            root = _currentFolderPath;
+        }
+        else
+            root = ResolveFolderPathForFavoriteFromNode(_browserContextMenuTargetNode);
+
+        await StartSlideshowFromTreeRootAsync(root, "No folder to start from.").ConfigureAwait(true);
+    }
+
+    private static string? ResolveFolderPathForFavoriteFromNode(TreeViewNode? node) =>
+        node?.Content switch
+        {
+            FolderTreeEntry fe => fe.Path,
+            ImageRow row => Path.GetDirectoryName(row.FullPath),
+            _ => null,
+        };
 
     private void ApplyLayoutFileDetailsToImageRow(ImageRow row)
     {

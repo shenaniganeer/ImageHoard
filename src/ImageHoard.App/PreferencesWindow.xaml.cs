@@ -21,7 +21,11 @@ public sealed partial class PreferencesWindow : Window
     {
         InitializeComponent();
         _host = host;
-        Closed += (_, _) => _instance = null;
+        Closed += (_, _) =>
+        {
+            _instance = null;
+            HotkeysEditor.RequestCloseWindow = null;
+        };
         this.Activated += PreferencesWindow_Activated;
         TryResize();
     }
@@ -163,6 +167,7 @@ public sealed partial class PreferencesWindow : Window
         HotkeysEditor.Visibility = Visibility.Visible;
         HotkeysEditor.LoadEditDocumentsAsync = () => _host.LoadHotkeysEditDocumentsAsync();
         HotkeysEditor.BindingsPersisted = () => _host.ReloadInputBindingsAfterHotkeysPersist();
+        HotkeysEditor.RequestCloseWindow = Close;
         HotkeysEditor.Reset(docs.Value.Builtin, docs.Value.Merged);
         _hotkeysTabPrimed = true;
     }

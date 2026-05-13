@@ -17,13 +17,14 @@ This document extends the **minimum** command set in [input-default-profiles.md]
 | `sort.commitBatchDelete` | Batch delete flow | FR-SR-03/04 | Yes |
 | `sort.moveToArchive` | Move to archive wizard | FR-SR-05 | Yes |
 | `sort.undoLastFlag` | Undo last flag | FR-SR-02 | Yes |
+| `slideshow.start` | Start tree slideshow from current browse folder | FR-SL-02 | Yes (KeyboardOnly default `Control+Shift+S`) |
 | `slideshow.toggleScope` | Tree ↔ Folder scope | FR-SL-06 | Yes |
 | `slideshow.reshuffle` | New random session | FR-SL-04 | **P1 default chord** (toolbar in P0) |
 | `slideshow.skipUnsupported` | Skip unsupported file | FR-SL-05 | Chrome + optional bind P1 |
 | `slideshow.deleteCurrent` | Delete current slide (dangerous) | FR-SL-05 | **Off** by default; if enabled, double-confirm; P1 default chord |
-| `browse.toggleSubfolderInclusion` | Toggle “include subfolders” for **list** | FR-BR-02 | Chrome **P0**; bind P1 |
+| `browse.toggleSubfolderInclusion` | Toggle “include subfolders” for **list** | FR-BR-02 | View menu **P0**; bind P1 |
 | `browse.openGoToPath` | Open “go to path” dialog | FR-BR-04 | Chrome P0; bind P1 |
-| `browse.openBookmarks` | Open bookmarks / favorites manager | FR-BR-04 | Chrome P0; bind P1 |
+| `browse.openBookmarks` | Open bookmarks / favorites manager | FR-BR-04 | File → Favorites **P0**; bind P1 |
 | `browse.addBookmark` | Bookmark current root/folder | FR-BR-04 | Chrome P0; bind P1 |
 | `browse.revealInExplorer` | Reveal current file in Explorer | FR-BR-05 | Chrome P0; bind P1 |
 | `view.cycleFitMode` | Cycle fit / fill / 1:1 (or next mode) | FR-VW-01 | Chrome P0; bind **recommended P0** `KeyV` or toolbar |
@@ -44,6 +45,7 @@ This document extends the **minimum** command set in [input-default-profiles.md]
 
 When promoting to shipped profiles:
 
+- `slideshow.start`: `Control+Shift+S` (KeyboardOnly); shipped in `keyboard-only.v1.json`.  
 - `slideshow.reshuffle`: `Control+Shift+R` (KeyboardOnly); mouse: **none** by default (avoid accidents).  
 - `view.cycleFitMode`: `KeyV` (KeyboardOnly).  
 - `view.panPreview`: `Shift` + primary click drag on preview (MouseOnly merged profile; rebinding in Preferences).  

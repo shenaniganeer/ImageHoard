@@ -20,7 +20,9 @@ public sealed record FolderMetricsSnapshot(
     int TotalFileCount,
     int ImageFileCount,
     DateTimeOffset? FolderMtimeUtc,
-    FolderMetricsScanScope ScanScope = FolderMetricsScanScope.FullSubtree);
+    FolderMetricsScanScope ScanScope = FolderMetricsScanScope.FullSubtree,
+    /// <summary>ImmediateChildren only: whether the directory listing had any entries (dirs or files). Null for legacy cache rows or FullSubtree scans.</summary>
+    bool? HasExpandableChildren = null);
 
 /// <summary>FR-BR-06 — folder metrics: immediate listing or full subtree scan.</summary>
 public static class FolderMetricsScanner
@@ -54,8 +56,17 @@ public static class FolderMetricsScanner
         }
         catch
         {
-            return new FolderMetricsSnapshot(directoryPath, 0, 0, 0, dirMtime, FolderMetricsScanScope.ImmediateChildren);
+            return new FolderMetricsSnapshot(
+                directoryPath,
+                0,
+                0,
+                0,
+                dirMtime,
+                FolderMetricsScanScope.ImmediateChildren,
+                HasExpandableChildren: false);
         }
+
+        var hasExpandableChildren = entries.Count > 0;
 
         foreach (var entry in entries.Where(e => !e.IsDirectory))
         {
@@ -82,7 +93,14 @@ public static class FolderMetricsScanner
             }
         }
 
-        return new FolderMetricsSnapshot(directoryPath, size, files, images, dirMtime, FolderMetricsScanScope.ImmediateChildren);
+        return new FolderMetricsSnapshot(
+            directoryPath,
+            size,
+            files,
+            images,
+            dirMtime,
+            FolderMetricsScanScope.ImmediateChildren,
+            HasExpandableChildren: hasExpandableChildren);
     }
 
     public static async Task<FolderMetricsSnapshot> ScanSubtreeAsync(

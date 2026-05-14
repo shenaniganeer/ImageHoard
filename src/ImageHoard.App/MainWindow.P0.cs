@@ -96,10 +96,7 @@ public sealed partial class MainWindow
         UpdateFolderDetailsMenuChecks();
         UpdatePreviewStretch();
         UpdateFitModeMenuChecks();
-        ApplyBrowserFileDetailsChrome();
-        ApplyBrowserFolderDetailsChrome();
-        SyncBrowserFolderListHeaderNodes();
-        SyncBrowserFileListHeaderNodes();
+        ScheduleDeferredBrowserChromeAfterStartup();
         TryLoadInputProfile();
     }
 

@@ -7,6 +7,9 @@ namespace ImageHoard.Core.Metrics;
 /// <summary>FR-BR-07 — simple JSONL cache rows keyed by path.</summary>
 public static class FolderMetricsCacheStore
 {
+    /// <summary>Serializes JSONL appends (and <see cref="ClearCacheFile"/>) so concurrent folder-metrics jobs cannot open the same path for exclusive append.</summary>
+    private static readonly SemaphoreSlim MetricsCacheFileGate = new(1, 1);
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false,
@@ -15,12 +18,20 @@ public static class FolderMetricsCacheStore
 
     public static async Task AppendSnapshotAsync(string cacheFilePath, FolderMetricsSnapshot snapshot, CancellationToken ct = default)
     {
-        var dir = Path.GetDirectoryName(cacheFilePath);
-        if (!string.IsNullOrEmpty(dir))
-            Directory.CreateDirectory(dir);
+        await MetricsCacheFileGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var dir = Path.GetDirectoryName(cacheFilePath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
 
-        var line = JsonSerializer.Serialize(snapshot, JsonOptions) + Environment.NewLine;
-        await File.AppendAllTextAsync(cacheFilePath, line, ct).ConfigureAwait(false);
+            var line = JsonSerializer.Serialize(snapshot, JsonOptions) + Environment.NewLine;
+            await File.AppendAllTextAsync(cacheFilePath, line, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            MetricsCacheFileGate.Release();
+        }
     }
 
     /// <summary>
@@ -114,7 +125,15 @@ public static class FolderMetricsCacheStore
 
     public static void ClearCacheFile(string cacheFilePath)
     {
-        if (File.Exists(cacheFilePath))
-            File.Delete(cacheFilePath);
+        MetricsCacheFileGate.Wait();
+        try
+        {
+            if (File.Exists(cacheFilePath))
+                File.Delete(cacheFilePath);
+        }
+        finally
+        {
+            MetricsCacheFileGate.Release();
+        }
     }
 }

@@ -44,6 +44,11 @@ public sealed partial class MainWindow
     private const int BrowserStagedPopulateFolderThreshold = 120;
     private const int BrowserFolderUiChunkSize = 72;
     private const int BrowserMetricsDiscoveryDrainPerTick = 14;
+    private const int BrowserMetricsDiscoveryDrainPerTickWhileSettling = 5;
+    private const double BrowsePopulateMetricsSettlingMs = 520;
+
+    /// <summary>Updated when browse generation increments; used to reduce metrics discovery drain briefly after navigate.</summary>
+    private DateTimeOffset _lastBrowsePopulateUtc = DateTimeOffset.MinValue;
 
     private readonly ConcurrentQueue<(string Path, FolderMetricsScanScope Scope)> _folderMetricsDiscoveryQueue = new();
     private bool _folderMetricsDrainUiPending;
@@ -466,11 +471,19 @@ public sealed partial class MainWindow
             ProcessFolderMetricsDiscoveryQueueTick);
     }
 
+    private int BrowserMetricsDiscoveryDrainPerTickForCurrentLoad()
+    {
+        if ((DateTimeOffset.UtcNow - _lastBrowsePopulateUtc).TotalMilliseconds < BrowsePopulateMetricsSettlingMs)
+            return BrowserMetricsDiscoveryDrainPerTickWhileSettling;
+        return BrowserMetricsDiscoveryDrainPerTick;
+    }
+
     private void ProcessFolderMetricsDiscoveryQueueTick()
     {
         _folderMetricsDrainUiPending = false;
         var drained = 0;
-        while (drained < BrowserMetricsDiscoveryDrainPerTick
+        var perTick = BrowserMetricsDiscoveryDrainPerTickForCurrentLoad();
+        while (drained < perTick
                && _folderMetricsDiscoveryQueue.TryDequeue(out var item))
         {
             drained++;
@@ -490,21 +503,29 @@ public sealed partial class MainWindow
         ScheduleProcessFolderMetricsDiscoveryQueue();
     }
 
+    private bool WillQueueImmediateFolderMetricsOnPopulate() =>
+        _layoutState.CalculateFolderSizesInBackground
+        && (_layoutState.ShowBrowserFolderSize || _layoutState.ShowBrowserFolderImageCount);
+
     private void AppendBrowserFolderAndImageNodes(
         IList<TreeViewNode> target,
         IEnumerable<FileSystemEntry> dirEntries,
         IReadOnlyList<ImageRow> rows,
         int browserPopulateGeneration,
-        bool deferFolderMetricsBulk = false)
+        bool deferFolderMetricsBulk = false,
+        bool directoriesAlreadySorted = false)
     {
-        var dirs = FolderDirectorySort.SortDirectories(
-                dirEntries,
-                _layoutState.FolderListSort,
-                _folderAggregateBytesByPath,
-                _folderImageFileCountByPath)
-            .ToList();
+        List<FileSystemEntry> dirs = directoriesAlreadySorted
+            ? (dirEntries is List<FileSystemEntry> l ? l : dirEntries.ToList())
+            : FolderDirectorySort.SortDirectories(
+                    dirEntries,
+                    _layoutState.FolderListSort,
+                    _folderAggregateBytesByPath,
+                    _folderImageFileCountByPath)
+                .ToList();
 
-        List<(string Path, TreeViewNode Node)>? expandProbeTargets = dirs.Count > 0
+        var skipExpandProbeForMetrics = WillQueueImmediateFolderMetricsOnPopulate();
+        List<(string Path, TreeViewNode Node)>? expandProbeTargets = !skipExpandProbeForMetrics && dirs.Count > 0
             ? new List<(string Path, TreeViewNode Node)>(dirs.Count)
             : null;
 
@@ -574,7 +595,10 @@ public sealed partial class MainWindow
         int flatEntryCount,
         bool rootBrowsePopulate)
     {
-        var expandProbeTargets = new List<(string Path, TreeViewNode Node)>(sortedDirs.Count);
+        var skipExpandProbeForMetrics = WillQueueImmediateFolderMetricsOnPopulate();
+        List<(string Path, TreeViewNode Node)>? expandProbeTargets = skipExpandProbeForMetrics
+            ? null
+            : new List<(string Path, TreeViewNode Node)>(sortedDirs.Count);
         var folderInsertIndex = 0;
 
         if (_layoutState.ShowBrowserFolderColumnHeadings && sortedDirs.Count > 0)
@@ -635,7 +659,7 @@ public sealed partial class MainWindow
                     Content = entry,
                 };
                 treeNode.HasUnrealizedChildren = true;
-                expandProbeTargets.Add((d.FullPath, treeNode));
+                expandProbeTargets?.Add((d.FullPath, treeNode));
                 target.Insert(folderInsertIndex, treeNode);
                 folderInsertIndex++;
                 EnqueueFolderMetricsDiscovery(entry.Path, FolderMetricsScanScope.ImmediateChildren);
@@ -644,7 +668,7 @@ public sealed partial class MainWindow
             await Task.Yield();
         }
 
-        if (expandProbeTargets.Count > 0)
+        if (expandProbeTargets is { Count: > 0 })
             ScheduleBrowseExpandabilityProbeBatch(expandProbeTargets, browserProbeGen);
 
         if (rootBrowsePopulate)
@@ -683,7 +707,7 @@ public sealed partial class MainWindow
             ? $"0 image(s) · {flatEntryCount} item(s) in folder (none match supported raster extensions)"
             : $"{rows.Count} image(s) · {dirCount} folder(s)";
         SetTransientStatus(status);
-        PersistLayout();
+        SchedulePersistLayoutDebounced();
     }
 
     private void FinalizeBrowserRootPopulateAfterImmediateAppend(
@@ -716,7 +740,7 @@ public sealed partial class MainWindow
 
         UpdatePathOverlays();
         UpdateFullscreenMenuEnabled();
-        PersistLayout();
+        SchedulePersistLayoutDebounced();
     }
 
     private void SyncBrowserFolderListHeaderNodes()
@@ -1510,7 +1534,7 @@ public sealed partial class MainWindow
         IReadOnlyList<FileSystemEntry> entries;
         try
         {
-            entries = await AppServices.FileSystem.ListDirectoryAsync(folderPath).ConfigureAwait(true);
+            entries = await AppServices.FileSystem.ListDirectoryAsync(folderPath).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1683,6 +1707,86 @@ public sealed partial class MainWindow
         if (folderNode.Content is FolderTreeEntry)
         {
             ClearImagePreviewAndSelectFolderRow(folderNode);
+            return true;
+        }
+
+        return false;
+    }
+
+    private const int SiblingFolderNavMaxDescendantDepth = 64;
+    private const int SiblingFolderNavMaxVisitedPaths = 256;
+
+    private async Task<bool> TryFocusFirstMatchingImageUnderFolderNodeRecursiveAsync(
+        TreeViewNode folderNode,
+        string folderPath,
+        int depth,
+        int? populateGen,
+        HashSet<string> visitedPaths)
+    {
+        if (depth > SiblingFolderNavMaxDescendantDepth
+            || string.IsNullOrEmpty(folderPath)
+            || !Directory.Exists(folderPath)
+            || visitedPaths.Count >= SiblingFolderNavMaxVisitedPaths)
+            return false;
+
+        if (populateGen is { } g0 && g0 != Volatile.Read(ref _populateBrowserGeneration))
+            return false;
+
+        string visitKey;
+        try
+        {
+            visitKey = Path.GetFullPath(folderPath);
+        }
+        catch
+        {
+            visitKey = folderPath;
+        }
+
+        if (!visitedPaths.Add(visitKey))
+            return false;
+
+        folderNode.IsExpanded = true;
+        if (folderNode.Children.Count == 0)
+            await PopulateFolderTreeNodeChildrenAsync(folderNode, folderPath, populateGen).ConfigureAwait(true);
+
+        if (populateGen is { } g1 && g1 != Volatile.Read(ref _populateBrowserGeneration))
+            return false;
+
+        if (TrySelectFirstMatchingImageAmongDirectChildren(folderNode.Children))
+            return true;
+
+        foreach (var c in folderNode.Children)
+        {
+            if (c.Content is not FolderTreeEntry fe)
+                continue;
+            if (await TryFocusFirstMatchingImageUnderFolderNodeRecursiveAsync(
+                    c,
+                    fe.Path,
+                    depth + 1,
+                    populateGen,
+                    visitedPaths).ConfigureAwait(true))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Picks the first matching <see cref="ImageRow"/> among immediate children only (same ordering as
+    /// <see cref="FolderTree.RootNodes"/>), avoiding a depth-first walk that would skip later root-level images
+    /// when an earlier root child is a folder.
+    /// </summary>
+    private bool TrySelectFirstMatchingImageAmongDirectChildren(IEnumerable<TreeViewNode> nodesInOrder)
+    {
+        foreach (var n in nodesInOrder)
+        {
+            if (n.Content is not ImageRow r)
+                continue;
+            if (!BrowseNavigationModeFilter.Matches(_sortSession.GetState(r.FullPath), _browseNavigationMode))
+                continue;
+            EnqueuePreviewNavigation(r.FullPath, false);
+            SyncBrowseTreeSelection(n);
+            _session.LastSelectedImage = r.FullPath;
             return true;
         }
 
@@ -1986,6 +2090,54 @@ public sealed partial class MainWindow
         _folderImageFileCountByPath[path] = snap.ImageFileCount;
         if (IsDeferredFolderMetricsSort(_layoutState.FolderListSort))
             resortPaths.Add(path);
+        ApplyHasUnrealizedChildrenFromImmediateMetricsSnapshot(path, snap, gen);
+    }
+
+    private void ApplyHasUnrealizedChildrenFromImmediateMetricsSnapshot(string path, FolderMetricsSnapshot snap, int gen)
+    {
+        if (snap.ScanScope != FolderMetricsScanScope.ImmediateChildren)
+            return;
+        if (gen != Volatile.Read(ref _populateBrowserGeneration))
+            return;
+        if (FindFolderTreeNodeByPath(FolderTree.RootNodes, path) is not { } node)
+            return;
+        if (snap.HasExpandableChildren is bool b)
+        {
+            node.HasUnrealizedChildren = b;
+            return;
+        }
+
+        var one = new List<(string Path, TreeViewNode Node)> { (path, node) };
+        ScheduleBrowseExpandabilityProbeBatch(one, gen);
+    }
+
+    internal void ScheduleDeferredBrowserChromeAfterStartup()
+    {
+        _ = DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            DeferredBrowserChromeAfterStartupStep1);
+    }
+
+    private void DeferredBrowserChromeAfterStartupStep1()
+    {
+        ApplyBrowserFileDetailsChrome();
+        _ = DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            DeferredBrowserChromeAfterStartupStep2);
+    }
+
+    private void DeferredBrowserChromeAfterStartupStep2()
+    {
+        ApplyBrowserFolderDetailsChrome();
+        _ = DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            DeferredBrowserChromeAfterStartupStep3);
+    }
+
+    private void DeferredBrowserChromeAfterStartupStep3()
+    {
+        SyncBrowserFolderListHeaderNodes();
+        SyncBrowserFileListHeaderNodes();
     }
 
     internal void RefreshAllFolderEntrySizingDisplays()
@@ -2131,6 +2283,7 @@ public sealed partial class MainWindow
         }
 
         var gen = Interlocked.Increment(ref _populateBrowserGeneration);
+        _lastBrowsePopulateUtc = DateTimeOffset.UtcNow;
         ResetBrowserFolderMetricsState();
         _currentFolderPath = path;
         _session.LastBrowseFolder = path;
@@ -2214,7 +2367,8 @@ public sealed partial class MainWindow
                     dirsList,
                     rows,
                     gen,
-                    deferFolderMetricsBulk: false);
+                    deferFolderMetricsBulk: false,
+                    directoriesAlreadySorted: true);
                 FinalizeBrowserRootPopulateAfterImmediateAppend(gen, flatEntryCount, dirsList.Count, rows);
             }
         }).ConfigureAwait(true);
@@ -2386,7 +2540,8 @@ public sealed partial class MainWindow
                         dirs,
                         rows,
                         genApply,
-                        deferFolderMetricsBulk: false);
+                        deferFolderMetricsBulk: false,
+                        directoriesAlreadySorted: true);
                 }
 
                 if (populateGen is { } g3 && g3 != Volatile.Read(ref _populateBrowserGeneration))
@@ -2959,6 +3114,38 @@ public sealed partial class MainWindow
         }
 
         if (idx < 0)
+        {
+            string trimmedCurrent;
+            try
+            {
+                trimmedCurrent = currentNorm.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch
+            {
+                trimmedCurrent = currentNorm;
+            }
+
+            for (var i = 0; i < dirs.Count; i++)
+            {
+                string trimmedDir;
+                try
+                {
+                    trimmedDir = dirs[i].FullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                }
+                catch
+                {
+                    trimmedDir = dirs[i].FullPath;
+                }
+
+                if (string.Equals(trimmedDir, trimmedCurrent, StringComparison.OrdinalIgnoreCase))
+                {
+                    idx = i;
+                    break;
+                }
+            }
+        }
+
+        if (idx < 0)
             return;
 
         var nextIdx = delta > 0 ? idx + 1 : idx - 1;
@@ -2967,10 +3154,40 @@ public sealed partial class MainWindow
 
         var targetFolderPath = dirs[nextIdx].FullPath;
 
-        if (!string.IsNullOrEmpty(_currentFolderPath) && SameDirectoryPath(contextDir, _currentFolderPath))
+        var contextIsBrowseRoot = !string.IsNullOrEmpty(_currentFolderPath)
+            && SameDirectoryPath(contextDir, _currentFolderPath);
+
+        if (contextIsBrowseRoot)
         {
-            if (gen == Volatile.Read(ref _populateBrowserGeneration))
-                SetTransientStatus("Sibling folders are outside the current folder tree.");
+            await NavigateToFolderAsync(targetFolderPath).ConfigureAwait(true);
+            if (string.IsNullOrEmpty(_currentFolderPath) || !SameDirectoryPath(_currentFolderPath, targetFolderPath))
+                return;
+
+            var genAfter = Volatile.Read(ref _populateBrowserGeneration);
+            var rootsSnapshot = new List<TreeViewNode>(FolderTree.RootNodes.Count);
+            foreach (TreeViewNode n in FolderTree.RootNodes)
+                rootsSnapshot.Add(n);
+
+            if (TrySelectFirstMatchingImageAmongDirectChildren(rootsSnapshot))
+                return;
+
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var rootChild in rootsSnapshot)
+            {
+                if (rootChild.Content is not FolderTreeEntry fe)
+                    continue;
+                if (await TryFocusFirstMatchingImageUnderFolderNodeRecursiveAsync(
+                        rootChild,
+                        fe.Path,
+                        depth: 1,
+                        genAfter,
+                        visited).ConfigureAwait(true))
+                    return;
+            }
+
+            if (genAfter == Volatile.Read(ref _populateBrowserGeneration))
+                SetTransientStatus("No images found in that folder (or none match the current browse filter).");
+            ClearImageSelectionAndPreviewCore();
             return;
         }
 
@@ -2991,18 +3208,25 @@ public sealed partial class MainWindow
         if (gen != Volatile.Read(ref _populateBrowserGeneration))
             return;
 
-        if (siblingNode.Children.Count == 0)
-            return;
-
         siblingNode.IsExpanded = true;
 
-        var firstImage = FirstImageNodePreorderMatchingNavMode(new List<TreeViewNode> { siblingNode });
-        if (firstImage?.Content is not ImageRow row)
-            ClearImageSelectionAndPreviewCore();
-        else
+        var visitedNested = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!await TryFocusFirstMatchingImageUnderFolderNodeRecursiveAsync(
+                siblingNode,
+                folderPath,
+                depth: 0,
+                gen,
+                visitedNested).ConfigureAwait(true))
         {
-            EnqueuePreviewNavigation(row.FullPath, false);
-            SyncBrowseTreeSelection(firstImage);
+            if (gen == Volatile.Read(ref _populateBrowserGeneration))
+            {
+                if (siblingNode.Children.Count == 0)
+                    SetTransientStatus("That folder is empty.");
+                else
+                    SetTransientStatus("No images found in that folder (or none match the current browse filter).");
+            }
+
+            ClearImageSelectionAndPreviewCore();
         }
 
         _suppressFolderTreeCollapsedClear = true;

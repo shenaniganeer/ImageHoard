@@ -202,12 +202,17 @@ public sealed partial class MainWindow
             return true;
         }
 
-        showBoth(
-            NormalArchiveIdenticalSummaryText,
-            FullscreenArchiveIdenticalSummaryText,
-            "NO identical files detected",
-            ArchiveOverlayYellowBrush,
-            Visibility.Visible);
-        return true;
+        if (p.DestExists)
+        {
+            showBoth(
+                NormalArchiveIdenticalSummaryText,
+                FullscreenArchiveIdenticalSummaryText,
+                "NO identical files detected",
+                ArchiveOverlayYellowBrush,
+                Visibility.Visible);
+            return true;
+        }
+
+        return false;
     }
 }

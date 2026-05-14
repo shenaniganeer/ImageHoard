@@ -93,7 +93,16 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         WireBrowserTreeTemplates();
         PreviewHostGrid.SizeChanged += PreviewHostGrid_SizeChanged;
         RootGrid.Loaded += MainWindow_Loaded;
-        Closed += (_, _) => { PersistLayout(); };
+        Closed += (_, _) =>
+        {
+            if (_persistLayoutDebounceTimer != null)
+            {
+                _persistLayoutDebounceTimer.Stop();
+                _persistLayoutDebounceTimer.Tick -= OnPersistLayoutDebounceTick;
+            }
+
+            PersistLayout();
+        };
     }
 
     private static string? GetFolderPath(TreeViewNode? node) =>
@@ -184,8 +193,29 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         UpdatePathOverlays();
     }
 
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _persistLayoutDebounceTimer;
+
     private void PersistLayout()
     {
+        SyncSharesFromGridDefinitions();
+        AppSettingsStore.SaveAll(_layoutState, _session);
+    }
+
+    private void SchedulePersistLayoutDebounced()
+    {
+        var dq = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        _persistLayoutDebounceTimer ??= dq.CreateTimer();
+        _persistLayoutDebounceTimer.Interval = TimeSpan.FromMilliseconds(320);
+        _persistLayoutDebounceTimer.IsRepeating = false;
+        _persistLayoutDebounceTimer.Tick -= OnPersistLayoutDebounceTick;
+        _persistLayoutDebounceTimer.Tick += OnPersistLayoutDebounceTick;
+        _persistLayoutDebounceTimer.Stop();
+        _persistLayoutDebounceTimer.Start();
+    }
+
+    private void OnPersistLayoutDebounceTick(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object args)
+    {
+        sender.Tick -= OnPersistLayoutDebounceTick;
         SyncSharesFromGridDefinitions();
         AppSettingsStore.SaveAll(_layoutState, _session);
     }

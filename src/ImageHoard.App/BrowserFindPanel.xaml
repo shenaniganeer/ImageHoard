@@ -1,0 +1,105 @@
+<UserControl
+    x:Class="ImageHoard.App.BrowserFindPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:automation="using:Microsoft.UI.Xaml.Automation"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+    <StackPanel Padding="8">
+        <TextBlock
+            FontWeight="SemiBold"
+            Text="Find"
+            Margin="0,0,0,6" />
+        <Grid Margin="0,0,0,6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox
+                x:Name="FindQueryTextBox"
+                Grid.Column="0"
+                MinWidth="240"
+                PlaceholderText="Search text..."
+                PreviewKeyDown="FindQueryTextBox_PreviewKeyDown"
+                VerticalAlignment="Center" />
+            <Button
+                x:Name="PreviousButton"
+                Grid.Column="1"
+                Margin="2,0,0,0"
+                MinWidth="28"
+                MinHeight="28"
+                Padding="0"
+                Click="PreviousButton_Click"
+                automation:AutomationProperties.Name="Previous match">
+                <FontIcon
+                    FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                    Glyph="&#xE70E;"
+                    FontSize="12" />
+            </Button>
+            <Button
+                x:Name="NextButton"
+                Grid.Column="2"
+                Margin="2,0,0,0"
+                MinWidth="28"
+                MinHeight="28"
+                Padding="0"
+                Click="NextButton_Click"
+                automation:AutomationProperties.Name="Next match">
+                <FontIcon
+                    FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                    Glyph="&#xE70D;"
+                    FontSize="12" />
+            </Button>
+        </Grid>
+        <TextBlock
+            x:Name="StatusText"
+            Opacity="0.9"
+            TextWrapping="WrapWholeWords"
+            Style="{ThemeResource CaptionTextBlockStyle}"
+            Margin="0,0,0,6" />
+        <DropDownButton
+            x:Name="OptionsDropDown"
+            Content="Options"
+            Padding="0"
+            VerticalAlignment="Center">
+            <DropDownButton.Flyout>
+                <Flyout Placement="BottomEdgeAlignedLeft">
+                    <StackPanel Padding="0" MinWidth="260">
+                        <TextBlock FontWeight="SemiBold" Text="Match" Margin="0,0,0,4" />
+                        <RadioButton
+                            x:Name="MatchFromStartRadio"
+                            Content="From start of name"
+                            GroupName="BrowserFindMatchMode"
+                            IsChecked="True"
+                            Margin="0,0,0,2" />
+                        <RadioButton
+                            x:Name="MatchAnywhereRadio"
+                            Content="Anywhere in name"
+                            GroupName="BrowserFindMatchMode"
+                            Margin="0,0,0,8" />
+                        <TextBlock FontWeight="SemiBold" Text="Search in" Margin="0,0,0,4" />
+                        <RadioButton
+                            x:Name="FoldersOnlyRadio"
+                            Content="Folders only"
+                            GroupName="BrowserFindTarget"
+                            IsChecked="True"
+                            Margin="0,0,0,2" />
+                        <RadioButton
+                            x:Name="FilesOnlyRadio"
+                            Content="Files only (images)"
+                            GroupName="BrowserFindTarget"
+                            Margin="0,0,0,8" />
+                        <TextBlock Text="Deep search" Margin="0,0,0,2" />
+                        <ToggleSwitch
+                            x:Name="DeepSearchToggle"
+                            OffContent="Off"
+                            OnContent="On"
+                            IsOn="False" />
+                    </StackPanel>
+                </Flyout>
+            </DropDownButton.Flyout>
+        </DropDownButton>
+    </StackPanel>
+</UserControl>

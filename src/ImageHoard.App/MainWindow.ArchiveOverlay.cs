@@ -15,6 +15,16 @@ public sealed partial class MainWindow
     private string? _archiveOverlayCompletedForKey;
     private CancellationTokenSource? _archiveOverlayRefreshCts;
 
+    /// <summary>Cancels pending archive overlay analysis and drops cached preview (e.g. archive root changed or no image).</summary>
+    private void ClearArchiveOverlayPreviewState()
+    {
+        _archiveOverlayRefreshCts?.Cancel();
+        _archiveOverlayRefreshCts?.Dispose();
+        _archiveOverlayRefreshCts = null;
+        _archiveOverlayPreview = null;
+        _archiveOverlayCompletedForKey = null;
+    }
+
     private static readonly SolidColorBrush ArchiveOverlayGreenBrush =
         new(Color.FromArgb(255, 76, 175, 80));
 
@@ -45,32 +55,20 @@ public sealed partial class MainWindow
 
         if (string.IsNullOrEmpty(_currentImageFullPath))
         {
-            _archiveOverlayRefreshCts?.Cancel();
-            _archiveOverlayRefreshCts?.Dispose();
-            _archiveOverlayRefreshCts = null;
-            _archiveOverlayPreview = null;
-            _archiveOverlayCompletedForKey = null;
+            ClearArchiveOverlayPreviewState();
             return;
         }
 
         if (string.IsNullOrEmpty(_session.ArchiveRoot))
         {
-            _archiveOverlayRefreshCts?.Cancel();
-            _archiveOverlayRefreshCts?.Dispose();
-            _archiveOverlayRefreshCts = null;
-            _archiveOverlayPreview = null;
-            _archiveOverlayCompletedForKey = null;
+            ClearArchiveOverlayPreviewState();
             return;
         }
 
         var key = BuildArchiveOverlayScheduleKey();
         if (string.IsNullOrEmpty(key))
         {
-            _archiveOverlayRefreshCts?.Cancel();
-            _archiveOverlayRefreshCts?.Dispose();
-            _archiveOverlayRefreshCts = null;
-            _archiveOverlayPreview = null;
-            _archiveOverlayCompletedForKey = null;
+            ClearArchiveOverlayPreviewState();
             return;
         }
 

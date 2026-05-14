@@ -417,6 +417,12 @@
                             GroupName="BrowseNavigationMode"
                             Click="BrowseNavModeDelete_Click" />
                     </MenuFlyoutSubItem>
+                    <MenuFlyoutSeparator />
+                    <MenuFlyoutItem Text="Find in tree..." Click="BrowseFindInTree_Click">
+                        <MenuFlyoutItem.KeyboardAccelerators>
+                            <KeyboardAccelerator Key="F" Modifiers="Control" />
+                        </MenuFlyoutItem.KeyboardAccelerators>
+                    </MenuFlyoutItem>
                 </MenuBarItem>
                 <MenuBarItem Title="Sort">
                     <MenuFlyoutItem Text="Clear all flags" Click="SortClearAllFlags_Click" />
@@ -596,6 +602,13 @@
                                     Stretch="Uniform" />
                             </Grid>
                         </ScrollViewer>
+                        <Border
+                            x:Name="BrowserFindPreviewDimLayer"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Stretch"
+                            Background="#B3000000"
+                            IsHitTestVisible="False"
+                            Visibility="Collapsed" />
                         <Border
                             x:Name="NormalPathOverlay"
                             Margin="8"
@@ -812,6 +825,30 @@
                     <local:PreferencesPanel x:Name="PreferencesPanelElement" />
                 </Border>
             </Grid>
+        </Grid>
+        <Grid
+            x:Name="BrowserFindOverlayRoot"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"
+            Background="Transparent"
+            IsHitTestVisible="True"
+            IsTabStop="True"
+            PointerPressed="BrowserFindOverlayRoot_PointerPressed"
+            PreviewKeyDown="BrowserFindOverlayRoot_PreviewKeyDown"
+            Visibility="Collapsed">
+            <Border
+                x:Name="BrowserFindDialogHost"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                MaxWidth="440"
+                Margin="24"
+                Padding="0"
+                Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8">
+                <local:BrowserFindPanel x:Name="BrowserFindPanelElement" />
+            </Border>
         </Grid>
     </Grid>
 </Window>

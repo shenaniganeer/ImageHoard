@@ -152,6 +152,8 @@ public sealed partial class MainWindow
         PersistLayout();
         UpdateArchiveTargetBrowserRow();
         RefreshPreferencesIfVisible();
+        ClearArchiveOverlayPreviewState();
+        UpdatePathOverlays();
     }
 
     void IPreferencesSession.ClearCaches(bool deleteOperationLog)

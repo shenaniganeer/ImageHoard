@@ -45,6 +45,9 @@ public sealed partial class MainWindow
         if (!_slideshowUiActive || _slideshow == null)
             return false;
 
+        if (IsBrowserPaneMutationInProgress)
+            return false;
+
         if (e.Key == VirtualKey.Left)
         {
             if (_slideshow.TryMovePrevious(out var p) && p != null)
@@ -654,13 +657,13 @@ public sealed partial class MainWindow
 
     private void SetSelectedSortFlag(SortFlagState state)
     {
-        if (GetSelectedImageRow() is not { } row)
+        if (!TryGetSortFlagTargetPath(out var path))
             return;
-        var current = _sortSession.GetState(row.FullPath);
+        var current = _sortSession.GetState(path);
         var resolved = SortFlagInput.ResolveToggle(current, state);
-        _sortSession.SetState(row.FullPath, resolved);
+        _sortSession.SetState(path, resolved);
         UpdatePathOverlays();
-        RefreshSortFlagDisplayInList(row.FullPath);
+        RefreshSortFlagDisplayInList(path);
         EnsurePreviewMatchesBrowseNavigationMode();
     }
 
@@ -711,7 +714,7 @@ public sealed partial class MainWindow
 
     private void HandleSortKeyboardShortcuts(KeyRoutedEventArgs e)
     {
-        if (GetSelectedImageRow() is null)
+        if (!TryGetSortFlagTargetPath(out _))
             return;
 
         if (e.Key == VirtualKey.K)

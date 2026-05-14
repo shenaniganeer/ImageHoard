@@ -65,6 +65,27 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     private PointerEventHandler? _pointerPressedCaptureHandler;
     private PointerEventHandler? _pointerMovedMouseBindingsHandler;
 
+    /// <summary>Non-zero while browser tree / preview context is being reconciled after destructive wizard work (or related paths). Blocks browse-style navigation.</summary>
+    private int _browserPaneMutationDepth;
+
+    internal bool IsBrowserPaneMutationInProgress => Volatile.Read(ref _browserPaneMutationDepth) > 0;
+
+    private void EnterBrowserPaneMutation()
+    {
+        Interlocked.Increment(ref _browserPaneMutationDepth);
+        SyncDeleteArchiveWizardBrowserPaneMutationUi();
+    }
+
+    private void LeaveBrowserPaneMutation()
+    {
+        _ = Interlocked.Decrement(ref _browserPaneMutationDepth);
+        SyncDeleteArchiveWizardBrowserPaneMutationUi();
+    }
+
+    /// <summary>Syncs wizard dismiss controls with <see cref="IsBrowserPaneMutationInProgress"/>.</summary>
+    private void SyncDeleteArchiveWizardBrowserPaneMutationUi() =>
+        DeleteArchiveWizardPanelElement.SetBrowserPaneMutationBlocking(IsBrowserPaneMutationInProgress);
+
     private void SetTransientStatus(string? message)
     {
         if (string.IsNullOrEmpty(message))
@@ -279,13 +300,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         var path = _currentImageFullPath ?? string.Empty;
         var hasImage = !string.IsNullOrEmpty(path);
         if (!hasImage)
-        {
-            _archiveOverlayRefreshCts?.Cancel();
-            _archiveOverlayRefreshCts?.Dispose();
-            _archiveOverlayRefreshCts = null;
-            _archiveOverlayPreview = null;
-            _archiveOverlayCompletedForKey = null;
-        }
+            ClearArchiveOverlayPreviewState();
 
         var windowedPathDesired = _layoutState.ShowPathOnOverlayWindowed && hasImage;
         var fullscreenPathDesired = _layoutState.ShowPathOnOverlayFullscreen && hasImage;
@@ -502,19 +517,35 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             return;
         }
 
-        if (e.Key == VirtualKey.F2 && TryBeginRenameSelectedBrowserItem())
+        var deferAppShortcuts = ShouldDeferAppKeyboardShortcuts();
+        if (!deferAppShortcuts && e.Key == VirtualKey.F2 && TryBeginRenameSelectedBrowserItem())
         {
             e.Handled = true;
             return;
         }
 
-        if (e.Key == VirtualKey.Enter && IsFocusInsideBrowserTree())
+        if (!deferAppShortcuts && e.Key == VirtualKey.Enter && IsFocusInsideBrowserTree())
         {
             TryEnterFullscreen();
             e.Handled = true;
         }
 
-        HandleSortKeyboardShortcuts(e);
+        if (!deferAppShortcuts)
+            HandleSortKeyboardShortcuts(e);
+    }
+
+    /// <summary>When true, root-level browse/sort shortcuts must not run so standard text editing (inline rename, etc.) receives keys.</summary>
+    private bool ShouldDeferAppKeyboardShortcuts()
+    {
+        var xamlRoot = RootGrid.XamlRoot;
+        if (xamlRoot != null)
+        {
+            var focused = FocusManager.GetFocusedElement(xamlRoot) as DependencyObject;
+            if (IsInsideTextInput(focused))
+                return true;
+        }
+
+        return _renameTargetNode != null;
     }
 
     private static bool IsDescendantOf(DependencyObject? node, DependencyObject? ancestor)
@@ -704,6 +735,14 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
     private bool TryDispatchInputCommand(KeyRoutedEventArgs e)
     {
+        var xamlRoot = RootGrid.XamlRoot;
+        if (xamlRoot != null)
+        {
+            var focused = FocusManager.GetFocusedElement(xamlRoot) as DependencyObject;
+            if (IsInsideTextInput(focused))
+                return false;
+        }
+
         var mk = WinUiKeyboardInterop.ToMdnPrimaryKey(e.Key);
         if (mk == null)
             return false;
@@ -722,11 +761,18 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         if (string.IsNullOrEmpty(commandId))
             return false;
 
-        if (IsPreferencesOverlayOpen && commandId is not ("ui.escape" or "settings.open"))
+        if (IsPreferencesOverlayOpen && commandId is not ("ui.escape" or "settings.open" or "browse.findInTree"))
             return false;
         if (IsDeleteArchiveWizardOverlayOpen
-            && commandId is not ("ui.escape" or "settings.open" or "sort.deleteArchiveWizard" or "sort.commitBatchDelete" or "sort.moveToArchive"))
+            && commandId is not ("ui.escape" or "settings.open" or "sort.deleteArchiveWizard" or "sort.commitBatchDelete" or "sort.moveToArchive" or "browse.findInTree"))
             return false;
+        if (IsBrowserFindOverlayOpen && commandId is not ("ui.escape" or "browse.findInTree"))
+            return false;
+
+        if (IsBrowserPaneMutationInProgress
+            && commandId is "nav.nextImage" or "nav.prevImage" or "nav.firstImage" or "nav.lastImage"
+                or "nav.nextDirectory" or "nav.prevDirectory" or "nav.cycleNavigationMode" or "slideshow.start")
+            return true;
 
         switch (commandId)
         {
@@ -804,6 +850,9 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             case "browse.revealInExplorer":
                 BrowseRevealInExplorer_Click(this, new RoutedEventArgs());
                 return true;
+            case "browse.findInTree":
+                ShowBrowserFindOverlay();
+                return true;
             case "slideshow.start":
                 SlideshowStart_Click(this, new RoutedEventArgs());
                 return true;
@@ -816,17 +865,17 @@ public sealed partial class MainWindow : Window, IPreferencesSession
                     SlideshowReshuffle_Click(this, new RoutedEventArgs());
                 return _slideshow != null;
             case "sort.flagKeep":
-                if (GetSelectedImageRow() is null)
+                if (!TryGetSortFlagTargetPath(out _))
                     return false;
                 SetSelectedSortFlag(SortFlagState.Keep);
                 return true;
             case "sort.flagDelete":
-                if (GetSelectedImageRow() is null)
+                if (!TryGetSortFlagTargetPath(out _))
                     return false;
                 SetSelectedSortFlag(SortFlagState.Delete);
                 return true;
             case "sort.flagUnset":
-                if (GetSelectedImageRow() is null)
+                if (!TryGetSortFlagTargetPath(out _))
                     return false;
                 SetSelectedSortFlag(SortFlagState.Unset);
                 return true;

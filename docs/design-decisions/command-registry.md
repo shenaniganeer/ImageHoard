@@ -31,6 +31,7 @@ This document extends the **minimum** command set in [input-default-profiles.md]
 | `browse.openBookmarks` | Open bookmarks / favorites manager | FR-BR-04 | File → Favorites **P0**; bind P1 |
 | `browse.addBookmark` | Bookmark current root/folder | FR-BR-04 | Chrome P0; bind P1 |
 | `browse.revealInExplorer` | Reveal current file in Explorer | FR-BR-05 | Chrome P0; bind P1 |
+| `browse.findInTree` | Find in browser folder tree (partial name match, shallow or deep under browse root) | FR-BR-02 | Yes (KeyboardOnly default `Control+F`) |
 | `view.cycleFitMode` | Cycle fit / fill / 1:1 (or next mode) | FR-VW-01 | Chrome P0; bind **recommended P0** `KeyV` or toolbar |
 | `view.panPreview` | Pan primary preview (modifier + drag) when image exceeds pane | FR-VW-01 | Yes (MouseOnly default `Shift` + primary click drag; scrollbars also) |
 | `view.zoomIn` | Zoom in (when not slideshow-only) | FR-VW-01 | P1 |
@@ -55,6 +56,7 @@ When promoting to shipped profiles:
 - `view.cycleFitMode`: `KeyV` (KeyboardOnly).  
 - `view.panPreview`: `Shift` + primary click drag on preview (MouseOnly merged profile; rebinding in Preferences).  
 - `browse.revealInExplorer`: `Control+Shift+E`.
+- `browse.findInTree`: `Control+F` (KeyboardOnly); shipped in `keyboard-only.v1.json`.
 - `settings.open`: `Control+P` (KeyboardOnly); shipped in `keyboard-only.v1.json`.
 
 ## Acceptance

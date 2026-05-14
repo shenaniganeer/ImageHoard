@@ -172,6 +172,7 @@ public sealed partial class MainWindow
 
     internal void ShowOrActivateDeleteArchiveWizard()
     {
+        HideBrowserFindOverlay();
         HidePreferencesOverlay();
         var work = TryGetDeleteArchiveWizardWorkingFolder();
         if (string.IsNullOrEmpty(work))
@@ -299,6 +300,7 @@ public sealed partial class MainWindow
             {
                 Text =
                     $"Send {toDelete.Count} image(s) marked Delete to the Recycle Bin (or permanently delete if the Recycle Bin is unavailable)?",
+                Foreground = new SolidColorBrush(Microsoft.UI.Colors.Red),
                 TextWrapping = TextWrapping.WrapWholeWords,
             },
             PrimaryButtonText = $"Delete {toDelete.Count} image(s)",
@@ -395,27 +397,39 @@ public sealed partial class MainWindow
             return false;
         }
 
-        IReadOnlyList<string> toDeleteBeforeMove = Array.Empty<string>();
-        if (_session.InverseKeepDeleteBeforeArchiveMove)
+        List<string> moveFolderImagePaths;
+        try
         {
-            List<string> paths;
-            try
-            {
-                paths = await FolderImagePathCollection.CollectAsync(
+            moveFolderImagePaths = await FolderImagePathCollection.CollectAsync(
                     AppServices.FileSystem,
                     work,
-                    includeSubfolders: false).ConfigureAwait(true);
-            }
-            catch (Exception ex)
-            {
-                SetTransientStatus("Could not list images: " + ex.Message);
-                return false;
-            }
-
-            if (paths.Count > 0)
-                toDeleteBeforeMove = BatchDeletePlanner.GetInverseKeepDeletionSetIgnoringUnsetGate(paths, _sortSession);
+                    includeSubfolders: false)
+                .ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            SetTransientStatus("Could not list images: " + ex.Message);
+            return false;
         }
 
+        var toDeleteBeforeMoveSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (_session.InverseKeepDeleteBeforeArchiveMove && moveFolderImagePaths.Count > 0)
+        {
+            foreach (var p in BatchDeletePlanner.GetInverseKeepDeletionSetIgnoringUnsetGate(
+                         moveFolderImagePaths,
+                         _sortSession))
+                toDeleteBeforeMoveSet.Add(p);
+        }
+
+        foreach (var p in BatchDeletePlanner.GetDeleteFlaggedPaths(moveFolderImagePaths, _sortSession))
+            toDeleteBeforeMoveSet.Add(p);
+
+        var toDeleteBeforeMove = toDeleteBeforeMoveSet.ToList();
+
+        var totalImages = moveFolderImagePaths.Count;
+        var movedImages = totalImages - toDeleteBeforeMove.Count;
+
+        var greenBrush = new SolidColorBrush(Microsoft.UI.Colors.Green);
         var redBrush = new SolidColorBrush(Microsoft.UI.Colors.Red);
         var moveDialogContent = new StackPanel();
         moveDialogContent.Children.Add(
@@ -425,12 +439,28 @@ public sealed partial class MainWindow
                 TextWrapping = TextWrapping.WrapWholeWords,
             });
 
-        if (_session.InverseKeepDeleteBeforeArchiveMove && toDeleteBeforeMove.Count > 0)
+        if (movedImages > 0)
         {
             moveDialogContent.Children.Add(
                 new TextBlock
                 {
-                    Text = $"{toDeleteBeforeMove.Count} image(s) not marked Keep will be deleted.",
+                    Text = $"{movedImages} image(s) will be moved to the archive.",
+                    Foreground = greenBrush,
+                    TextWrapping = TextWrapping.WrapWholeWords,
+                    Margin = new Thickness(0, 12, 0, 0),
+                });
+        }
+
+        if (toDeleteBeforeMove.Count > 0)
+        {
+            var warnText = _session.InverseKeepDeleteBeforeArchiveMove
+                ? $"{toDeleteBeforeMove.Count} image(s) not marked Keep will be deleted."
+                : $"{toDeleteBeforeMove.Count} image(s) marked Delete will be sent to the Recycle Bin " +
+                  "(or permanently deleted if the Recycle Bin is unavailable). They will not be moved to the archive.";
+            moveDialogContent.Children.Add(
+                new TextBlock
+                {
+                    Text = warnText,
                     Foreground = redBrush,
                     TextWrapping = TextWrapping.WrapWholeWords,
                     Margin = new Thickness(0, 12, 0, 0),
@@ -449,17 +479,21 @@ public sealed partial class MainWindow
         if (await ShowWizardContentDialogAsync(moveDlg) != ContentDialogResult.Primary)
             return false;
 
-        if (_session.InverseKeepDeleteBeforeArchiveMove && toDeleteBeforeMove.Count > 0)
+        if (toDeleteBeforeMove.Count > 0)
         {
+            var batchOpName = _session.InverseKeepDeleteBeforeArchiveMove
+                ? "BatchDelete"
+                : "BatchDeleteDeleteFlaggedOnly";
             if (!await WizardExecuteImageRecycleOrPermanentBatchAsync(
                     toDeleteBeforeMove,
                     recordUndoForRecycledPaths: true,
-                    "BatchDelete").ConfigureAwait(true))
+                    batchOpName).ConfigureAwait(true))
                 return false;
         }
 
         var preferredNext = await TryComputePreferredNextSiblingFolderAsync(work).ConfigureAwait(true);
 
+        EnterBrowserPaneMutation();
         try
         {
             await AppServices.FileSystem.MergeMoveDirectoryAsync(work, dest).ConfigureAwait(true);
@@ -522,6 +556,10 @@ public sealed partial class MainWindow
             ActiveDeleteArchiveWizardPanel?.ShowWizardOperationInfo("Move to archive", detail, InfoBarSeverity.Error);
             return false;
         }
+        finally
+        {
+            LeaveBrowserPaneMutation();
+        }
     }
 
     internal async Task<bool> WizardExecuteDeleteWorkingFolderToRecycleAsync()
@@ -547,14 +585,44 @@ public sealed partial class MainWindow
                     : "Could not measure the full folder tree (file count and size unavailable).");
         }
 
-        var dlg = new ContentDialog
+        int? imageCountInTree = null;
+        try
         {
-            Title = "Delete folder?",
-            Content = new TextBlock
+            var imgs = await FolderImagePathCollection.CollectAsync(
+                    AppServices.FileSystem,
+                    work,
+                    includeSubfolders: true)
+                .ConfigureAwait(true);
+            imageCountInTree = imgs.Count;
+        }
+        catch
+        {
+            // count omitted; red line still warns
+        }
+
+        var deleteFolderRed = new SolidColorBrush(Microsoft.UI.Colors.Red);
+        var deleteFolderPanel = new StackPanel();
+        deleteFolderPanel.Children.Add(
+            new TextBlock
             {
                 Text = string.Join("\n\n", deleteFolderParts),
                 TextWrapping = TextWrapping.WrapWholeWords,
-            },
+            });
+        deleteFolderPanel.Children.Add(
+            new TextBlock
+            {
+                Text = imageCountInTree is int c and > 0
+                    ? $"{c} image file(s) will be deleted in this folder."
+                    : "All contents of this folder will be sent to the Recycle Bin.",
+                Foreground = deleteFolderRed,
+                TextWrapping = TextWrapping.WrapWholeWords,
+                Margin = new Thickness(0, 12, 0, 0),
+            });
+
+        var dlg = new ContentDialog
+        {
+            Title = "Delete folder?",
+            Content = deleteFolderPanel,
             PrimaryButtonText = "Delete folder",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
@@ -567,6 +635,7 @@ public sealed partial class MainWindow
 
         try
         {
+            EnterBrowserPaneMutation();
             ShellRecycle.SendDirectoryToRecycleBin(work);
             if (_session.LogDestructiveOperations)
             {
@@ -628,6 +697,10 @@ public sealed partial class MainWindow
         {
             SetTransientStatus("Delete folder failed: " + ex.Message);
             return false;
+        }
+        finally
+        {
+            LeaveBrowserPaneMutation();
         }
     }
 
@@ -701,7 +774,10 @@ public sealed partial class MainWindow
 
         var succeededStats = new List<WizardPredeletedFileStat>();
 
-        foreach (var p in toDelete)
+        EnterBrowserPaneMutation();
+        try
+        {
+            foreach (var p in toDelete)
         {
             if (ShellRecycle.TrySendFileToRecycleBin(p))
             {
@@ -830,6 +906,11 @@ public sealed partial class MainWindow
 
         ActiveDeleteArchiveWizardPanel?.RefreshUndoAndNoticeUi();
         return true;
+        }
+        finally
+        {
+            LeaveBrowserPaneMutation();
+        }
     }
 
     internal async Task WizardUndoLastImageDeletesAsync()

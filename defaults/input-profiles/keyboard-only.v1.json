@@ -29,6 +29,7 @@
     "sort.clearAllFlags": [{ "kind": "keyboard", "keys": ["Control", "KeyZ"] }],
     "slideshow.start": [{ "kind": "keyboard", "keys": ["Control", "Shift", "KeyS"] }],
     "slideshow.toggleScope": [{ "kind": "keyboard", "keys": ["Tab"] }],
+    "browse.findInTree": [{ "kind": "keyboard", "keys": ["Control", "KeyF"] }],
     "settings.open": [{ "kind": "keyboard", "keys": ["Control", "KeyP"] }],
     "ui.fullscreen": [
       { "kind": "keyboard", "keys": ["F11"] },

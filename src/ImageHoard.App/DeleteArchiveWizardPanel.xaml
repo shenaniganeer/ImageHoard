@@ -102,7 +102,11 @@
                 Click="MoveToArchive_Click"
                 Margin="0,0,0,16" />
 
-            <Button Content="Close" Click="Close_Click" HorizontalAlignment="Stretch" />
+            <Button
+                x:Name="CloseWizardButton"
+                Content="Close"
+                Click="Close_Click"
+                HorizontalAlignment="Stretch" />
         </StackPanel>
     </ScrollViewer>
 </UserControl>

@@ -36,6 +36,8 @@ The **delete/archive wizard** offers a separate action that recycles **only** pa
 
 **Inverse-keep before archive:** When the preference **inverse-keep delete before move** is on, non-keepers are deleted through the **same** recycle / permanent-delete batch path as the inverse-keep button (undo for recycled paths, operation log). If the user cancels the **“Permanent delete may be required”** preflight for that batch, the **move is not performed**.
 
+**Delete-flagged before archive:** Images marked **`Delete`** in the working folder are **always** included in the pre-move deletion batch (deduped with the inverse-keep set when that preference is on). The move confirm dialog warns with counts; operation log uses `BatchDeleteDeleteFlaggedOnly` when only delete-flagged paths are removed before the move, and `BatchDelete` when inverse-keep contributes to the set.
+
 **Relationship to FR-SR-03 (unset):** Wizard inverse-keep uses **`GetInverseKeepDeletionSetIgnoringUnsetGate`** — images with no decision (`Unset`) are included in the deletion set unless marked **`Keep`**. That differs from the **strict unset block** described in §FR-SR-03 and the blocked-commit copy below, which remain normative for any **other** entry point that adopts that gate. The acceptance scenarios in §Acceptance tests assume the gated policy unless stated otherwise.
 
 ## FR-SR-03 (unset) at commit time

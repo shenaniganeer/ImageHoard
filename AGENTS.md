@@ -59,6 +59,7 @@ The following were added to close planning gaps; extend them with new ADRs rathe
 | [`docs/design-decisions/mvp-assumptions-ux.md`](docs/design-decisions/mvp-assumptions-ux.md) | Dual monitor, i18n, themes, NAS disconnect |
 | [`docs/design-decisions/browser-folder-tree-path-to-node-index.md`](docs/design-decisions/browser-folder-tree-path-to-node-index.md) | Browser `TreeView`: `_folderTreeNodeByPath` maintenance vs `_folderTreeEntryByPath` |
 | [`docs/design-decisions/browser-folder-tree-virtualization-itemsrepeater.md`](docs/design-decisions/browser-folder-tree-virtualization-itemsrepeater.md) | Virtualized browser tree: ItemsRepeater + flat projection (accepted); supersedes `TreeViewNode`-centric index guidance when implemented |
+| [`docs/tech-design/browser-navigation-wizard-tree-coordination.md`](docs/tech-design/browser-navigation-wizard-tree-coordination.md) | Browser `TreeView`, image navigation, delete/archive wizard, and preview pipeline: interaction map, concurrency guards; **update when changing any of these** |
 
 ## Scaffold expectation
 

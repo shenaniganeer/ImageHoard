@@ -195,8 +195,15 @@ public sealed partial class DeleteArchiveWizardPanel : UserControl
     private void RenameFolder_Click(object sender, RoutedEventArgs e) =>
         _owner.WizardRequestRenameWorkingFolder();
 
-    private void Close_Click(object sender, RoutedEventArgs e) =>
+    internal void SetBrowserPaneMutationBlocking(bool blocking) =>
+        CloseWizardButton.IsEnabled = !blocking;
+
+    private void Close_Click(object sender, RoutedEventArgs e)
+    {
+        if (_owner.IsBrowserPaneMutationInProgress)
+            return;
         RequestClose?.Invoke(this, EventArgs.Empty);
+    }
 
     private async void ArchiveTargetRow_Click(object sender, RoutedEventArgs e)
     {

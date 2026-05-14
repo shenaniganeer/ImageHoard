@@ -18,6 +18,7 @@ public sealed partial class MainWindow
         DeleteArchiveWizardPanelElement.RequestClose += (_, _) => HideDeleteArchiveWizardOverlay();
         PreferencesPanelElement.SetHost(this);
         PreferencesPanelElement.RequestDismiss += (_, _) => HidePreferencesOverlay();
+        BrowserFindPanelElement.Connect(this);
     }
 
     /// <summary>When preferences overlay is visible, re-sync toggles from <see cref="MainWindow"/> state.</summary>
@@ -29,6 +30,7 @@ public sealed partial class MainWindow
 
     internal void ShowOrActivatePreferences()
     {
+        HideBrowserFindOverlay();
         HideDeleteArchiveWizardOverlay();
         if (IsPreferencesOverlayOpen)
         {
@@ -71,14 +73,26 @@ public sealed partial class MainWindow
     {
         if (e.Key == VirtualKey.Escape)
         {
+            if (IsBrowserPaneMutationInProgress)
+            {
+                e.Handled = true;
+                return;
+            }
+
             HideDeleteArchiveWizardOverlay();
             e.Handled = true;
         }
     }
 
-    /// <summary>Escape: dismiss topmost overlay (preferences above wizard). Returns true if an overlay was dismissed.</summary>
+    /// <summary>Escape: dismiss topmost overlay (find, then preferences, then wizard). Returns true if an overlay was dismissed.</summary>
     private bool TryDismissTopModalForEscape()
     {
+        if (IsBrowserFindOverlayOpen)
+        {
+            HideBrowserFindOverlay();
+            return true;
+        }
+
         if (IsPreferencesOverlayOpen)
         {
             HidePreferencesOverlay();
@@ -87,6 +101,9 @@ public sealed partial class MainWindow
 
         if (IsDeleteArchiveWizardOverlayOpen)
         {
+            if (IsBrowserPaneMutationInProgress)
+                return true;
+
             HideDeleteArchiveWizardOverlay();
             return true;
         }

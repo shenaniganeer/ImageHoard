@@ -41,6 +41,7 @@ internal static class CommandCatalog
         new("browse.openBookmarks", "Browse: open favorites", true, HotkeySection.Browse),
         new("browse.addBookmark", "Browse: add folder to favorites", true, HotkeySection.Browse),
         new("browse.revealInExplorer", "Browse: reveal in Explorer", true, HotkeySection.Browse),
+        new("browse.findInTree", "Browse: find in folder tree", true, HotkeySection.Browse),
         new("view.cycleFitMode", "View: cycle image fit mode", true, HotkeySection.View),
         new("view.clearSelection", "View: clear image selection and preview", true, HotkeySection.View),
         new("view.panPreview", "View: pan primary preview (hold chord and drag)", true, HotkeySection.View),

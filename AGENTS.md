@@ -53,6 +53,7 @@ The following were added to close planning gaps; extend them with new ADRs rathe
 | [`docs/design-decisions/rename-move-collision-fr-sr-06-07.md`](docs/design-decisions/rename-move-collision-fr-sr-06-07.md) | Rename tokens, collisions |
 | [`docs/design-decisions/operation-log-fr-sr-09.md`](docs/design-decisions/operation-log-fr-sr-09.md) | Operation JSONL log |
 | [`docs/design-decisions/mvp-assumptions-ux.md`](docs/design-decisions/mvp-assumptions-ux.md) | Dual monitor, i18n, themes, NAS disconnect |
+| [`docs/design-decisions/browser-folder-tree-path-to-node-index.md`](docs/design-decisions/browser-folder-tree-path-to-node-index.md) | Browser `TreeView`: `_folderTreeNodeByPath` maintenance vs `_folderTreeEntryByPath` |
 
 ## Scaffold expectation
 

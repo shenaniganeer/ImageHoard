@@ -46,6 +46,8 @@ Repository **agent instructions**: [`../AGENTS.md`](../AGENTS.md).
 
 | [folder-aggregate-metrics-model.md](./design-decisions/folder-aggregate-metrics-model.md) | FR-BR-06, FR-BR-07 |
 
+| [browser-folder-tree-path-to-node-index.md](./design-decisions/browser-folder-tree-path-to-node-index.md) | FR-BR-06, FR-BR-07 (UI merge / `TreeView` index maintenance) |
+
 | [fr-st-01-settings-persistence.md](./design-decisions/fr-st-01-settings-persistence.md) | FR-ST-01, FR-ST-02, FR-ST-03 |
 
 | [archive-path-inference-fr-ar.md](./design-decisions/archive-path-inference-fr-ar.md) | FR-AR-01 … FR-AR-04 |

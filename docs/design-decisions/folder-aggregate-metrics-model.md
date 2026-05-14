@@ -47,8 +47,12 @@ Per **directory path** (normalized long path string):
 
 ## UI contract (NFR-PF-05)
 
-- Sort mode dropdown triggers job; show **spinner + %** or “Computing… **1234** / **?** folders”.
+- Sort mode dropdown triggers job; show **spinner + %** or “Computing… **1234** / **?** folders**.
 - Switching away cancels job; no crash.
+
+## UI merge path (WinUI host)
+
+When metrics snapshots are merged on the UI thread, updating **`TreeViewNode.HasUnrealizedChildren`** must not require a full-tree lookup each time. The app maintains **`_folderTreeNodeByPath`** next to **`_folderTreeEntryByPath`**; anyone who adds, removes, or rekeys folder rows must keep that map in sync. See [browser-folder-tree-path-to-node-index.md](./browser-folder-tree-path-to-node-index.md).
 
 ## Tests
 

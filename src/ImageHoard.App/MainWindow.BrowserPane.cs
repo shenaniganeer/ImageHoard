@@ -28,6 +28,8 @@ public sealed partial class MainWindow
         string? ImageDeletionWorkingFolder = null);
 
     private readonly Dictionary<string, FolderTreeEntry> _folderTreeEntryByPath = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Keys match <see cref="_folderTreeEntryByPath"/> (folder full path at registration time).</summary>
+    private readonly Dictionary<string, TreeViewNode> _folderTreeNodeByPath = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, long?> _folderAggregateBytesByPath = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int?> _folderImageFileCountByPath = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, byte> _folderMetricsInFlight = new(StringComparer.OrdinalIgnoreCase);
@@ -378,9 +380,11 @@ public sealed partial class MainWindow
             entry.ClearImageCountUnavailable();
     }
 
-    private void RegisterFolderTreeIndex(FolderTreeEntry entry)
+    private void RegisterFolderTreeIndex(FolderTreeEntry entry, TreeViewNode? hostNode = null)
     {
         _folderTreeEntryByPath[entry.Path] = entry;
+        if (hostNode != null)
+            _folderTreeNodeByPath[entry.Path] = hostNode;
         var agg = entry.AggregateSizeBytes;
         if (agg != null)
             _folderAggregateBytesByPath[entry.Path] = agg;
@@ -389,9 +393,13 @@ public sealed partial class MainWindow
             _folderImageFileCountByPath[entry.Path] = img;
     }
 
+    private void UnregisterFolderTreeNodeIndex(string folderPath) =>
+        _folderTreeNodeByPath.Remove(folderPath);
+
     private void ResetBrowserFolderMetricsState()
     {
         _folderTreeEntryByPath.Clear();
+        _folderTreeNodeByPath.Clear();
         _folderAggregateBytesByPath.Clear();
         _folderImageFileCountByPath.Clear();
         _folderMetricsInFlight.Clear();
@@ -545,12 +553,12 @@ public sealed partial class MainWindow
             var entry = FolderTreeEntry.FromDirectoryEntry(d);
             PrepareFolderEntrySizingState(entry);
             ApplyLayoutFolderDetailsToFolderEntry(entry);
-            RegisterFolderTreeIndex(entry);
             var node = new TreeViewNode
             {
                 Content = entry,
             };
             node.HasUnrealizedChildren = true;
+            RegisterFolderTreeIndex(entry, node);
             expandProbeTargets?.Add((d.FullPath, node));
             target.Add(node);
             if (deferFolderMetricsBulk)
@@ -653,12 +661,12 @@ public sealed partial class MainWindow
                 var entry = FolderTreeEntry.FromDirectoryEntry(d);
                 PrepareFolderEntrySizingState(entry);
                 ApplyLayoutFolderDetailsToFolderEntry(entry);
-                RegisterFolderTreeIndex(entry);
                 var treeNode = new TreeViewNode
                 {
                     Content = entry,
                 };
                 treeNode.HasUnrealizedChildren = true;
+                RegisterFolderTreeIndex(entry, treeNode);
                 expandProbeTargets?.Add((d.FullPath, treeNode));
                 target.Insert(folderInsertIndex, treeNode);
                 folderInsertIndex++;
@@ -1988,6 +1996,7 @@ public sealed partial class MainWindow
             if (n.Content is FolderTreeEntry fe)
             {
                 _folderTreeEntryByPath.Remove(fe.Path);
+                UnregisterFolderTreeNodeIndex(fe.Path);
                 _folderAggregateBytesByPath.Remove(fe.Path);
                 _folderImageFileCountByPath.Remove(fe.Path);
             }
@@ -2099,7 +2108,7 @@ public sealed partial class MainWindow
             return;
         if (gen != Volatile.Read(ref _populateBrowserGeneration))
             return;
-        if (FindFolderTreeNodeByPath(FolderTree.RootNodes, path) is not { } node)
+        if (!_folderTreeNodeByPath.TryGetValue(path, out var node))
             return;
         if (snap.HasExpandableChildren is bool b)
         {
@@ -3703,6 +3712,7 @@ public sealed partial class MainWindow
         foreach (var p in pathsToUnindex)
         {
             _folderTreeEntryByPath.Remove(p);
+            UnregisterFolderTreeNodeIndex(p);
             _folderAggregateBytesByPath.Remove(p);
             _folderImageFileCountByPath.Remove(p);
         }
@@ -3739,7 +3749,7 @@ public sealed partial class MainWindow
         foreach (var n in EnumerateNodesDepthFirst(renamedNode))
         {
             if (n.Content is FolderTreeEntry fe2)
-                RegisterFolderTreeIndex(fe2);
+                RegisterFolderTreeIndex(fe2, n);
         }
 
         RelocateAppPathsAfterFolderRename(oldPath, destPath);

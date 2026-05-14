@@ -32,6 +32,10 @@ This document extends the **minimum** command set in [input-default-profiles.md]
 | `browse.addBookmark` | Bookmark current root/folder | FR-BR-04 | Chrome P0; bind P1 |
 | `browse.revealInExplorer` | Reveal current file in Explorer | FR-BR-05 | Chrome P0; bind P1 |
 | `browse.findInTree` | Find in browser folder tree (partial name match, shallow or deep under browse root) | FR-BR-02 | Yes (KeyboardOnly default `Control+F`) |
+| `browse.treeNext` | Browser tree: move selection to next visible row (folder or image) while tree has focus | FR-BR-02 | Yes (KeyboardOnly default `ArrowDown`; overlaps `nav.nextImage`, disambiguated by focus) |
+| `browse.treePrevious` | Browser tree: move selection to previous visible row | FR-BR-02 | Yes (KeyboardOnly default `ArrowUp`; overlaps `nav.prevImage`) |
+| `browse.treeExpand` | Browser tree: expand current folder row (or parent folder when an image row is selected) | FR-BR-02 | Yes (KeyboardOnly default `ArrowRight`; overlaps `nav.nextImage`) |
+| `browse.treeCollapse` | Browser tree: collapse current folder row (or parent folder when an image row is selected) | FR-BR-02 | Yes (KeyboardOnly default `ArrowLeft`; overlaps `nav.prevImage`) |
 | `view.cycleFitMode` | Cycle fit / fill / 1:1 (or next mode) | FR-VW-01 | Chrome P0; bind **recommended P0** `KeyV` or toolbar |
 | `view.panPreview` | Pan primary preview (modifier + drag) when image exceeds pane | FR-VW-01 | Yes (MouseOnly default `Shift` + primary click drag; scrollbars also) |
 | `view.zoomIn` | Zoom in (when not slideshow-only) | FR-VW-01 | P1 |

@@ -80,6 +80,7 @@ public sealed partial class MainWindow
     private readonly object _browserTreeViewportCoalesceLock = new();
     private bool _browserTreeViewportCoalesceScheduled;
     private string? _browserTreeViewportCoalescedPinFolderPath;
+    private bool _browserTreeViewportCoalescedPreferSelectionBeforeBrowsed;
     private readonly List<TaskCompletionSource> _browserTreeViewportCoalesceWaiters = new();
 
     private TreeViewNode? _browserContextMenuTargetNode;
@@ -657,9 +658,6 @@ public sealed partial class MainWindow
                 });
         }
 
-        if (rootBrowsePopulate)
-            FinalizeBrowserRootPopulateSelectionAndChrome(populateGen, rows);
-
         if (populateGen != Volatile.Read(ref _populateBrowserGeneration))
             return;
 
@@ -690,6 +688,9 @@ public sealed partial class MainWindow
 
             await Task.Yield();
         }
+
+        if (rootBrowsePopulate)
+            FinalizeBrowserRootPopulateSelectionAndChrome(populateGen, rows);
 
         if (expandProbeTargets is { Count: > 0 })
             ScheduleBrowseExpandabilityProbeBatch(expandProbeTargets, browserProbeGen);
@@ -1304,6 +1305,26 @@ public sealed partial class MainWindow
         return false;
     }
 
+    /// <summary>
+    /// <see cref="TreeView"/> hosts a flat <see cref="TreeViewList"/>; <see cref="ListViewBase.ScrollIntoView(object, ScrollIntoViewAlignment)"/>
+    /// scrolls off-screen nodes reliably, while <see cref="TreeViewItem.StartBringIntoView"/> alone often does not under virtualization.
+    /// </summary>
+    private static TreeViewList? TryFindDescendantTreeViewList(DependencyObject root)
+    {
+        if (root is TreeViewList list)
+            return list;
+
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (TryFindDescendantTreeViewList(child) is { } nested)
+                return nested;
+        }
+
+        return null;
+    }
+
     private bool TryGetFolderTreeScrollViewer(out ScrollViewer? scrollViewer) =>
         TryFindDescendantScrollViewer(FolderTree, out scrollViewer);
 
@@ -1317,8 +1338,16 @@ public sealed partial class MainWindow
 
     private bool TryBringFolderTreeNodeToTop(TreeViewNode node)
     {
+        var progressed = false;
+        if (TryFindDescendantTreeViewList(FolderTree) is { } flatList)
+        {
+            flatList.ScrollIntoView(node, ScrollIntoViewAlignment.Leading);
+            progressed = true;
+        }
+
         if (FolderTree.ContainerFromNode(node) is not TreeViewItem item)
-            return false;
+            return progressed;
+
         item.StartBringIntoView(
             new BringIntoViewOptions
             {
@@ -1366,7 +1395,10 @@ public sealed partial class MainWindow
         _ = ScheduleBrowserTreeViewportAfterMutationAsync(pinFolderRowPath);
 
     /// <summary>Schedules the same work as <see cref="ScheduleBrowserTreeViewportAfterMutation"/> and completes when the scroll pass finishes (including deferred pinned-folder retries).</summary>
-    private Task ScheduleBrowserTreeViewportAfterMutationAsync(string? pinFolderRowPath = null)
+    /// <param name="preferTreeSelectionBeforeBrowsedFolder">When true, try <see cref="TreeView.SelectedNode"/> before the pinned folder row and before the browsed-folder row (e.g. find-in-tree file hits). A successful pin scroll alone does not complete the pass; intermediate pin scrolls may run to help realize <see cref="TreeViewItem"/> containers before retries.</param>
+    private Task ScheduleBrowserTreeViewportAfterMutationAsync(
+        string? pinFolderRowPath = null,
+        bool preferTreeSelectionBeforeBrowsedFolder = false)
     {
         var dq = FolderTree.DispatcherQueue;
         if (dq == null)
@@ -1378,6 +1410,8 @@ public sealed partial class MainWindow
         {
             if (!string.IsNullOrEmpty(pinFolderRowPath))
                 _browserTreeViewportCoalescedPinFolderPath = pinFolderRowPath;
+            if (preferTreeSelectionBeforeBrowsedFolder)
+                _browserTreeViewportCoalescedPreferSelectionBeforeBrowsed = true;
             waiter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _browserTreeViewportCoalesceWaiters.Add(waiter);
             if (_browserTreeViewportCoalesceScheduled)
@@ -1414,11 +1448,14 @@ public sealed partial class MainWindow
             for (;;)
             {
                 string? pin;
+                var preferSelectionBeforeBrowsed = false;
                 TaskCompletionSource[] batch;
                 lock (_browserTreeViewportCoalesceLock)
                 {
                     pin = _browserTreeViewportCoalescedPinFolderPath;
                     _browserTreeViewportCoalescedPinFolderPath = null;
+                    preferSelectionBeforeBrowsed = _browserTreeViewportCoalescedPreferSelectionBeforeBrowsed;
+                    _browserTreeViewportCoalescedPreferSelectionBeforeBrowsed = false;
                     if (_browserTreeViewportCoalesceWaiters.Count == 0)
                     {
                         _browserTreeViewportCoalesceScheduled = false;
@@ -1429,7 +1466,8 @@ public sealed partial class MainWindow
                     _browserTreeViewportCoalesceWaiters.Clear();
                 }
 
-                await ExecuteBrowserTreeViewportAfterMutationCoreAsync(pin).ConfigureAwait(true);
+                await ExecuteBrowserTreeViewportAfterMutationCoreAsync(pin, preferSelectionBeforeBrowsed)
+                    .ConfigureAwait(true);
                 foreach (var w in batch)
                     w.TrySetResult();
             }
@@ -1449,7 +1487,9 @@ public sealed partial class MainWindow
     }
 
     /// <summary>Single scroll pass: pin browsed folder or selection (see <see cref="ScheduleBrowserTreeViewportAfterMutation"/>).</summary>
-    private Task ExecuteBrowserTreeViewportAfterMutationCoreAsync(string? pinFolderRowPath)
+    private Task ExecuteBrowserTreeViewportAfterMutationCoreAsync(
+        string? pinFolderRowPath,
+        bool preferTreeSelectionBeforeBrowsedFolder)
     {
         var dq = FolderTree.DispatcherQueue;
         if (dq == null)
@@ -1473,40 +1513,67 @@ public sealed partial class MainWindow
 
             FolderTree.UpdateLayout();
 
-            if (pinSet
-                && Directory.Exists(pinFolderRowPath!)
-                && TryResolveFolderTreeNodeForPath(pinFolderRowPath!) is { } pinNode
-                && pinNode.Content is FolderTreeEntry
-                && TryBringFolderTreeNodeToTop(pinNode))
+            if (preferTreeSelectionBeforeBrowsedFolder)
             {
-                TryComplete();
-                return;
-            }
+                if (FolderTree.SelectedNode is { } selPick && TryBringFolderTreeNodeToTop(selPick))
+                {
+                    TryComplete();
+                    return;
+                }
 
-            var browsedPath = ResolveBrowsedFolderPathForBrowserTreeViewport();
-            if (string.IsNullOrEmpty(browsedPath))
-            {
-                TryComplete();
-                return;
+                if (pinSet
+                    && Directory.Exists(pinFolderRowPath!)
+                    && TryResolveFolderTreeNodeForPath(pinFolderRowPath!) is { } pinNode
+                    && pinNode.Content is FolderTreeEntry)
+                {
+                    _ = TryBringFolderTreeNodeToTop(pinNode);
+                }
             }
-
-            var folderNode = TryResolveFolderTreeNodeForPath(browsedPath);
-            if (folderNode?.Content is FolderTreeEntry && TryBringFolderTreeNodeToTop(folderNode))
+            else
             {
-                TryComplete();
-                return;
-            }
+                if (pinSet
+                    && Directory.Exists(pinFolderRowPath!)
+                    && TryResolveFolderTreeNodeForPath(pinFolderRowPath!) is { } pinNode
+                    && pinNode.Content is FolderTreeEntry
+                    && TryBringFolderTreeNodeToTop(pinNode))
+                {
+                    TryComplete();
+                    return;
+                }
 
-            if (FolderTree.SelectedNode is { } selected && TryBringFolderTreeNodeToTop(selected))
-            {
-                TryComplete();
-                return;
+                var browsedPath = ResolveBrowsedFolderPathForBrowserTreeViewport();
+                if (string.IsNullOrEmpty(browsedPath))
+                {
+                    TryComplete();
+                    return;
+                }
+
+                var folderNode = TryResolveFolderTreeNodeForPath(browsedPath);
+                if (folderNode?.Content is FolderTreeEntry && TryBringFolderTreeNodeToTop(folderNode))
+                {
+                    TryComplete();
+                    return;
+                }
+
+                if (FolderTree.SelectedNode is { } selected && TryBringFolderTreeNodeToTop(selected))
+                {
+                    TryComplete();
+                    return;
+                }
             }
 
             if (attempt >= maxAttempts - 1)
             {
                 if (!pinSet)
                 {
+                    if (preferTreeSelectionBeforeBrowsedFolder
+                        && FolderTree.SelectedNode is { } lastSel
+                        && TryBringFolderTreeNodeToTop(lastSel))
+                    {
+                        TryComplete();
+                        return;
+                    }
+
                     _ = TryScrollFolderTreeToTop();
                     TryComplete();
                     return;
@@ -1521,18 +1588,34 @@ public sealed partial class MainWindow
                                 if (string.IsNullOrEmpty(_currentFolderPath) || !Directory.Exists(_currentFolderPath))
                                     return;
                                 FolderTree.UpdateLayout();
-                                if (Directory.Exists(pinFolderRowPath!)
-                                    && TryResolveFolderTreeNodeForPath(pinFolderRowPath!) is { } pinNode2
-                                    && pinNode2.Content is FolderTreeEntry
-                                    && TryBringFolderTreeNodeToTop(pinNode2))
-                                    return;
-                                var browsed = ResolveBrowsedFolderPathForBrowserTreeViewport();
-                                if (!string.IsNullOrEmpty(browsed)
-                                    && TryResolveFolderTreeNodeForPath(browsed) is { Content: FolderTreeEntry } fn
-                                    && TryBringFolderTreeNodeToTop(fn))
-                                    return;
-                                if (FolderTree.SelectedNode is { } sel && TryBringFolderTreeNodeToTop(sel))
-                                    return;
+                                if (preferTreeSelectionBeforeBrowsedFolder)
+                                {
+                                    if (FolderTree.SelectedNode is { } selPick2
+                                        && TryBringFolderTreeNodeToTop(selPick2))
+                                        return;
+                                    if (Directory.Exists(pinFolderRowPath!)
+                                        && TryResolveFolderTreeNodeForPath(pinFolderRowPath!) is { } pinNode2
+                                        && pinNode2.Content is FolderTreeEntry)
+                                        _ = TryBringFolderTreeNodeToTop(pinNode2);
+                                    if (FolderTree.SelectedNode is { } selPick3
+                                        && TryBringFolderTreeNodeToTop(selPick3))
+                                        return;
+                                }
+                                else
+                                {
+                                    if (Directory.Exists(pinFolderRowPath!)
+                                        && TryResolveFolderTreeNodeForPath(pinFolderRowPath!) is { } pinNode2
+                                        && pinNode2.Content is FolderTreeEntry
+                                        && TryBringFolderTreeNodeToTop(pinNode2))
+                                        return;
+                                    var browsed = ResolveBrowsedFolderPathForBrowserTreeViewport();
+                                    if (!string.IsNullOrEmpty(browsed)
+                                        && TryResolveFolderTreeNodeForPath(browsed) is { Content: FolderTreeEntry } fn
+                                        && TryBringFolderTreeNodeToTop(fn))
+                                        return;
+                                    if (FolderTree.SelectedNode is { } sel && TryBringFolderTreeNodeToTop(sel))
+                                        return;
+                                }
                             }
                             finally
                             {
@@ -2963,19 +3046,37 @@ public sealed partial class MainWindow
         FolderTree.SelectedNode?.Content as ImageRow;
 
     /// <summary>
-    /// Path used for sort-flag commands: explicit image tree selection when present, otherwise the current preview image.
+    /// Path used for sort-flag commands: prefers the committed preview path while slideshow is active, or when the
+    /// tree’s selected <see cref="ImageRow"/> disagrees with the preview (stale selection after preview-only navigation);
+    /// otherwise uses explicit image row selection when present; otherwise the current preview path.
     /// </summary>
     internal bool TryGetSortFlagTargetPath([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? path)
     {
+        var preview = _currentImageFullPath;
+        var hasPreview = !string.IsNullOrEmpty(preview);
+
+        if (_slideshowUiActive && hasPreview)
+        {
+            path = preview!;
+            return true;
+        }
+
         if (GetSelectedImageRow() is { } row)
         {
+            if (hasPreview
+                && !string.Equals(row.FullPath, preview, StringComparison.OrdinalIgnoreCase))
+            {
+                path = preview!;
+                return true;
+            }
+
             path = row.FullPath;
             return true;
         }
 
-        if (!string.IsNullOrEmpty(_currentImageFullPath))
+        if (hasPreview)
         {
-            path = _currentImageFullPath;
+            path = preview!;
             return true;
         }
 
@@ -3917,6 +4018,108 @@ public sealed partial class MainWindow
             await TrySyncBrowseTreeSelectionToImagePathAsync(firstPath).ConfigureAwait(true);
     }
 
+    private static IEnumerable<TreeViewNode> EnumerateVisibleBrowserTreeNavRows(IList<TreeViewNode> roots)
+    {
+        foreach (var r in roots)
+        {
+            foreach (var n in EnumerateVisibleBrowserTreeNavRows(r))
+                yield return n;
+        }
+    }
+
+    private static IEnumerable<TreeViewNode> EnumerateVisibleBrowserTreeNavRows(TreeViewNode node)
+    {
+        switch (node.Content)
+        {
+            case FolderTreeEntry:
+                if (!IsFolderMetricsBranchVisible(node))
+                    yield break;
+                yield return node;
+                if (!node.IsExpanded)
+                    yield break;
+                foreach (var c in node.Children)
+                {
+                    foreach (var x in EnumerateVisibleBrowserTreeNavRows(c))
+                        yield return x;
+                }
+
+                yield break;
+            case ImageRow:
+                if (IsFolderMetricsBranchVisible(node))
+                    yield return node;
+                yield break;
+            default:
+                if (node.IsExpanded)
+                {
+                    foreach (var c in node.Children)
+                    {
+                        foreach (var x in EnumerateVisibleBrowserTreeNavRows(c))
+                            yield return x;
+                    }
+                }
+
+                yield break;
+        }
+    }
+
+    private void BrowseTreeKeyboardMoveSelection(int delta)
+    {
+        var list = EnumerateVisibleBrowserTreeNavRows(FolderTree.RootNodes).ToList();
+        if (list.Count == 0)
+            return;
+
+        var sel = FolderTree.SelectedNode;
+        var idx = sel != null ? list.IndexOf(sel) : -1;
+        var next = Math.Clamp(idx + delta, 0, list.Count - 1);
+        if (next == idx && sel != null)
+            return;
+
+        var target = list[next];
+        FolderTree.SelectedNode = target;
+        _ = TryBringFolderTreeNodeToTop(target);
+    }
+
+    private void BrowseTreeKeyboardExpandFolderTarget()
+    {
+        if (!TryGetBrowseTreeKeyboardFolderTarget(out var folderNode))
+            return;
+        if (!folderNode.IsExpanded)
+            folderNode.IsExpanded = true;
+    }
+
+    private void BrowseTreeKeyboardCollapseFolderTarget()
+    {
+        if (!TryGetBrowseTreeKeyboardFolderTarget(out var folderNode))
+            return;
+        if (folderNode.IsExpanded)
+            folderNode.IsExpanded = false;
+    }
+
+    private bool TryGetBrowseTreeKeyboardFolderTarget([NotNullWhen(true)] out TreeViewNode? folderNode)
+    {
+        folderNode = null;
+        var sel = FolderTree.SelectedNode;
+        if (sel == null)
+            return false;
+        if (sel.Content is FolderTreeEntry)
+        {
+            folderNode = sel;
+            return true;
+        }
+
+        if (sel.Content is ImageRow)
+        {
+            var p = sel.Parent;
+            if (p?.Content is FolderTreeEntry)
+            {
+                folderNode = p;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private bool IsFocusInsideBrowserTree()
     {
         var focused = FocusManager.GetFocusedElement(RootGrid.XamlRoot!) as DependencyObject;
@@ -3933,6 +4136,9 @@ public sealed partial class MainWindow
     private void FolderTree_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (_isFullscreen)
+            return;
+
+        if (TryDispatchBrowserTreeInputCommand(e))
             return;
 
         if (TryDispatchInputCommand(e))

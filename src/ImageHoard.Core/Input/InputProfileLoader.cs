@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -68,11 +70,43 @@ public static class InputBindingConflictChecker
 
         foreach (var (fp, cmds) in chordToCommands)
         {
-            if (cmds.Distinct(StringComparer.Ordinal).Count() > 1)
-                issues.Add($"Chord '{fp}' maps to multiple commands: {string.Join(", ", cmds.Distinct(StringComparer.Ordinal))}");
+            var distinct = cmds.Distinct(StringComparer.Ordinal).ToList();
+            if (distinct.Count <= 1)
+                continue;
+            if (fp.StartsWith("keyboard:", StringComparison.Ordinal)
+                && IsExemptNavVersusBrowserTreeKeyboardOverlap(distinct))
+                continue;
+            issues.Add($"Chord '{fp}' maps to multiple commands: {string.Join(", ", distinct)}");
         }
 
         return issues;
+    }
+
+    private static readonly HashSet<string> NavVersusTreeExemptNavIds = new(StringComparer.Ordinal)
+    {
+        "nav.nextImage",
+        "nav.prevImage",
+    };
+
+    /// <summary>Arrow keys intentionally overlap between global image navigation and tree-scoped commands; resolved at dispatch time by focus.</summary>
+    private static bool IsExemptNavVersusBrowserTreeKeyboardOverlap(IReadOnlyList<string> distinctCommandIds)
+    {
+        if (distinctCommandIds.Count != 2)
+            return false;
+
+        var anyNav = false;
+        var anyTree = false;
+        foreach (var id in distinctCommandIds)
+        {
+            if (NavVersusTreeExemptNavIds.Contains(id))
+                anyNav = true;
+            else if (BrowserTreeKeyboardCommandIds.IsTreeCommand(id))
+                anyTree = true;
+            else
+                return false;
+        }
+
+        return anyNav && anyTree;
     }
 
     private static string Fingerprint(string kind, JsonElement chord)

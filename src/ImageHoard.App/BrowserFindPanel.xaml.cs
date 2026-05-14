@@ -14,10 +14,38 @@ internal readonly record struct BrowserFindSearchParameters(
 public sealed partial class BrowserFindPanel : UserControl
 {
     private MainWindow _owner = null!;
+    private bool _findOptionsChangeHandlersWired;
 
-    public BrowserFindPanel() => InitializeComponent();
+    public BrowserFindPanel()
+    {
+        InitializeComponent();
+        if (OptionsDropDown.Flyout is Flyout flyout)
+            flyout.Opened += FindOptionsFlyout_Opened;
+    }
 
     internal void Connect(MainWindow owner) => _owner = owner;
+
+    private void FindOptionsFlyout_Opened(object? sender, object e)
+    {
+        if (_findOptionsChangeHandlersWired)
+            return;
+        _findOptionsChangeHandlersWired = true;
+
+        MatchFromStartRadio.Checked += FindSearchOptions_RadioChecked;
+        MatchAnywhereRadio.Checked += FindSearchOptions_RadioChecked;
+        FoldersOnlyRadio.Checked += FindSearchOptions_RadioChecked;
+        FilesOnlyRadio.Checked += FindSearchOptions_RadioChecked;
+        DeepSearchToggle.Toggled += FindSearchOptions_Toggled;
+    }
+
+    private void FindSearchOptions_RadioChecked(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton { IsChecked: true })
+            _owner.InvalidateBrowserFindCachedResults();
+    }
+
+    private void FindSearchOptions_Toggled(object sender, RoutedEventArgs e) =>
+        _owner.InvalidateBrowserFindCachedResults();
 
     internal TextBox QueryTextBox => FindQueryTextBox;
 

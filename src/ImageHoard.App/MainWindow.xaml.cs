@@ -39,6 +39,10 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     private BrowseNavigationMode _browseNavigationMode = BrowseNavigationMode.AllImages;
 
     internal InputKeyboardDispatchTable? KeyboardDispatchTable { get; private set; }
+
+    /// <summary>Keyboard chords for <see cref="BrowserTreeKeyboardCommandIds"/>; matched only while focus is inside <c>FolderTree</c>.</summary>
+    internal InputKeyboardDispatchTable? BrowserTreeKeyboardDispatchTable { get; private set; }
+
     internal InputProfileDocument? MergedInputProfile { get; private set; }
 
     private enum SplitDragKind
@@ -756,6 +760,29 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         return true;
     }
 
+    /// <summary>Matches the tree-only keyboard dispatch table when focus is in the browser tree (before global dispatch).</summary>
+    private bool TryDispatchBrowserTreeInputCommand(KeyRoutedEventArgs e)
+    {
+        if (BrowserTreeKeyboardDispatchTable == null)
+            return false;
+        if (!IsFocusInsideBrowserTree())
+            return false;
+        if (ShouldDeferAppKeyboardShortcuts())
+            return false;
+
+        var mk = WinUiKeyboardInterop.ToMdnPrimaryKey(e.Key);
+        if (mk == null)
+            return false;
+        var state = WinUiKeyboardInterop.GetKeyboardChordState(mk);
+        var cmd = BrowserTreeKeyboardDispatchTable.TryMatchFirst(state);
+        if (string.IsNullOrEmpty(cmd))
+            return false;
+        if (!TryExecuteInputCommand(cmd))
+            return false;
+        e.Handled = true;
+        return true;
+    }
+
     internal bool TryExecuteInputCommand(string? commandId)
     {
         if (string.IsNullOrEmpty(commandId))
@@ -771,7 +798,9 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
         if (IsBrowserPaneMutationInProgress
             && commandId is "nav.nextImage" or "nav.prevImage" or "nav.firstImage" or "nav.lastImage"
-                or "nav.nextDirectory" or "nav.prevDirectory" or "nav.cycleNavigationMode" or "slideshow.start")
+                or "nav.nextDirectory" or "nav.prevDirectory" or "nav.cycleNavigationMode" or "slideshow.start"
+                or BrowserTreeKeyboardCommandIds.TreeNext or BrowserTreeKeyboardCommandIds.TreePrevious
+                or BrowserTreeKeyboardCommandIds.TreeExpand or BrowserTreeKeyboardCommandIds.TreeCollapse)
             return true;
 
         switch (commandId)
@@ -893,6 +922,26 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             case "settings.open":
                 ShowOrActivatePreferences();
                 return true;
+            case BrowserTreeKeyboardCommandIds.TreeNext:
+                if (!IsFocusInsideBrowserTree())
+                    return false;
+                BrowseTreeKeyboardMoveSelection(1);
+                return true;
+            case BrowserTreeKeyboardCommandIds.TreePrevious:
+                if (!IsFocusInsideBrowserTree())
+                    return false;
+                BrowseTreeKeyboardMoveSelection(-1);
+                return true;
+            case BrowserTreeKeyboardCommandIds.TreeExpand:
+                if (!IsFocusInsideBrowserTree())
+                    return false;
+                BrowseTreeKeyboardExpandFolderTarget();
+                return true;
+            case BrowserTreeKeyboardCommandIds.TreeCollapse:
+                if (!IsFocusInsideBrowserTree())
+                    return false;
+                BrowseTreeKeyboardCollapseFolderTarget();
+                return true;
             default:
                 return false;
         }
@@ -911,6 +960,9 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
         if (TryDispatchInputCommand(e))
             return;
+
+        if (!e.Handled && !ShouldDeferAppKeyboardShortcuts())
+            HandleSortKeyboardShortcuts(e);
 
         if (TryHandleSlideshowKeys(e))
             return;

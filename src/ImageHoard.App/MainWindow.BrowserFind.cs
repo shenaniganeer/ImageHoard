@@ -28,6 +28,8 @@ public sealed partial class MainWindow
     private readonly List<BrowserFindMatch> _browserFindMatches = new();
     private int _browserFindCurrentIndex;
     private CancellationTokenSource? _browserFindSearchCts;
+    /// <summary>When non-null, <see cref="_browserFindMatches"/> was produced for these parameters (trimmed query).</summary>
+    private BrowserFindSearchParameters? _browserFindMatchesForParameters;
 
     internal bool IsBrowserFindOverlayOpen =>
         BrowserFindOverlayRoot.Visibility == Visibility.Visible;
@@ -62,6 +64,21 @@ public sealed partial class MainWindow
         if (!IsBrowserFindOverlayOpen)
             return;
 
+        ClearBrowserFindMatchCacheCore();
+        BrowserFindOverlayRoot.Visibility = Visibility.Collapsed;
+        BrowserFindPanelElement.OnOverlayHidden();
+        SetBrowserFindPreviewDimVisible(false);
+    }
+
+    /// <summary>Clears cached find matches and cancels an in-flight deep search (e.g. when match/target/deep options change).</summary>
+    internal void InvalidateBrowserFindCachedResults()
+    {
+        ClearBrowserFindMatchCacheCore();
+        BrowserFindPanelElement.SetStatus("Options changed. Use Next, Previous, or Enter to search.");
+    }
+
+    private void ClearBrowserFindMatchCacheCore()
+    {
         try
         {
             _browserFindSearchCts?.Cancel();
@@ -75,9 +92,7 @@ public sealed partial class MainWindow
         _browserFindSearchCts = null;
         _browserFindMatches.Clear();
         _browserFindCurrentIndex = 0;
-        BrowserFindOverlayRoot.Visibility = Visibility.Collapsed;
-        BrowserFindPanelElement.OnOverlayHidden();
-        SetBrowserFindPreviewDimVisible(false);
+        _browserFindMatchesForParameters = null;
     }
 
     private void SetBrowserFindPreviewDimVisible(bool visible) =>
@@ -90,6 +105,13 @@ public sealed partial class MainWindow
         bool foldersOnly,
         bool deepSearch)
     {
+        var sig = new BrowserFindSearchParameters(query.Trim(), matchFromStartOfName, foldersOnly, deepSearch);
+        if (_browserFindMatches.Count > 0
+            && (!_browserFindMatchesForParameters.HasValue || _browserFindMatchesForParameters.Value != sig))
+        {
+            ClearBrowserFindMatchCacheCore();
+        }
+
         if (_browserFindMatches.Count == 0)
         {
             var anchor = delta > 0 ? BrowserFindSearchAnchor.First : BrowserFindSearchAnchor.Last;
@@ -115,7 +137,7 @@ public sealed partial class MainWindow
         _browserFindCurrentIndex = ((_browserFindCurrentIndex + delta) % n + n) % n;
         var cur = _browserFindMatches[_browserFindCurrentIndex];
         await BrowserFindApplyMatchAsync(cur).ConfigureAwait(true);
-        BrowserFindPanelElement.SetStatus($"{_browserFindCurrentIndex + 1} of {n}: {cur.DisplayName}");
+        BrowserFindPanelElement.SetStatus($"{_browserFindCurrentIndex + 1} of {n}");
     }
 
     private async Task BrowserFindApplyMatchAsync(BrowserFindMatch m)
@@ -136,9 +158,14 @@ public sealed partial class MainWindow
                 ?? FindFolderTreeNodeByPath(FolderTree.RootNodes, m.Path);
             if (node == null)
                 return;
-            EnsureBrowseTreeAncestorsExpanded(node);
             SyncBrowseTreeSelection(node);
-            ScheduleBrowserTreeViewportAfterMutation(m.Path);
+            FolderTree.UpdateLayout();
+            var sel = FolderTree.SelectedNode ?? node;
+            TryBringFolderTreeNodeToTop(sel);
+            await ScheduleBrowserTreeViewportAfterMutationAsync(
+                    m.Path,
+                    preferTreeSelectionBeforeBrowsedFolder: true)
+                .ConfigureAwait(true);
             return;
         }
 
@@ -147,9 +174,15 @@ public sealed partial class MainWindow
 
         EnqueuePreviewNavigation(m.Path, false);
         await TrySyncBrowseTreeSelectionToImagePathAsync(m.Path).ConfigureAwait(true);
-        var dir = Path.GetDirectoryName(m.Path);
-        if (!string.IsNullOrEmpty(dir))
-            ScheduleBrowserTreeViewportAfterMutation(dir);
+        var parentDir = Path.GetDirectoryName(m.Path);
+        FolderTree.UpdateLayout();
+        var imageSel = FolderTree.SelectedNode ?? FindImageNodeByPath(FolderTree.RootNodes, m.Path);
+        if (imageSel != null)
+            TryBringFolderTreeNodeToTop(imageSel);
+        await ScheduleBrowserTreeViewportAfterMutationAsync(
+                string.IsNullOrEmpty(parentDir) ? null : parentDir,
+                preferTreeSelectionBeforeBrowsedFolder: true)
+            .ConfigureAwait(true);
     }
 
     internal async Task RunBrowserFindSearchFromPanelAsync(
@@ -168,19 +201,7 @@ public sealed partial class MainWindow
 
         if (string.IsNullOrEmpty(trimmed))
         {
-            try
-            {
-                _browserFindSearchCts?.Cancel();
-            }
-            catch
-            {
-                // ignore
-            }
-
-            _browserFindSearchCts?.Dispose();
-            _browserFindSearchCts = null;
-            _browserFindMatches.Clear();
-            _browserFindCurrentIndex = 0;
+            ClearBrowserFindMatchCacheCore();
             BrowserFindPanelElement.SetStatus("Enter text to search");
             return;
         }
@@ -212,6 +233,7 @@ public sealed partial class MainWindow
                 return;
 
             _browserFindMatches.Clear();
+            _browserFindMatchesForParameters = null;
             _browserFindMatches.AddRange(found);
             if (_browserFindMatches.Count == 0)
             {
@@ -219,13 +241,19 @@ public sealed partial class MainWindow
                 return;
             }
 
+            _browserFindMatchesForParameters = new BrowserFindSearchParameters(
+                trimmed,
+                matchFromStartOfName,
+                foldersOnly,
+                deepSearch);
+
             _browserFindCurrentIndex = anchor == BrowserFindSearchAnchor.Last
                 ? _browserFindMatches.Count - 1
                 : 0;
             var cur = _browserFindMatches[_browserFindCurrentIndex];
             await BrowserFindApplyMatchAsync(cur).ConfigureAwait(true);
             BrowserFindPanelElement.SetStatus(
-                $"{_browserFindCurrentIndex + 1} of {_browserFindMatches.Count}: {cur.DisplayName}");
+                $"{_browserFindCurrentIndex + 1} of {_browserFindMatches.Count}");
         }
         catch (OperationCanceledException)
         {

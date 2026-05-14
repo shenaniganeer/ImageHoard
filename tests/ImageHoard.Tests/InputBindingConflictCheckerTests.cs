@@ -65,4 +65,73 @@ public sealed class InputBindingConflictCheckerTests
         var issues = InputBindingConflictChecker.FindChordKeyConflicts(doc);
         Assert.Empty(issues);
     }
+
+    [Fact]
+    public void FindChordKeyConflicts_allows_exactly_two_distinct_nav_plus_browser_tree_keyboard_overlap()
+    {
+        var doc = new InputProfileDocument
+        {
+            Bindings = new Dictionary<string, List<System.Text.Json.JsonElement>>(),
+        };
+        var arrowDown = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
+            """{"kind":"keyboard","keys":["ArrowDown"]}""");
+        doc.Bindings!["nav.nextImage"] = new List<System.Text.Json.JsonElement> { arrowDown };
+        doc.Bindings["browse.treeNext"] =
+            new List<System.Text.Json.JsonElement> { System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(arrowDown.GetRawText())! };
+
+        var issues = InputBindingConflictChecker.FindChordKeyConflicts(doc);
+        Assert.Empty(issues);
+    }
+
+    [Fact]
+    public void FindChordKeyConflicts_still_flags_nav_plus_two_tree_commands_on_same_chord()
+    {
+        var doc = new InputProfileDocument
+        {
+            Bindings = new Dictionary<string, List<System.Text.Json.JsonElement>>(),
+        };
+        var arrowDown = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
+            """{"kind":"keyboard","keys":["ArrowDown"]}""");
+        var el = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(arrowDown.GetRawText())!;
+        doc.Bindings!["nav.nextImage"] = new List<System.Text.Json.JsonElement> { arrowDown };
+        doc.Bindings["browse.treeNext"] = new List<System.Text.Json.JsonElement> { el };
+        doc.Bindings["browse.treeExpand"] = new List<System.Text.Json.JsonElement> { el };
+
+        var issues = InputBindingConflictChecker.FindChordKeyConflicts(doc);
+        Assert.NotEmpty(issues);
+    }
+
+    [Fact]
+    public void FindChordKeyConflicts_flags_two_tree_commands_sharing_keyboard_chord()
+    {
+        var doc = new InputProfileDocument
+        {
+            Bindings = new Dictionary<string, List<System.Text.Json.JsonElement>>(),
+        };
+        var arrow = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
+            """{"kind":"keyboard","keys":["ArrowDown"]}""")!;
+        var el = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(arrow.GetRawText())!;
+        doc.Bindings!["browse.treeNext"] = new List<System.Text.Json.JsonElement> { arrow };
+        doc.Bindings["browse.treePrevious"] = new List<System.Text.Json.JsonElement> { el };
+
+        var issues = InputBindingConflictChecker.FindChordKeyConflicts(doc);
+        Assert.NotEmpty(issues);
+    }
+
+    [Fact]
+    public void FindChordKeyConflicts_still_flags_two_nav_commands_sharing_a_keyboard_chord()
+    {
+        var doc = new InputProfileDocument
+        {
+            Bindings = new Dictionary<string, List<System.Text.Json.JsonElement>>(),
+        };
+        var arrowDown = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
+            """{"kind":"keyboard","keys":["ArrowDown"]}""");
+        var el = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(arrowDown.GetRawText())!;
+        doc.Bindings!["nav.nextImage"] = new List<System.Text.Json.JsonElement> { arrowDown };
+        doc.Bindings["nav.prevImage"] = new List<System.Text.Json.JsonElement> { el };
+
+        var issues = InputBindingConflictChecker.FindChordKeyConflicts(doc);
+        Assert.NotEmpty(issues);
+    }
 }

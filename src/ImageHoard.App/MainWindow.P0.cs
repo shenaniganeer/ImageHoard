@@ -149,7 +149,12 @@ public sealed partial class MainWindow
                 ? File.ReadAllText(AppDataPaths.UserInputOverridesPath)
                 : null;
             MergedInputProfile = InputProfileMerger.MergeWithUserOverrides(builtin, userJson);
-            KeyboardDispatchTable = InputKeyboardDispatchTable.FromProfile(MergedInputProfile);
+            KeyboardDispatchTable = InputKeyboardDispatchTable.FromProfileExcludingCommandIds(
+                MergedInputProfile,
+                BrowserTreeKeyboardCommandIds.AllTreeCommandIdSet);
+            BrowserTreeKeyboardDispatchTable = InputKeyboardDispatchTable.FromProfileIncludingCommandsInOrder(
+                MergedInputProfile,
+                BrowserTreeKeyboardCommandIds.InDispatchOrder);
             var conflicts = InputBindingConflictChecker.FindChordKeyConflicts(MergedInputProfile);
             if (conflicts.Count > 0)
                 SetTransientStatus("Input profile warnings: " + conflicts[0]);

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
@@ -1273,6 +1274,29 @@ public sealed partial class MainWindow
     private bool TryGetFolderTreeScrollViewer(out ScrollViewer? scrollViewer) =>
         TryFindDescendantScrollViewer(FolderTree, out scrollViewer);
 
+    /// <summary>
+    /// TEMP: diagnostic logging for browser folder-tree scroll drift (verify-scroll-drift). Remove after investigation.
+    /// </summary>
+    private void LogFolderTreeScrollState(string phase, string? extra = null)
+    {
+        if (!TryGetFolderTreeScrollViewer(out var sv) || sv is null)
+        {
+            Debug.WriteLine("[ImageHoard][BrowserTreeScroll] " + phase + " (no ScrollViewer)" + (extra is null ? "" : " " + extra));
+            return;
+        }
+
+        var suffix = string.IsNullOrEmpty(extra) ? "" : " " + extra;
+        Debug.WriteLine(string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "[ImageHoard][BrowserTreeScroll] {0} VerticalOffset={1:0.###} ExtentHeight={2:0.###} ViewportHeight={3:0.###} ScrollableHeight={4:0.###}{5}",
+            phase,
+            sv.VerticalOffset,
+            sv.ExtentHeight,
+            sv.ViewportHeight,
+            sv.ScrollableHeight,
+            suffix));
+    }
+
     private bool TryScrollFolderTreeToTop()
     {
         if (!TryGetFolderTreeScrollViewer(out var sv) || sv is null)
@@ -1295,6 +1319,8 @@ public sealed partial class MainWindow
         return true;
     }
 
+    private string? TryGetBrowseTreeSelectedFolderPath() => GetFolderPath(FolderTree.SelectedNode);
+
     /// <summary>
     /// Directory that defines browse context for tree viewport alignment (same hints as folder navigation).
     /// </summary>
@@ -1308,7 +1334,8 @@ public sealed partial class MainWindow
             _browseNavAnchorPath,
             selPath,
             _currentImageFullPath,
-            _currentFolderPath);
+            _currentFolderPath,
+            TryGetBrowseTreeSelectedFolderPath());
         if (string.IsNullOrEmpty(browsed))
             browsed = _currentFolderPath;
 
@@ -1319,43 +1346,82 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// After the folder tree is mutated or repopulated: in browse-root mode (no subfolder context), scroll the
-    /// tree viewport to the top of the list; in subfolder mode, pin the browsed folder row to the top of the
-    /// viewport. Retries when containers are not yet realized. Does not scroll to top in subfolder mode on failure.
+    /// After the folder tree is mutated or repopulated: pin the browsed folder row to the top of the viewport when
+    /// that row exists in the tree; otherwise pin <see cref="TreeView.SelectedNode"/> (e.g. root-level images, where
+    /// there is no tree row for <see cref="_currentFolderPath"/> itself). Falls back to scrolling the tree viewer to
+    /// offset zero when <paramref name="pinFolderRowPath"/> is not set. Retries when containers are not yet realized.
     /// </summary>
-    private void ScheduleBrowserTreeViewportAfterMutation()
+    /// <param name="pinFolderRowPath">When set (e.g. sibling-folder navigation), that folder row is tried first and the scroll-to-top fallback is not used.</param>
+    private void ScheduleBrowserTreeViewportAfterMutation(string? pinFolderRowPath = null)
     {
         var dq = FolderTree.DispatcherQueue;
         if (dq == null)
             return;
 
+        var pinSet = !string.IsNullOrEmpty(pinFolderRowPath);
+
         void tryStep(int attempt)
         {
-            const int maxAttempts = 8;
+            const int maxAttemptsUnpinned = 8;
+            const int maxAttemptsPinned = 16;
+            var maxAttempts = pinSet ? maxAttemptsPinned : maxAttemptsUnpinned;
             if (string.IsNullOrEmpty(_currentFolderPath) || !Directory.Exists(_currentFolderPath))
+                return;
+
+            FolderTree.UpdateLayout();
+
+            LogFolderTreeScrollState(
+                "ViewportTryStepAfterLayout",
+                "attempt=" + attempt + " pinFolderRowPath=" + (pinFolderRowPath ?? "(null)"));
+
+            if (pinSet
+                && Directory.Exists(pinFolderRowPath!)
+                && TryResolveFolderTreeNodeForPath(pinFolderRowPath!) is { } pinNode
+                && pinNode.Content is FolderTreeEntry
+                && TryBringFolderTreeNodeToTop(pinNode))
                 return;
 
             var browsedPath = ResolveBrowsedFolderPathForBrowserTreeViewport();
             if (string.IsNullOrEmpty(browsedPath))
                 return;
 
-            FolderTree.UpdateLayout();
+            var folderNode = TryResolveFolderTreeNodeForPath(browsedPath);
+            if (folderNode?.Content is FolderTreeEntry && TryBringFolderTreeNodeToTop(folderNode))
+                return;
 
-            var browseRootMode = SameDirectoryPath(browsedPath, _currentFolderPath);
-            if (browseRootMode)
-            {
-                if (TryScrollFolderTreeToTop())
-                    return;
-            }
-            else
-            {
-                var folderNode = TryResolveFolderTreeNodeForPath(browsedPath);
-                if (folderNode?.Content is FolderTreeEntry && TryBringFolderTreeNodeToTop(folderNode))
-                    return;
-            }
+            if (FolderTree.SelectedNode is { } selected && TryBringFolderTreeNodeToTop(selected))
+                return;
 
             if (attempt >= maxAttempts - 1)
+            {
+                if (!pinSet)
+                    _ = TryScrollFolderTreeToTop();
+                else
+                {
+                    _ = dq.TryEnqueue(
+                        Microsoft.UI.Dispatching.DispatcherQueuePriority.Normal,
+                        () =>
+                        {
+                            if (string.IsNullOrEmpty(_currentFolderPath) || !Directory.Exists(_currentFolderPath))
+                                return;
+                            FolderTree.UpdateLayout();
+                            if (Directory.Exists(pinFolderRowPath!)
+                                && TryResolveFolderTreeNodeForPath(pinFolderRowPath!) is { } pinNode2
+                                && pinNode2.Content is FolderTreeEntry
+                                && TryBringFolderTreeNodeToTop(pinNode2))
+                                return;
+                            var browsed = ResolveBrowsedFolderPathForBrowserTreeViewport();
+                            if (!string.IsNullOrEmpty(browsed)
+                                && TryResolveFolderTreeNodeForPath(browsed) is { Content: FolderTreeEntry } fn
+                                && TryBringFolderTreeNodeToTop(fn))
+                                return;
+                            if (FolderTree.SelectedNode is { } sel && TryBringFolderTreeNodeToTop(sel))
+                                return;
+                        });
+                }
+
                 return;
+            }
 
             _ = dq.TryEnqueue(
                 Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
@@ -1534,12 +1600,24 @@ public sealed partial class MainWindow
 
         var diskPaths = new HashSet<string>(rows.Select(r => r.FullPath), StringComparer.OrdinalIgnoreCase);
 
+        LogFolderTreeScrollState(
+            "SyncBeforeImageRemove",
+            "folder=" + folderPath);
+
+        var removedImageRowCount = 0;
         for (var i = children.Count - 1; i >= 0; i--)
         {
             if (children[i].Content is ImageRow ir
                 && (!diskPaths.Contains(ir.FullPath) || !File.Exists(ir.FullPath)))
+            {
                 children.RemoveAt(i);
+                removedImageRowCount++;
+            }
         }
+
+        LogFolderTreeScrollState(
+            "SyncAfterImageRemove",
+            "folder=" + folderPath + " removedImageRows=" + removedImageRowCount);
 
         var existingByPath = new Dictionary<string, TreeViewNode>(StringComparer.OrdinalIgnoreCase);
         foreach (var n in children)
@@ -1802,7 +1880,8 @@ public sealed partial class MainWindow
                 _browseNavAnchorPath ?? _session.LastSelectedImage,
                 selectedImagePathFromTree,
                 _currentImageFullPath,
-                _currentFolderPath);
+                _currentFolderPath,
+                TryGetBrowseTreeSelectedFolderPath());
             var pickContextDir = resolved;
             if (string.IsNullOrEmpty(pickContextDir) || !Directory.Exists(pickContextDir))
                 pickContextDir = _currentFolderPath;
@@ -2884,18 +2963,142 @@ public sealed partial class MainWindow
         return list;
     }
 
-    /// <summary>
-    /// Scoped image nodes for <paramref name="contextDir"/>; when that list is empty after nav-mode filtering,
-    /// falls back to preorder of <see cref="ImageRow"/> nodes under expanded tree branches (cold-start Next/Previous).
-    /// </summary>
-    private (List<TreeViewNode> Nodes, List<string> Paths) BuildBrowseNavNodesAndPathsForContext(string contextDir)
+    private static BrowseImageListSortKind MapListSortKind(ListSortKind kind) =>
+        kind switch
+        {
+            ListSortKind.NameNatural => BrowseImageListSortKind.NameNatural,
+            ListSortKind.Name => BrowseImageListSortKind.Name,
+            ListSortKind.DateModified => BrowseImageListSortKind.DateModified,
+            ListSortKind.Size => BrowseImageListSortKind.Size,
+            _ => BrowseImageListSortKind.NameNatural,
+        };
+
+    /// <summary>Ordered browse paths from already-materialized tree rows for <paramref name="contextDir"/> only.</summary>
+    private List<string> BuildBrowseNavPathsFromTreeOnly(string contextDir)
     {
         var fullNodes = CollectImageNodesForBrowseContextDirectory(contextDir);
-        var result = BuildFilteredBrowseNavNodesAndPaths(fullNodes);
-        if (result.Nodes.Count > 0)
-            return result;
-        var visible = CollectVisibleImageNodesPreorder(FolderTree.RootNodes);
-        return BuildFilteredBrowseNavNodesAndPaths(visible);
+        return BuildFilteredBrowseNavNodesAndPaths(fullNodes).Paths;
+    }
+
+    /// <summary>
+    /// Ordered image paths for sequential browse in <paramref name="contextDir"/>; uses the tree when populated,
+    /// otherwise a single-folder disk listing (same sort and browse-mode filter as the tree).
+    /// </summary>
+    private async Task<List<string>> GetBrowseNavigationPathsForContextAsync(string contextDir)
+    {
+        var fromTree = BuildBrowseNavPathsFromTreeOnly(contextDir);
+        if (fromTree.Count > 0)
+            return fromTree;
+
+        if (string.IsNullOrEmpty(_currentFolderPath)
+            || string.IsNullOrEmpty(contextDir)
+            || !Directory.Exists(contextDir)
+            || !BrowseContextImageSequence.IsContextDirectoryUnderBrowseRoot(_currentFolderPath, contextDir))
+            return new List<string>();
+
+        IReadOnlyList<FileSystemEntry> entries;
+        try
+        {
+            entries = await AppServices.FileSystem.ListDirectoryAsync(contextDir).ConfigureAwait(false);
+        }
+        catch
+        {
+            return new List<string>();
+        }
+
+        var imageFiles = BrowseContextImageSequence.PickImmediateImageFiles(entries);
+        var sortKind = MapListSortKind(_layoutState.ListSort);
+        var ordered = BrowseContextImageSequence.OrderImageFileEntries(imageFiles, sortKind);
+        return BrowseContextImageSequence.FilterPathsByNavigationMode(
+            ordered,
+            _browseNavigationMode,
+            p => _sortSession.GetState(p));
+    }
+
+    /// <summary>
+    /// Expands and populates folder nodes from the browse root down to <paramref name="folderFullPath"/> so tree
+    /// rows exist for that directory.
+    /// </summary>
+    private async Task<bool> TryEnsureFolderPathMaterializedAsync(string folderFullPath, int? populateGen)
+    {
+        if (string.IsNullOrEmpty(_currentFolderPath)
+            || string.IsNullOrEmpty(folderFullPath)
+            || !Directory.Exists(folderFullPath)
+            || !IsSameOrDescendantDirectory(_currentFolderPath, folderFullPath))
+            return false;
+
+        if (SameDirectoryPath(folderFullPath, _currentFolderPath))
+            return true;
+
+        string rel;
+        try
+        {
+            rel = Path.GetRelativePath(_currentFolderPath, folderFullPath);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (string.IsNullOrEmpty(rel) || rel == ".")
+            return true;
+
+        var segments = rel.Split(
+            new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+            StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+            return true;
+
+        var cur = _currentFolderPath;
+        IList<TreeViewNode> siblings = FolderTree.RootNodes;
+
+        foreach (var segment in segments)
+        {
+            cur = Path.Combine(cur, segment);
+            TreeViewNode? folder = null;
+            foreach (var c in siblings)
+            {
+                if (c.Content is not FolderTreeEntry fe)
+                    continue;
+                if (SameDirectoryPath(fe.Path, cur))
+                {
+                    folder = c;
+                    break;
+                }
+            }
+
+            if (folder == null)
+                return false;
+
+            EnsureBrowseTreeAncestorsExpanded(folder);
+            folder.IsExpanded = true;
+            if (folder.HasUnrealizedChildren || folder.Children.Count == 0)
+                await PopulateFolderTreeNodeChildrenAsync(folder, cur, populateGen).ConfigureAwait(true);
+
+            if (populateGen is { } g && g != Volatile.Read(ref _populateBrowserGeneration))
+                return false;
+
+            siblings = folder.Children;
+        }
+
+        return true;
+    }
+
+    private async Task TrySyncBrowseTreeSelectionToImagePathAsync(string imagePath)
+    {
+        var dir = Path.GetDirectoryName(imagePath);
+        if (string.IsNullOrEmpty(dir))
+            return;
+
+        if (!await TryEnsureFolderPathMaterializedAsync(dir, populateGen: null).ConfigureAwait(true))
+            return;
+
+        var imgNode = FindImageNodeByPath(FolderTree.RootNodes, imagePath);
+        if (imgNode == null)
+            return;
+
+        EnsureBrowseTreeAncestorsExpanded(imgNode);
+        SyncBrowseTreeSelection(imgNode);
     }
 
     private static TreeViewNode? FindImageNodeByPath(IList<TreeViewNode> roots, string fullPath)
@@ -2941,7 +3144,7 @@ public sealed partial class MainWindow
         }
     }
 
-    private bool ApplyOverlayListPositionFromTree()
+    private async Task ApplyOverlayListPositionFromTreeAsync()
     {
         void hideBoth()
         {
@@ -2952,87 +3155,51 @@ public sealed partial class MainWindow
         if (!_layoutState.ShowOverlayListPosition)
         {
             hideBoth();
-            return false;
+            return;
         }
 
         var path = _currentImageFullPath;
         if (string.IsNullOrEmpty(path))
         {
             hideBoth();
-            return false;
+            return;
         }
 
         var sel = FolderTree.SelectedNode;
         var selPath = sel?.Content is ImageRow sr ? sr.FullPath : null;
-        var contextDir = BrowseContextDirectory.Resolve(_browseNavAnchorPath, selPath, path, _currentFolderPath);
+        var contextDir = BrowseContextDirectory.Resolve(
+            _browseNavAnchorPath,
+            selPath,
+            path,
+            _currentFolderPath,
+            TryGetBrowseTreeSelectedFolderPath());
         if (string.IsNullOrEmpty(contextDir))
         {
             hideBoth();
-            return false;
+            return;
         }
 
-        var (nodes, _) = BuildBrowseNavNodesAndPathsForContext(contextDir);
-        if (nodes.Count == 0)
+        var paths = await GetBrowseNavigationPathsForContextAsync(contextDir).ConfigureAwait(true);
+
+        if (paths.Count == 0
+            || !string.Equals(_currentImageFullPath, path, StringComparison.OrdinalIgnoreCase))
         {
             hideBoth();
-            return false;
+            return;
         }
 
-        var index = -1;
-        for (var i = 0; i < nodes.Count; i++)
-        {
-            if (nodes[i].Content is not ImageRow r)
-                continue;
-            if (!string.Equals(r.FullPath, path, StringComparison.OrdinalIgnoreCase))
-                continue;
-            index = i;
-            break;
-        }
-
+        var index = paths.FindIndex(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
         if (index < 0)
         {
             hideBoth();
-            return false;
+            return;
         }
 
-        var text = $"{index + 1}/{nodes.Count}";
+        var text = $"{index + 1}/{paths.Count}";
         NormalPathPositionText.Text = text;
         FullscreenPathPositionText.Text = text;
         NormalPathPositionText.Visibility = Visibility.Visible;
         FullscreenPathPositionText.Visibility = Visibility.Visible;
-        return true;
-    }
-
-    private bool TryResolveBrowseNavigationTarget(
-        BrowseNavStepKind step,
-        out string path,
-        out TreeViewNode? node)
-    {
-        path = "";
-        node = null;
-        var sel = FolderTree.SelectedNode;
-        var selPath = sel?.Content is ImageRow sr ? sr.FullPath : null;
-        var contextDir = BrowseContextDirectory.Resolve(_browseNavAnchorPath, selPath, _currentImageFullPath, _currentFolderPath);
-        if (string.IsNullOrEmpty(contextDir))
-            return false;
-
-        var (nodes, paths) = BuildBrowseNavNodesAndPathsForContext(contextDir);
-        if (nodes.Count == 0)
-            return false;
-
-        var i = BrowseSequentialNavIndex.ComputeTargetIndexForStep(
-            paths,
-            _browseNavAnchorPath,
-            selPath,
-            _currentImageFullPath,
-            step);
-        if (i < 0)
-            return false;
-
-        _browseNavAnchorPath = paths[i];
-        path = paths[i];
-        node = nodes[i];
-        return true;
     }
 
     /// <summary>Begin sibling-folder navigation (parent of image context directory, same sort as tree). Does not await.</summary>
@@ -3052,7 +3219,8 @@ public sealed partial class MainWindow
             _browseNavAnchorPath,
             selPath,
             _currentImageFullPath,
-            _currentFolderPath);
+            _currentFolderPath,
+            TryGetBrowseTreeSelectedFolderPath());
         if (string.IsNullOrEmpty(contextDir))
             return;
 
@@ -3249,7 +3417,11 @@ public sealed partial class MainWindow
                             () => { _suppressFolderTreeCollapsedClear = false; });
                     }
 
-                    ScheduleBrowserTreeViewportAfterMutation();
+                    FolderTree.UpdateLayout();
+                    if (siblingNode.Content is FolderTreeEntry)
+                        TryBringFolderTreeNodeToTop(siblingNode);
+
+                    ScheduleBrowserTreeViewportAfterMutation(targetFolderPath);
                     return;
                 }
 
@@ -3262,6 +3434,22 @@ public sealed partial class MainWindow
                     break;
 
                 await Task.Yield();
+            }
+
+            if (gen == Volatile.Read(ref _populateBrowserGeneration)
+                && !string.IsNullOrEmpty(_currentFolderPath)
+                && BrowseContextImageSequence.IsContextDirectoryUnderBrowseRoot(_currentFolderPath, targetFolderPath))
+            {
+                if (await TryEnsureFolderPathMaterializedAsync(targetFolderPath, gen).ConfigureAwait(true)
+                    && await TryFocusBrowserOnFolderWithFirstImageAsync(targetFolderPath).ConfigureAwait(true))
+                {
+                    FolderTree.UpdateLayout();
+                    if (TryResolveFolderTreeNodeForPath(targetFolderPath) is { Content: FolderTreeEntry } pinFolder)
+                        TryBringFolderTreeNodeToTop(pinFolder);
+
+                    ScheduleBrowserTreeViewportAfterMutation(targetFolderPath);
+                    return;
+                }
             }
 
             if (gen == Volatile.Read(ref _populateBrowserGeneration))
@@ -3324,16 +3512,52 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// Keyboard/command browse step: resolve target from visible list, enqueue preview immediately, then sync tree under suppress.
+    /// Keyboard/command browse step: resolve target from scoped folder paths (tree or disk), enqueue preview, then sync tree.
     /// </summary>
     private void BrowseNavigateByStep(BrowseNavStepKind step)
     {
         IncrementNavCommandCounter();
-        if (!TryResolveBrowseNavigationTarget(step, out var path, out var node) || node == null)
+        _ = BrowseNavigateByStepAsync(step);
+    }
+
+    private async Task BrowseNavigateByStepAsync(BrowseNavStepKind step)
+    {
+        var sel = FolderTree.SelectedNode;
+        var selPath = sel?.Content is ImageRow sr ? sr.FullPath : null;
+        var contextDir = BrowseContextDirectory.Resolve(
+            _browseNavAnchorPath,
+            selPath,
+            _currentImageFullPath,
+            _currentFolderPath,
+            TryGetBrowseTreeSelectedFolderPath());
+        if (string.IsNullOrEmpty(contextDir))
             return;
 
+        var paths = await GetBrowseNavigationPathsForContextAsync(contextDir).ConfigureAwait(true);
+        if (paths.Count == 0)
+            return;
+
+        var i = BrowseSequentialNavIndex.ComputeTargetIndexForStep(
+            paths,
+            _browseNavAnchorPath,
+            selPath,
+            _currentImageFullPath,
+            step);
+        if (i < 0)
+            return;
+
+        _browseNavAnchorPath = paths[i];
+        var path = paths[i];
+
         EnqueuePreviewNavigation(path, false);
-        SyncBrowseTreeSelection(node);
+        var node = FindImageNodeByPath(FolderTree.RootNodes, path);
+        if (node != null)
+        {
+            EnsureBrowseTreeAncestorsExpanded(node);
+            SyncBrowseTreeSelection(node);
+        }
+        else
+            await TrySyncBrowseTreeSelectionToImagePathAsync(path).ConfigureAwait(true);
     }
 
     private static List<string> BuildVisibleImagePathsFromNodes(List<TreeViewNode> nodes)
@@ -3415,6 +3639,11 @@ public sealed partial class MainWindow
 
     private void EnsurePreviewMatchesBrowseNavigationMode()
     {
+        _ = EnsurePreviewMatchesBrowseNavigationModeAsync();
+    }
+
+    private async Task EnsurePreviewMatchesBrowseNavigationModeAsync()
+    {
         if (_browseNavigationMode == BrowseNavigationMode.AllImages)
             return;
         var path = _currentImageFullPath;
@@ -3422,14 +3651,35 @@ public sealed partial class MainWindow
             return;
         if (BrowseNavigationModeFilter.Matches(_sortSession.GetState(path), _browseNavigationMode))
             return;
-        if (!TryResolveBrowseNavigationTarget(BrowseNavStepKind.First, out var firstPath, out var firstNode) || firstNode == null)
+
+        var sel = FolderTree.SelectedNode;
+        var selPath = sel?.Content is ImageRow sr ? sr.FullPath : null;
+        var contextDir = BrowseContextDirectory.Resolve(
+            _browseNavAnchorPath,
+            selPath,
+            path,
+            _currentFolderPath,
+            TryGetBrowseTreeSelectedFolderPath());
+        if (string.IsNullOrEmpty(contextDir))
         {
             ClearImageSelectionAndPreview();
             return;
         }
 
+        var paths = await GetBrowseNavigationPathsForContextAsync(contextDir).ConfigureAwait(true);
+        if (paths.Count == 0)
+        {
+            ClearImageSelectionAndPreview();
+            return;
+        }
+
+        var firstPath = paths[0];
         EnqueuePreviewNavigation(firstPath, false);
-        SyncBrowseTreeSelection(firstNode);
+        var node = FindImageNodeByPath(FolderTree.RootNodes, firstPath);
+        if (node != null)
+            SyncBrowseTreeSelection(node);
+        else
+            await TrySyncBrowseTreeSelectionToImagePathAsync(firstPath).ConfigureAwait(true);
     }
 
     private bool IsFocusInsideBrowserTree()

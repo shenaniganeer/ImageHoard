@@ -7,13 +7,16 @@ namespace ImageHoard.Core.Browse;
 public static class BrowseContextDirectory
 {
     /// <summary>
-    /// Returns the directory containing the best-matching file hint, or <paramref name="browseRootFolderPath"/> when no file hint applies.
+    /// Returns the directory containing the best-matching file hint, or the selected folder under the browse root
+    /// when <paramref name="treeSelectedFolderPath"/> is under <paramref name="browseRootFolderPath"/>, else
+    /// <paramref name="browseRootFolderPath"/> when no file hint applies.
     /// </summary>
     public static string? Resolve(
         string? browseNavAnchorPath,
         string? treeSelectedImagePath,
         string? displayedImagePath,
-        string? browseRootFolderPath)
+        string? browseRootFolderPath,
+        string? treeSelectedFolderPath = null)
     {
         var d = DirectoryFromFilePath(browseNavAnchorPath);
         if (!string.IsNullOrEmpty(d))
@@ -27,7 +30,14 @@ public static class BrowseContextDirectory
         if (!string.IsNullOrEmpty(d))
             return d;
 
-        return NormalizeFolderPath(browseRootFolderPath);
+        var rootNorm = NormalizeFolderPath(browseRootFolderPath);
+        var folderNorm = NormalizeFolderPath(treeSelectedFolderPath);
+        if (!string.IsNullOrEmpty(folderNorm)
+            && !string.IsNullOrEmpty(rootNorm)
+            && BrowseContextImageSequence.IsContextDirectoryUnderBrowseRoot(rootNorm, folderNorm))
+            return folderNorm;
+
+        return rootNorm;
     }
 
     private static string? DirectoryFromFilePath(string? filePath)

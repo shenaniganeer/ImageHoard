@@ -293,7 +293,8 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         NormalPathText.Text = path;
         FullscreenPathText.Text = path;
 
-        var listPositionVisible = ApplyOverlayListPositionFromTree();
+        var listPositionVisible = _layoutState.ShowOverlayListPosition && hasImage;
+        _ = ApplyOverlayListPositionFromTreeAsync();
 
         var flag = !hasImage ? SortFlagState.Unset : _sortSession.GetState(path);
         ApplyOverlayFlagGlyph(NormalPathFlagIcon, flag);

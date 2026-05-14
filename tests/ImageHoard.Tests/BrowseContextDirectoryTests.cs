@@ -39,4 +39,43 @@ public sealed class BrowseContextDirectoryTests
 
         Assert.Equal(@"C:\only", d);
     }
+
+    [Fact]
+    public void Resolve_UsesTreeSelectedFolderWhenNoFileHintsAndFolderUnderBrowseRoot()
+    {
+        var d = BrowseContextDirectory.Resolve(
+            null,
+            null,
+            null,
+            @"C:\root",
+            @"C:\root\child");
+
+        Assert.Equal(@"C:\root\child", d);
+    }
+
+    [Fact]
+    public void Resolve_FileHintsWinOverTreeSelectedFolder()
+    {
+        var d = BrowseContextDirectory.Resolve(
+            browseNavAnchorPath: @"C:\root\other\a.png",
+            treeSelectedImagePath: null,
+            displayedImagePath: null,
+            browseRootFolderPath: @"C:\root",
+            treeSelectedFolderPath: @"C:\root\child");
+
+        Assert.Equal(@"C:\root\other", d);
+    }
+
+    [Fact]
+    public void Resolve_IgnoresTreeSelectedFolderNotUnderBrowseRoot()
+    {
+        var d = BrowseContextDirectory.Resolve(
+            null,
+            null,
+            null,
+            @"C:\root",
+            @"D:\outside");
+
+        Assert.Equal(@"C:\root", d);
+    }
 }

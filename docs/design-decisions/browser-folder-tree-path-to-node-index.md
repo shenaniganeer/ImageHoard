@@ -1,13 +1,13 @@
 # Browser folder tree: path-to-`TreeViewNode` index (maintenance)
 
 **Status:** Implemented (WinUI host)  
-**Related:** [folder-aggregate-metrics-model.md](./folder-aggregate-metrics-model.md) (FR-BR-06, FR-BR-07, NFR-PF-05); cold-boot UI work (folder metrics snapshot merge)
+**Related:** [folder-aggregate-metrics-model.md](./folder-aggregate-metrics-model.md) (FR-BR-06, FR-BR-07, NFR-PF-05); cold-boot UI work (folder metrics snapshot merge); future presenter swap [browser-folder-tree-virtualization-itemsrepeater.md](./browser-folder-tree-virtualization-itemsrepeater.md)
 
 ## Why this exists
 
 Applying folder metrics to **`TreeViewNode.HasUnrealizedChildren`** used to resolve the node by walking the entire WinUI `TreeView` (`FindFolderTreeNodeByPath` / depth-first enumeration). That pattern dominated UI-thread time when many cached snapshots applied at once.
 
-The host keeps a parallel index: **`Dictionary<string, TreeViewNode> _folderTreeNodeByPath`** in `MainWindow.BrowserPane.cs`, keyed like **`_folderTreeEntryByPath`** (`StringComparer.OrdinalIgnoreCase`, key = folder full path at registration time). Hot-path metrics merge uses **`TryGetValue`** instead of scanning the visual tree.
+The host keeps a parallel index: **`Dictionary<string, TreeViewNode> _folderTreeNodeByPath`** in `MainWindow.BrowserPane.cs`, keyed like **`_folderTreeEntryByPath`** (`StringComparer.OrdinalIgnoreCase`, key = folder full path at registration time). Hot-path metrics merge uses **`TryGetValue`** instead of scanning the visual tree. The same index is used first when resolving a folder row’s **sibling WinRT list** for deferred aggregate resorts (`TryGetResortSiblingListForFolderPath` → `CollectResortSiblingListsForFolderPath`), with **`FindFolderTreeNodeByPath`** only as a fallback when the map misses.
 
 ## Maintenance contract
 

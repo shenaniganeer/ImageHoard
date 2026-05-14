@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -36,7 +37,9 @@ public sealed partial class MainWindow
     private readonly SemaphoreSlim _folderMetricsConcurrency = new(2, 2);
     private CancellationTokenSource? _folderMetricsCts = new();
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _folderResortCoalesceTimer;
-    private readonly HashSet<string> _folderResortCoalescePendingFolderPaths = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Deferred aggregate-sort resorts coalesced by sibling WinRT list identity (same parent <see cref="TreeViewNode.Children"/> or <see cref="TreeView.RootNodes"/>).</summary>
+    private readonly HashSet<IList<TreeViewNode>> _folderResortCoalescePendingSiblingLists =
+        new(ResortSiblingListReferenceEqualityComparer.Instance);
     private DateTimeOffset? _folderResortCoalesceWindowStartUtc;
     private CancellationTokenSource _browseExpandProbeCts = new();
     private readonly object _pendingFolderMetricsSnapLock = new();
@@ -44,6 +47,10 @@ public sealed partial class MainWindow
     private bool _folderMetricsUiFlushPending;
 
     private const int BrowserStagedPopulateFolderThreshold = 120;
+    /// <summary>Folder metrics snapshots merged per inner batch. Larger values reduce dispatcher re-queue churn; tune with Speedscope (Tier C).</summary>
+    private const int BrowserMetricsSnapshotApplyChunkSize = 14;
+    /// <summary>How many snapshot batches to drain in one <see cref="ProcessPendingFolderMetricsSnapshotsBatched"/> callback before re-queuing.</summary>
+    private const int BrowserMetricsSnapshotApplyMaxChunksPerDispatcherCallback = 2;
     private const int BrowserFolderUiChunkSize = 72;
     private const int BrowserMetricsDiscoveryDrainPerTick = 14;
     private const int BrowserMetricsDiscoveryDrainPerTickWhileSettling = 5;
@@ -427,7 +434,7 @@ public sealed partial class MainWindow
     {
         Interlocked.Increment(ref _folderResortCancelToken);
         StopFolderResortCoalesceTimer();
-        _folderResortCoalescePendingFolderPaths.Clear();
+        _folderResortCoalescePendingSiblingLists.Clear();
         _folderResortCoalesceWindowStartUtc = null;
     }
 
@@ -927,12 +934,31 @@ public sealed partial class MainWindow
         lists.Add(candidate);
     }
 
+    /// <summary>
+    /// Resolves the WinRT sibling list that contains folder <paramref name="folderFullPath"/> for aggregate resort.
+    /// Prefer <see cref="_folderTreeNodeByPath"/> (Tier A); fall back to scanning the visual tree per
+    /// docs/design-decisions/browser-folder-tree-path-to-node-index.md.
+    /// </summary>
+    private bool TryGetResortSiblingListForFolderPath(string folderFullPath, [NotNullWhen(true)] out IList<TreeViewNode>? siblingList)
+    {
+        siblingList = null;
+        if (string.IsNullOrEmpty(folderFullPath))
+            return false;
+
+        TreeViewNode? node = _folderTreeNodeByPath.TryGetValue(folderFullPath, out var indexed)
+            ? indexed
+            : FindFolderTreeNodeByPath(FolderTree.RootNodes, folderFullPath);
+        if (node == null)
+            return false;
+
+        siblingList = node.Parent != null ? node.Parent.Children : FolderTree.RootNodes;
+        return true;
+    }
+
     private void CollectResortSiblingListsForFolderPath(string folderFullPath, List<IList<TreeViewNode>> lists)
     {
-        var node = FindFolderTreeNodeByPath(FolderTree.RootNodes, folderFullPath);
-        if (node == null)
+        if (!TryGetResortSiblingListForFolderPath(folderFullPath, out var list))
             return;
-        var list = node.Parent != null ? node.Parent.Children : FolderTree.RootNodes;
         AddResortSiblingListUnique(lists, list);
     }
 
@@ -944,10 +970,11 @@ public sealed partial class MainWindow
         {
             if (string.IsNullOrEmpty(p))
                 continue;
-            _folderResortCoalescePendingFolderPaths.Add(p);
+            if (TryGetResortSiblingListForFolderPath(p, out var list))
+                _folderResortCoalescePendingSiblingLists.Add(list);
         }
 
-        if (_folderResortCoalescePendingFolderPaths.Count == 0)
+        if (_folderResortCoalescePendingSiblingLists.Count == 0)
             return;
 
         _folderResortScheduledToken = Volatile.Read(ref _folderResortCancelToken);
@@ -991,24 +1018,21 @@ public sealed partial class MainWindow
     {
         if (Volatile.Read(ref _folderResortCancelToken) != _folderResortScheduledToken)
         {
-            _folderResortCoalescePendingFolderPaths.Clear();
+            _folderResortCoalescePendingSiblingLists.Clear();
             _folderResortCoalesceWindowStartUtc = null;
             return;
         }
 
         _folderResortCoalesceWindowStartUtc = null;
-        if (_folderResortCoalescePendingFolderPaths.Count == 0)
+        if (_folderResortCoalescePendingSiblingLists.Count == 0)
         {
             ResortAllFolderGroupsAndSyncHeaders();
         }
         else
         {
-            var lists = new List<IList<TreeViewNode>>();
-            foreach (var path in _folderResortCoalescePendingFolderPaths.ToList())
-                CollectResortSiblingListsForFolderPath(path, lists);
-            _folderResortCoalescePendingFolderPaths.Clear();
-            foreach (var list in lists)
+            foreach (var list in _folderResortCoalescePendingSiblingLists)
                 ResortFolderSiblingBlock(list);
+            _folderResortCoalescePendingSiblingLists.Clear();
             SyncBrowserFolderListHeaderNodes();
         }
         ScheduleAlignBrowsedFolderTreeRowToTopAfterResort();
@@ -2060,10 +2084,8 @@ public sealed partial class MainWindow
 
     private void ProcessPendingFolderMetricsSnapshotsBatched()
     {
-        const int chunkSize = 8;
-        const int maxChunksPerFrame = 1;
         var resortPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (var chunk = 0; chunk < maxChunksPerFrame; chunk++)
+        for (var chunk = 0; chunk < BrowserMetricsSnapshotApplyMaxChunksPerDispatcherCallback; chunk++)
         {
             List<(string Path, FolderMetricsSnapshot Snap, int Gen)> batch;
             lock (_pendingFolderMetricsSnapLock)
@@ -2076,7 +2098,7 @@ public sealed partial class MainWindow
                     return;
                 }
 
-                var take = Math.Min(chunkSize, _pendingFolderMetricsSnapshots.Count);
+                var take = Math.Min(BrowserMetricsSnapshotApplyChunkSize, _pendingFolderMetricsSnapshots.Count);
                 batch = _pendingFolderMetricsSnapshots.GetRange(0, take);
                 _pendingFolderMetricsSnapshots.RemoveRange(0, take);
             }
@@ -2089,9 +2111,6 @@ public sealed partial class MainWindow
             }
         }
 
-        if (resortPaths.Count > 0)
-            RequestCoalescedFolderResortForTouchedFolderPaths(resortPaths);
-
         lock (_pendingFolderMetricsSnapLock)
         {
             if (_pendingFolderMetricsSnapshots.Count > 0)
@@ -2102,6 +2121,9 @@ public sealed partial class MainWindow
 
             _folderMetricsUiFlushPending = false;
         }
+
+        if (resortPaths.Count > 0)
+            RequestCoalescedFolderResortForTouchedFolderPaths(resortPaths);
     }
 
     private void ApplyFolderMetricsSnapshotCore(string path, FolderMetricsSnapshot snap, int gen, HashSet<string> resortPaths)
@@ -3816,5 +3838,20 @@ public sealed partial class MainWindow
         _session.LastBrowseFolder = reloc(_session.LastBrowseFolder);
         _session.LastSelectedImage = reloc(_session.LastSelectedImage);
         _deleteArchiveWizardCapturedWorkingFolder = reloc(_deleteArchiveWizardCapturedWorkingFolder);
+    }
+
+    /// <summary>Reference equality for WinRT sibling lists (WinUI exposes a non-generic <c>ReferenceEqualityComparer</c> that shadows BCL).</summary>
+    private sealed class ResortSiblingListReferenceEqualityComparer : IEqualityComparer<IList<TreeViewNode>>
+    {
+        internal static readonly ResortSiblingListReferenceEqualityComparer Instance = new();
+
+        private ResortSiblingListReferenceEqualityComparer()
+        {
+        }
+
+        public bool Equals(IList<TreeViewNode>? x, IList<TreeViewNode>? y) => ReferenceEquals(x, y);
+
+        public int GetHashCode(IList<TreeViewNode> obj) =>
+            System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
     }
 }

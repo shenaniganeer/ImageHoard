@@ -9,6 +9,7 @@
 |------|--------|-----------|
 | Runtime | **.NET 8+** (LTS), **C#** | Strong async I/O for NAS, tooling, test ecosystem |
 | UI shell | **WinUI 3** (Windows App SDK) | First-party Windows 10/11, modern windowing, viable path to MSIX (P1) |
+| Browser folder tree (long term) | **ItemsRepeater** + flat visible-line model (see [browser-folder-tree-virtualization-itemsrepeater.md](../design-decisions/browser-folder-tree-virtualization-itemsrepeater.md)); `TreeView` only until migration | `TreeView` does not virtualize like `ListView`; large trees + aggregate sort dominated UI-thread cost in traces |
 | Image decode | **WIC** (`Windows.Graphics.Imaging` / `BitmapDecoder`) as primary | Broad format coverage on Windows, EXIF orientation; aligns with PRD MVP formats |
 | HEIF / HEIC | **Best-effort** | If codec missing, show skip + status (PRD §4.2); no silent install of proprietary codecs from app |
 | HTML (P4 only) | **AngleSharp** (or similar) | Already assumed in [p4-forum-ingest-host-modules.md](./p4-forum-ingest-host-modules.md) |
@@ -58,3 +59,4 @@ Implement **downscaled decode** for list thumbs and fast preview when full decod
 | Date | Change |
 |------|--------|
 | (initial) | Baseline stack + NFR-IN-01 |
+| 2026-05-13 | Browser tree virtualization direction: ItemsRepeater + flat projection ADR; host remains `TreeView` until phased migration. |

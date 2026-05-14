@@ -89,6 +89,29 @@ Under WinUI, work running on the **UI thread** often appears under framework fra
 
 When grepping or hand-parsing JSON, remember **`events`** is the time-ordered stream of opens/closes — not a flat histogram keyed by frame without stack discipline.
 
+### ImageHoard / WinUI regression workflow (Speedscope tiers)
+
+When comparing traces after browser-tree performance work, align notes with the phased mitigations:
+
+| Tier | Typical hot frames (examples) | Code touchpoints |
+|------|-------------------------------|------------------|
+| **A** | `FindFolderTreeNodeByPath`, `EnumerateNodesDepthFirst` under folder resort / metrics | `_folderTreeNodeByPath` fast path + `FindFolderTreeNodeByPath` fallback in `CollectResortSiblingListsForFolderPath` (`MainWindow.BrowserPane.cs`) |
+| **B** | `ResortFolderSiblingBlock`, `FlushCoalescedFolderResorts` | Coalesce deferred aggregate resorts by **sibling `IList<TreeViewNode>` identity** so one parent’s children list is not revisited once per metrics child |
+| **C** | `ProcessPendingFolderMetricsSnapshotsBatched`, `ApplyFolderMetricsSnapshotCore` | Chunk size / max chunks per dispatcher callback; defer `RequestCoalescedFolderResortForTouchedFolderPaths` until the pending snapshot queue is **drained** for the current burst |
+
+Re-record with `dotnet trace` (or your usual exporter), open in [speedscope.app](https://www.speedscope.app) for flame/sandwich views, and optionally run [`tools/speedscope-top.ps1`](../../tools/speedscope-top.ps1) for a reproducible inclusive top-N table across multiple `.speedscope.json` files.
+
+### Repo helper: `tools/speedscope-top.ps1`
+
+From the repo root (PowerShell):
+
+```powershell
+.\tools\speedscope-top.ps1 -Path .\trace.speedscope.json -Top 30 -Filter ImageHoard
+```
+
+- **`-Filter`**: case-insensitive substring on frame names (omit for all frames).
+- Output is **inclusive** time from `O`/`C` pairing — use for ranking and diffing traces, not as exclusive wall-clock for a single function.
+
 ## What to capture for the next agent or PR
 
 When reporting a runtime issue, paste or attach:

@@ -21,7 +21,7 @@ First implementation work should align with [`docs/tech-design/architecture-boot
 
 ## Debugging stacks and first-chance exceptions
 
-When interpreting **debugger call stacks**, **first-chance exception** spam, or **file lock** `IOException`s, use [`docs/tech-design/debugging-runtime-stack-traces.md`](docs/tech-design/debugging-runtime-stack-traces.md) (includes VS Code notes and the folder-metrics JSONL concurrency case study).
+When interpreting **debugger call stacks**, **first-chance exception** spam, or **file lock** `IOException`s, use [`docs/tech-design/debugging-runtime-stack-traces.md`](docs/tech-design/debugging-runtime-stack-traces.md) (includes VS Code notes, **Speedscope** export parsing notes, the folder-metrics JSONL concurrency case study, and [`tools/speedscope-top.ps1`](tools/speedscope-top.ps1) for scripted inclusive top-N summaries).
 
 ## Local build and test (avoid wasted runs)
 
@@ -58,6 +58,7 @@ The following were added to close planning gaps; extend them with new ADRs rathe
 | [`docs/design-decisions/operation-log-fr-sr-09.md`](docs/design-decisions/operation-log-fr-sr-09.md) | Operation JSONL log |
 | [`docs/design-decisions/mvp-assumptions-ux.md`](docs/design-decisions/mvp-assumptions-ux.md) | Dual monitor, i18n, themes, NAS disconnect |
 | [`docs/design-decisions/browser-folder-tree-path-to-node-index.md`](docs/design-decisions/browser-folder-tree-path-to-node-index.md) | Browser `TreeView`: `_folderTreeNodeByPath` maintenance vs `_folderTreeEntryByPath` |
+| [`docs/design-decisions/browser-folder-tree-virtualization-itemsrepeater.md`](docs/design-decisions/browser-folder-tree-virtualization-itemsrepeater.md) | Virtualized browser tree: ItemsRepeater + flat projection (accepted); supersedes `TreeViewNode`-centric index guidance when implemented |
 
 ## Scaffold expectation
 

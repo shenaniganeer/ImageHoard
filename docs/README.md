@@ -74,6 +74,8 @@ Repository **agent instructions**: [`../AGENTS.md`](../AGENTS.md).
 
 | [architecture-bootstrap.md](./tech-design/architecture-bootstrap.md) | Stack, CI, NFR-IN-01, decode notes |
 
+| [debugging-runtime-stack-traces.md](./tech-design/debugging-runtime-stack-traces.md) | Agent playbook: reading stacks, first-chance exceptions, VS Code debugging, file-lock IO patterns (folder-metrics cache case) |
+
 | [p4-forum-ingest-host-modules.md](./tech-design/p4-forum-ingest-host-modules.md) | FR-IG-*, NFR-IG-* |
 
 

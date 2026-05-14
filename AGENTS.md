@@ -19,6 +19,10 @@ Human and autonomous agents should follow this file when changing the repository
 
 First implementation work should align with [`docs/tech-design/architecture-bootstrap.md`](docs/tech-design/architecture-bootstrap.md) (WinUI 3, .NET, WIC, xUnit, CI). Adjust only with an ADR update.
 
+## Debugging stacks and first-chance exceptions
+
+When interpreting **debugger call stacks**, **first-chance exception** spam, or **file lock** `IOException`s, use [`docs/tech-design/debugging-runtime-stack-traces.md`](docs/tech-design/debugging-runtime-stack-traces.md) (includes VS Code notes and the folder-metrics JSONL concurrency case study).
+
 ## Local build and test (avoid wasted runs)
 
 The WinUI host (`ImageHoard.App.exe`), including any instance started with `dotnet run --project src\ImageHoard.App\...`, keeps file handles on outputs under `src/ImageHoard.App/bin/`. **Before** `dotnet build` or `dotnet test` on the solution, confirm the app is not running; otherwise the command may fail on copy/lock errors or burn time on a doomed build.

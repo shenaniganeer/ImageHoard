@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 
 namespace ImageHoard.Core.Metrics;
 
@@ -9,6 +10,19 @@ public static class FolderMetricsCacheStore
 {
     /// <summary>Serializes JSONL appends (and <see cref="ClearCacheFile"/>) so concurrent folder-metrics jobs cannot open the same path for exclusive append.</summary>
     private static readonly SemaphoreSlim MetricsCacheFileGate = new(1, 1);
+
+    /// <summary>Guards tail read cache so concurrent metrics workers reuse one tail parse per file revision.</summary>
+    private static readonly SemaphoreSlim TailTextCacheGate = new(1, 1);
+
+    private static TailTextCacheEntry? s_tailTextCache;
+
+    private sealed class TailTextCacheEntry
+    {
+        public required string CacheFilePath;
+        public long FileLength;
+        public long LastWriteUtcTicks;
+        public required string Text;
+    }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -27,6 +41,7 @@ public static class FolderMetricsCacheStore
 
             var line = JsonSerializer.Serialize(snapshot, JsonOptions) + Environment.NewLine;
             await File.AppendAllTextAsync(cacheFilePath, line, ct).ConfigureAwait(false);
+            InvalidateTailTextCacheIfPathMatches(cacheFilePath);
         }
         finally
         {
@@ -44,41 +59,50 @@ public static class FolderMetricsCacheStore
         CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(cacheFilePath) || !File.Exists(cacheFilePath))
+        {
+            if (!string.IsNullOrEmpty(cacheFilePath))
+                InvalidateTailTextCacheIfPathMatches(cacheFilePath);
             return null;
+        }
 
         var key = NormalizePathKey(directoryPath);
         if (string.IsNullOrEmpty(key))
             return null;
 
-        const int tailMaxBytes = 524_288;
-        await using var fs = new FileStream(
-            cacheFilePath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.ReadWrite | FileShare.Delete,
-            bufferSize: 4096,
-            useAsync: true);
-
-        var len = fs.Length;
-        if (len == 0)
-            return null;
-
-        var take = (int)Math.Min(len, tailMaxBytes);
-        var start = len - take;
-        fs.Seek(start, SeekOrigin.Begin);
-        var buffer = new byte[take];
-        var read = await fs.ReadAsync(buffer.AsMemory(0, take), ct).ConfigureAwait(false);
-        if (read == 0)
-            return null;
-
-        var text = Encoding.UTF8.GetString(buffer, 0, read);
-        if (start > 0)
+        await TailTextCacheGate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            var firstNl = text.IndexOfAny(['\r', '\n']);
-            if (firstNl >= 0)
-                text = text[(firstNl + 1)..];
+            if (TryGetTailTextFromCache(cacheFilePath, out var cached))
+                return FindSnapshotInTailText(cached, key, requestedScope, ct);
+        }
+        finally
+        {
+            TailTextCacheGate.Release();
         }
 
+        var readText = await ReadTailTextAsync(cacheFilePath, ct).ConfigureAwait(false);
+
+        await TailTextCacheGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (TryGetTailTextFromCache(cacheFilePath, out var cached))
+                return FindSnapshotInTailText(cached, key, requestedScope, ct);
+            RememberTailTextCache(cacheFilePath, readText);
+        }
+        finally
+        {
+            TailTextCacheGate.Release();
+        }
+
+        return FindSnapshotInTailText(readText, key, requestedScope, ct);
+    }
+
+    private static FolderMetricsSnapshot? FindSnapshotInTailText(
+        string text,
+        string normalizedDirectoryKey,
+        FolderMetricsScanScope requestedScope,
+        CancellationToken ct)
+    {
         var lines = text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
         for (var i = lines.Length - 1; i >= 0; i--)
         {
@@ -98,7 +122,7 @@ public static class FolderMetricsCacheStore
 
             if (snap == null)
                 continue;
-            if (!PathsEqual(key, snap.Path))
+            if (!PathsEqual(normalizedDirectoryKey, snap.Path))
                 continue;
             if (snap.ScanScope != requestedScope)
                 continue;
@@ -106,6 +130,103 @@ public static class FolderMetricsCacheStore
         }
 
         return null;
+    }
+
+    private static bool TryGetTailTextFromCache(string cacheFilePath, out string text)
+    {
+        text = "";
+        if (s_tailTextCache == null)
+            return false;
+        if (!PathsEqual(s_tailTextCache.CacheFilePath, cacheFilePath))
+            return false;
+
+        long len;
+        long ticks;
+        try
+        {
+            var fi = new FileInfo(cacheFilePath);
+            len = fi.Length;
+            ticks = fi.LastWriteTimeUtc.Ticks;
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (len != s_tailTextCache.FileLength || ticks != s_tailTextCache.LastWriteUtcTicks)
+            return false;
+
+        text = s_tailTextCache.Text;
+        return true;
+    }
+
+    private static void RememberTailTextCache(string cacheFilePath, string text)
+    {
+        try
+        {
+            var fi = new FileInfo(cacheFilePath);
+            s_tailTextCache = new TailTextCacheEntry
+            {
+                CacheFilePath = cacheFilePath,
+                FileLength = fi.Length,
+                LastWriteUtcTicks = fi.LastWriteTimeUtc.Ticks,
+                Text = text,
+            };
+        }
+        catch
+        {
+            s_tailTextCache = null;
+        }
+    }
+
+    private static async Task<string> ReadTailTextAsync(string cacheFilePath, CancellationToken ct)
+    {
+        const int tailMaxBytes = 524_288;
+        await using var fs = new FileStream(
+            cacheFilePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            bufferSize: 4096,
+            useAsync: true);
+
+        var len = fs.Length;
+        if (len == 0)
+            return "";
+
+        var take = (int)Math.Min(len, tailMaxBytes);
+        var start = len - take;
+        fs.Seek(start, SeekOrigin.Begin);
+        var buffer = new byte[take];
+        var read = await fs.ReadAsync(buffer.AsMemory(0, take), ct).ConfigureAwait(false);
+        if (read == 0)
+            return "";
+
+        var text = Encoding.UTF8.GetString(buffer, 0, read);
+        if (start > 0)
+        {
+            var firstNl = text.IndexOfAny(['\r', '\n']);
+            if (firstNl >= 0)
+                text = text[(firstNl + 1)..];
+        }
+
+        return text;
+    }
+
+    private static void InvalidateTailTextCacheIfPathMatches(string cacheFilePath)
+    {
+        if (string.IsNullOrEmpty(cacheFilePath))
+            return;
+        TailTextCacheGate.Wait();
+        try
+        {
+            if (s_tailTextCache != null && PathsEqual(s_tailTextCache.CacheFilePath, cacheFilePath))
+                s_tailTextCache = null;
+        }
+        finally
+        {
+            TailTextCacheGate.Release();
+        }
     }
 
     private static bool PathsEqual(string a, string b) =>
@@ -130,6 +251,7 @@ public static class FolderMetricsCacheStore
         {
             if (File.Exists(cacheFilePath))
                 File.Delete(cacheFilePath);
+            InvalidateTailTextCacheIfPathMatches(cacheFilePath);
         }
         finally
         {

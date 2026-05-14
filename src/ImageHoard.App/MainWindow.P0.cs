@@ -271,8 +271,7 @@ public sealed partial class MainWindow
         CancelFolderResortCoalesceState();
         _layoutState.FolderListSort = kind;
         PersistLayout();
-        ResortAllFolderGroups();
-        SyncBrowserFolderListHeaderNodes();
+        ResortAllFolderGroupsAndSyncHeaders();
         ScheduleAlignBrowsedFolderTreeRowToTopAfterResort();
         ApplyBrowserFolderDetailsChrome();
         UpdateSortMenuChecks();

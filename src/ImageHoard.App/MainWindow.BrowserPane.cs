@@ -751,17 +751,41 @@ public sealed partial class MainWindow
         SchedulePersistLayoutDebounced();
     }
 
-    private void SyncBrowserFolderListHeaderNodes()
+    private static void CollectBrowserFolderChildListsPreorder(
+        IList<TreeViewNode> roots,
+        List<IList<TreeViewNode>> lists)
     {
-        var lists = new List<IList<TreeViewNode>> { FolderTree.RootNodes };
-        foreach (var n in EnumerateNodesDepthFirst(FolderTree.RootNodes))
+        lists.Clear();
+        lists.Add(roots);
+        foreach (var n in EnumerateNodesDepthFirst(roots))
         {
             if (n.Children.Count > 0)
                 lists.Add(n.Children);
         }
+    }
 
+    private void SyncBrowserFolderListHeaderNodes()
+    {
+        var lists = new List<IList<TreeViewNode>>();
+        CollectBrowserFolderChildListsPreorder(FolderTree.RootNodes, lists);
         foreach (var list in lists)
             SyncBrowserFolderHeaderRowInChildren(list);
+    }
+
+    private void ResortFolderListsAndSyncHeaders(List<IList<TreeViewNode>> lists)
+    {
+        foreach (var list in lists)
+        {
+            ResortFolderSiblingBlock(list);
+            SyncBrowserFolderHeaderRowInChildren(list);
+        }
+    }
+
+    private void ResortAllFolderGroupsAndSyncHeaders()
+    {
+        var lists = new List<IList<TreeViewNode>>();
+        CollectBrowserFolderChildListsPreorder(FolderTree.RootNodes, lists);
+        ResortFolderListsAndSyncHeaders(lists);
     }
 
     private void SyncBrowserFolderHeaderRowInChildren(IList<TreeViewNode> children)
@@ -802,30 +826,20 @@ public sealed partial class MainWindow
     private void ApplyBrowserFolderDetailsChrome()
     {
         foreach (var n in EnumerateNodesDepthFirst(FolderTree.RootNodes))
-        {
-            switch (n.Content)
-            {
-                case BrowserFolderListHeaderMarker m:
-                    ApplyLayoutFolderDetailsToFolderHeaderMarker(m);
-                    break;
-                case FolderTreeEntry row:
-                    ApplyLayoutFolderDetailsToFolderEntry(row);
-                    break;
-            }
-        }
+            ApplyBrowserFolderDetailsToSingleNode(n);
     }
 
-    private void ResortAllFolderGroups()
+    private void ApplyBrowserFolderDetailsToSingleNode(TreeViewNode n)
     {
-        var lists = new List<IList<TreeViewNode>> { FolderTree.RootNodes };
-        foreach (var n in EnumerateNodesDepthFirst(FolderTree.RootNodes))
+        switch (n.Content)
         {
-            if (n.Children.Count > 0)
-                lists.Add(n.Children);
+            case BrowserFolderListHeaderMarker m:
+                ApplyLayoutFolderDetailsToFolderHeaderMarker(m);
+                break;
+            case FolderTreeEntry row:
+                ApplyLayoutFolderDetailsToFolderEntry(row);
+                break;
         }
-
-        foreach (var list in lists)
-            ResortFolderSiblingBlock(list);
     }
 
     private void ResortFolderSiblingBlock(IList<TreeViewNode> children)
@@ -881,8 +895,12 @@ public sealed partial class MainWindow
                 return;
         }
 
-        foreach (var fn in folderNodes)
-            children.Remove(fn);
+        var folderSet = new HashSet<TreeViewNode>(folderNodes);
+        for (var i = children.Count - 1; i >= 0; i--)
+        {
+            if (children[i].Content is FolderTreeEntry && folderSet.Contains(children[i]))
+                children.RemoveAt(i);
+        }
 
         var insertAt = 0;
         if (folderHeader != null)
@@ -981,7 +999,7 @@ public sealed partial class MainWindow
         _folderResortCoalesceWindowStartUtc = null;
         if (_folderResortCoalescePendingFolderPaths.Count == 0)
         {
-            ResortAllFolderGroups();
+            ResortAllFolderGroupsAndSyncHeaders();
         }
         else
         {
@@ -991,9 +1009,8 @@ public sealed partial class MainWindow
             _folderResortCoalescePendingFolderPaths.Clear();
             foreach (var list in lists)
                 ResortFolderSiblingBlock(list);
+            SyncBrowserFolderListHeaderNodes();
         }
-
-        SyncBrowserFolderListHeaderNodes();
         ScheduleAlignBrowsedFolderTreeRowToTopAfterResort();
     }
 

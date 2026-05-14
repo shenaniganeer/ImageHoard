@@ -191,8 +191,6 @@ public sealed partial class MainWindow
         {
             _layoutState.ShowBrowserFileColumnHeadings = t.IsChecked == true;
             PersistLayout();
-            SyncBrowserFolderListHeaderNodes();
-            SyncBrowserFileListHeaderNodes();
             ApplyBrowserFileDetailsChrome();
         }
     }
@@ -223,7 +221,6 @@ public sealed partial class MainWindow
         {
             _layoutState.ShowBrowserFolderColumnHeadings = t.IsChecked == true;
             PersistLayout();
-            SyncBrowserFolderListHeaderNodes();
             ApplyBrowserFolderDetailsChrome();
         }
     }
@@ -271,8 +268,8 @@ public sealed partial class MainWindow
         CancelFolderResortCoalesceState();
         _layoutState.FolderListSort = kind;
         PersistLayout();
-        ResortAllFolderGroupsAndSyncHeaders();
-        ScheduleAlignBrowsedFolderTreeRowToTopAfterResort();
+        ResortAllFolderGroups();
+        ScheduleBrowserTreeViewportAfterMutation();
         ApplyBrowserFolderDetailsChrome();
         UpdateSortMenuChecks();
     }

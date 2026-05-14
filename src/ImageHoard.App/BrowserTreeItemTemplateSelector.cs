@@ -7,8 +7,6 @@ internal sealed class BrowserTreeItemTemplateSelector : DataTemplateSelector
 {
     public DataTemplate? FolderTemplate { get; set; }
     public DataTemplate? FileTemplate { get; set; }
-    public DataTemplate? HeaderTemplate { get; set; }
-    public DataTemplate? FolderHeaderTemplate { get; set; }
 
     protected override DataTemplate SelectTemplateCore(object item)
     {
@@ -17,8 +15,6 @@ internal sealed class BrowserTreeItemTemplateSelector : DataTemplateSelector
         {
             FolderTreeEntry => FolderTemplate ?? base.SelectTemplateCore(item),
             ImageRow => FileTemplate ?? base.SelectTemplateCore(item),
-            BrowserFileListHeaderMarker => HeaderTemplate ?? base.SelectTemplateCore(item),
-            BrowserFolderListHeaderMarker => FolderHeaderTemplate ?? base.SelectTemplateCore(item),
             _ => base.SelectTemplateCore(item),
         };
     }

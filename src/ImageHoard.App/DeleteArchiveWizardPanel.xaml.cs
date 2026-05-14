@@ -12,7 +12,7 @@ public sealed partial class DeleteArchiveWizardPanel : UserControl
 
     internal void Connect(MainWindow owner) => _owner = owner;
 
-    /// <summary>Raised when the user closes the wizard or after a successful move to archive or delete parent folder.</summary>
+    /// <summary>Raised when the user closes the wizard or after a successful move to archive, delete parent folder, or batch delete (non-keepers / marked Delete).</summary>
     public event EventHandler? RequestClose;
 
     private void WizardRoot_Loaded(object sender, RoutedEventArgs e)
@@ -65,10 +65,18 @@ public sealed partial class DeleteArchiveWizardPanel : UserControl
 
     internal void ShowWizardOperationInfo(string title, string message, InfoBarSeverity severity = InfoBarSeverity.Informational)
     {
-        WizardOperationInfoBar.Title = title;
-        WizardOperationInfoBar.Message = message;
-        WizardOperationInfoBar.Severity = severity;
-        WizardOperationInfoBar.IsOpen = true;
+        void Apply()
+        {
+            WizardOperationInfoBar.Title = title;
+            WizardOperationInfoBar.Message = message;
+            WizardOperationInfoBar.Severity = severity;
+            WizardOperationInfoBar.IsOpen = true;
+        }
+
+        if (DispatcherQueue.HasThreadAccess)
+            Apply();
+        else
+            DispatcherQueue.TryEnqueue(Apply);
     }
 
     private async Task RefreshCountsAsync()
@@ -132,13 +140,25 @@ public sealed partial class DeleteArchiveWizardPanel : UserControl
 
     private async void DeleteNonKeep_Click(object sender, RoutedEventArgs e)
     {
-        await _owner.WizardExecuteInverseKeepDeleteAsync().ConfigureAwait(true);
+        var ok = await _owner.WizardExecuteInverseKeepDeleteAsync().ConfigureAwait(true);
+        if (ok)
+        {
+            RequestClose?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
         await RefreshCountsAsync().ConfigureAwait(true);
     }
 
     private async void DeleteFlaggedOnly_Click(object sender, RoutedEventArgs e)
     {
-        await _owner.WizardExecuteDeleteFlaggedOnlyAsync().ConfigureAwait(true);
+        var ok = await _owner.WizardExecuteDeleteFlaggedOnlyAsync().ConfigureAwait(true);
+        if (ok)
+        {
+            RequestClose?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
         await RefreshCountsAsync().ConfigureAwait(true);
     }
 

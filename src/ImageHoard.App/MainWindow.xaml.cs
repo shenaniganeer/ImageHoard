@@ -459,7 +459,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             ToggleFullscreen();
     }
 
-    private void RootGrid_KeyDown(object sender, KeyRoutedEventArgs e)
+    private void RootGrid_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key == VirtualKey.Escape && TryDismissTopModalForEscape())
         {
@@ -468,6 +468,18 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         }
 
         if (TryDispatchInputCommand(e))
+            return;
+    }
+
+    private void RootGrid_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == VirtualKey.Escape && TryDismissTopModalForEscape())
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (!e.Handled && TryDispatchInputCommand(e))
             return;
 
         if (e.Key == VirtualKey.F11)

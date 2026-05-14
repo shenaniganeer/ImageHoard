@@ -64,6 +64,6 @@ public static class OperationLogWriter
             Directory.CreateDirectory(dir);
 
         var line = JsonSerializer.Serialize(record, JsonOptions) + Environment.NewLine;
-        await File.AppendAllTextAsync(jsonlPath, line, cancellationToken).ConfigureAwait(false);
+        await File.AppendAllTextAsync(jsonlPath, line, cancellationToken).ConfigureAwait(true);
     }
 }

@@ -47,6 +47,9 @@ public sealed partial class MainWindow
     private bool _folderMetricsUiFlushPending;
 
     private const int BrowserStagedPopulateFolderThreshold = 120;
+
+    /// <summary>Retries while staged folder populate may not have inserted all sibling <see cref="TreeViewNode"/> rows yet.</summary>
+    private const int SiblingFolderNavMaterializeMaxAttempts = 64;
     /// <summary>Folder metrics snapshots merged per inner batch. Larger values reduce dispatcher re-queue churn; tune with Speedscope (Tier C).</summary>
     private const int BrowserMetricsSnapshotApplyChunkSize = 14;
     /// <summary>How many snapshot batches to drain in one <see cref="ProcessPendingFolderMetricsSnapshotsBatched"/> callback before re-queuing.</summary>
@@ -78,15 +81,32 @@ public sealed partial class MainWindow
     private MenuFlyout? _browserTreeContextMenu;
     private bool _browserContextMenuIsToolbarCurrentFolder;
 
+    private readonly BrowserFolderListHeaderMarker _pinnedBrowserFolderListHeaderMarker = new();
+    private readonly BrowserFileListHeaderMarker _pinnedBrowserFileListHeaderMarker = new();
+    private TreeViewNode? _pinnedBrowserFolderHeaderWrapperNode;
+    private TreeViewNode? _pinnedBrowserFileHeaderWrapperNode;
+
     private void WireBrowserTreeTemplates()
     {
         FolderTree.ItemTemplateSelector = new BrowserTreeItemTemplateSelector
         {
             FolderTemplate = (DataTemplate)RootGrid.Resources["BrowserFolderItemTemplate"],
             FileTemplate = (DataTemplate)RootGrid.Resources["BrowserFileItemTemplate"],
-            HeaderTemplate = (DataTemplate)RootGrid.Resources["BrowserFileListHeaderTemplate"],
-            FolderHeaderTemplate = (DataTemplate)RootGrid.Resources["BrowserFolderListHeaderTemplate"],
         };
+        _pinnedBrowserFolderHeaderWrapperNode = new TreeViewNode
+        {
+            Content = _pinnedBrowserFolderListHeaderMarker,
+            HasUnrealizedChildren = false,
+        };
+        _pinnedBrowserFileHeaderWrapperNode = new TreeViewNode
+        {
+            Content = _pinnedBrowserFileListHeaderMarker,
+            HasUnrealizedChildren = false,
+        };
+        BrowserPinnedFolderColumnHeader.Content = _pinnedBrowserFolderHeaderWrapperNode;
+        BrowserPinnedFileColumnHeader.Content = _pinnedBrowserFileHeaderWrapperNode;
+        SyncPinnedBrowserColumnHeaders();
+
         FolderTree.DoubleTapped += FolderTree_DoubleTapped;
         FolderTree.PreviewKeyDown += FolderTree_PreviewKeyDown;
 
@@ -112,8 +132,6 @@ public sealed partial class MainWindow
     {
         var item = FindAncestorTreeViewItem(sender as DependencyObject);
         var node = FindNodeForTreeViewItem(item);
-        if (node?.Content is BrowserFileListHeaderMarker or BrowserFolderListHeaderMarker)
-            return;
         if (node?.Content is not FolderTreeEntry && node?.Content is not ImageRow)
             return;
 
@@ -370,6 +388,36 @@ public sealed partial class MainWindow
         marker.ActiveSort = _layoutState.FolderListSort;
     }
 
+    private void SyncPinnedBrowserColumnHeaders()
+    {
+        if (_pinnedBrowserFolderHeaderWrapperNode == null || _pinnedBrowserFileHeaderWrapperNode == null)
+            return;
+
+        ApplyLayoutFolderDetailsToFolderHeaderMarker(_pinnedBrowserFolderListHeaderMarker);
+        ApplyLayoutFileDetailsToHeaderMarker(_pinnedBrowserFileListHeaderMarker);
+
+        var roots = FolderTree.RootNodes;
+        var showFolder = _layoutState.ShowBrowserFolderColumnHeadings
+                         && AnyRootNodeContentIs<FolderTreeEntry>(roots);
+        var showFile = _layoutState.ShowBrowserFileColumnHeadings
+                       && AnyRootNodeContentIs<ImageRow>(roots);
+
+        BrowserPinnedFolderColumnHeader.Visibility = showFolder ? Visibility.Visible : Visibility.Collapsed;
+        BrowserPinnedFileColumnHeader.Visibility = showFile ? Visibility.Visible : Visibility.Collapsed;
+        BrowserPinnedColumnHeadersHost.Visibility = showFolder || showFile ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private static bool AnyRootNodeContentIs<T>(IList<TreeViewNode> roots) where T : class
+    {
+        for (var i = 0; i < roots.Count; i++)
+        {
+            if (roots[i].Content is T)
+                return true;
+        }
+
+        return false;
+    }
+
     private void PrepareFolderEntrySizingState(FolderTreeEntry entry)
     {
         if (!_layoutState.ShowBrowserFolderSize)
@@ -544,17 +592,6 @@ public sealed partial class MainWindow
             ? new List<(string Path, TreeViewNode Node)>(dirs.Count)
             : null;
 
-        if (_layoutState.ShowBrowserFolderColumnHeadings && dirs.Count > 0)
-        {
-            var fh = new BrowserFolderListHeaderMarker();
-            ApplyLayoutFolderDetailsToFolderHeaderMarker(fh);
-            target.Add(new TreeViewNode
-            {
-                Content = fh,
-                HasUnrealizedChildren = false,
-            });
-        }
-
         foreach (var d in dirs)
         {
             var entry = FolderTreeEntry.FromDirectoryEntry(d);
@@ -576,17 +613,6 @@ public sealed partial class MainWindow
 
         if (expandProbeTargets is { Count: > 0 })
             ScheduleBrowseExpandabilityProbeBatch(expandProbeTargets, browserPopulateGeneration);
-
-        if (_layoutState.ShowBrowserFileColumnHeadings && rows.Count > 0)
-        {
-            var marker = new BrowserFileListHeaderMarker();
-            ApplyLayoutFileDetailsToHeaderMarker(marker);
-            target.Add(new TreeViewNode
-            {
-                Content = marker,
-                HasUnrealizedChildren = false,
-            });
-        }
 
         foreach (var r in rows)
         {
@@ -616,31 +642,6 @@ public sealed partial class MainWindow
             : new List<(string Path, TreeViewNode Node)>(sortedDirs.Count);
         var folderInsertIndex = 0;
 
-        if (_layoutState.ShowBrowserFolderColumnHeadings && sortedDirs.Count > 0)
-        {
-            var fh = new BrowserFolderListHeaderMarker();
-            ApplyLayoutFolderDetailsToFolderHeaderMarker(fh);
-            target.Add(
-                new TreeViewNode
-                {
-                    Content = fh,
-                    HasUnrealizedChildren = false,
-                });
-            folderInsertIndex = 1;
-        }
-
-        if (_layoutState.ShowBrowserFileColumnHeadings && rows.Count > 0)
-        {
-            var marker = new BrowserFileListHeaderMarker();
-            ApplyLayoutFileDetailsToHeaderMarker(marker);
-            target.Add(
-                new TreeViewNode
-                {
-                    Content = marker,
-                    HasUnrealizedChildren = false,
-                });
-        }
-
         foreach (var r in rows)
         {
             target.Add(
@@ -656,6 +657,8 @@ public sealed partial class MainWindow
 
         if (populateGen != Volatile.Read(ref _populateBrowserGeneration))
             return;
+
+        SyncPinnedBrowserColumnHeaders();
 
         foreach (var (offset, length) in ChunkPlanner.EnumerateChunks(sortedDirs.Count, BrowserFolderUiChunkSize))
         {
@@ -686,8 +689,13 @@ public sealed partial class MainWindow
         if (expandProbeTargets is { Count: > 0 })
             ScheduleBrowseExpandabilityProbeBatch(expandProbeTargets, browserProbeGen);
 
+        SyncPinnedBrowserColumnHeaders();
+
         if (rootBrowsePopulate)
             FinalizeBrowserRootPopulateStatusAndPersist(populateGen, flatEntryCount, sortedDirs.Count, rows);
+
+        if (rootBrowsePopulate)
+            ScheduleBrowserTreeViewportAfterMutation();
     }
 
     private void FinalizeBrowserRootPopulateSelectionAndChrome(int populateGen, IReadOnlyList<ImageRow> rows)
@@ -711,6 +719,7 @@ public sealed partial class MainWindow
 
         UpdatePathOverlays();
         UpdateFullscreenMenuEnabled();
+        SyncPinnedBrowserColumnHeaders();
     }
 
     private void FinalizeBrowserRootPopulateStatusAndPersist(int populateGen, int flatEntryCount, int dirCount, IReadOnlyList<ImageRow> rows)
@@ -756,6 +765,8 @@ public sealed partial class MainWindow
         UpdatePathOverlays();
         UpdateFullscreenMenuEnabled();
         SchedulePersistLayoutDebounced();
+        SyncPinnedBrowserColumnHeaders();
+        ScheduleBrowserTreeViewportAfterMutation();
     }
 
     private static void CollectBrowserFolderChildListsPreorder(
@@ -771,107 +782,38 @@ public sealed partial class MainWindow
         }
     }
 
-    private void SyncBrowserFolderListHeaderNodes()
-    {
-        var lists = new List<IList<TreeViewNode>>();
-        CollectBrowserFolderChildListsPreorder(FolderTree.RootNodes, lists);
-        foreach (var list in lists)
-            SyncBrowserFolderHeaderRowInChildren(list);
-    }
-
-    private void ResortFolderListsAndSyncHeaders(List<IList<TreeViewNode>> lists)
+    private void ResortFolderLists(List<IList<TreeViewNode>> lists)
     {
         foreach (var list in lists)
-        {
             ResortFolderSiblingBlock(list);
-            SyncBrowserFolderHeaderRowInChildren(list);
-        }
     }
 
-    private void ResortAllFolderGroupsAndSyncHeaders()
+    private void ResortAllFolderGroups()
     {
         var lists = new List<IList<TreeViewNode>>();
         CollectBrowserFolderChildListsPreorder(FolderTree.RootNodes, lists);
-        ResortFolderListsAndSyncHeaders(lists);
-    }
-
-    private void SyncBrowserFolderHeaderRowInChildren(IList<TreeViewNode> children)
-    {
-        for (var i = children.Count - 1; i >= 0; i--)
-        {
-            if (children[i].Content is BrowserFolderListHeaderMarker)
-                children.RemoveAt(i);
-        }
-
-        if (!_layoutState.ShowBrowserFolderColumnHeadings)
-            return;
-
-        var firstFolder = -1;
-        for (var i = 0; i < children.Count; i++)
-        {
-            if (children[i].Content is FolderTreeEntry)
-            {
-                firstFolder = i;
-                break;
-            }
-        }
-
-        if (firstFolder < 0)
-            return;
-
-        var marker = new BrowserFolderListHeaderMarker();
-        ApplyLayoutFolderDetailsToFolderHeaderMarker(marker);
-        children.Insert(
-            firstFolder,
-            new TreeViewNode
-            {
-                Content = marker,
-                HasUnrealizedChildren = false,
-            });
+        ResortFolderLists(lists);
+        SyncPinnedBrowserColumnHeaders();
     }
 
     private void ApplyBrowserFolderDetailsChrome()
     {
         foreach (var n in EnumerateNodesDepthFirst(FolderTree.RootNodes))
-            ApplyBrowserFolderDetailsToSingleNode(n);
-    }
-
-    private void ApplyBrowserFolderDetailsToSingleNode(TreeViewNode n)
-    {
-        switch (n.Content)
         {
-            case BrowserFolderListHeaderMarker m:
-                ApplyLayoutFolderDetailsToFolderHeaderMarker(m);
-                break;
-            case FolderTreeEntry row:
+            if (n.Content is FolderTreeEntry row)
                 ApplyLayoutFolderDetailsToFolderEntry(row);
-                break;
         }
+
+        SyncPinnedBrowserColumnHeaders();
     }
 
     private void ResortFolderSiblingBlock(IList<TreeViewNode> children)
     {
-        TreeViewNode? folderHeader = null;
         var folderNodes = new List<TreeViewNode>();
-        TreeViewNode? fileHeader = null;
-        var imageNodes = new List<TreeViewNode>();
         foreach (var n in children)
         {
-            switch (n.Content)
-            {
-                case BrowserFolderListHeaderMarker:
-                    folderHeader = n;
-                    break;
-                case FolderTreeEntry:
-                    folderNodes.Add(n);
-                    break;
-                case BrowserFileListHeaderMarker:
-                    fileHeader = n;
-                    break;
-                case ImageRow:
-                    imageNodes.Add(n);
-                    break;
-            }
+            if (n.Content is FolderTreeEntry)
+                folderNodes.Add(n);
         }
 
         if (folderNodes.Count == 0)
@@ -909,16 +851,7 @@ public sealed partial class MainWindow
                 children.RemoveAt(i);
         }
 
-        var insertAt = 0;
-        if (folderHeader != null)
-        {
-            insertAt = children.IndexOf(folderHeader);
-            if (insertAt < 0)
-                insertAt = 0;
-            else
-                insertAt++;
-        }
-
+        const int insertAt = 0;
         for (var i = 0; i < folderNodes.Count; i++)
             children.Insert(insertAt + i, folderNodes[i]);
     }
@@ -1026,16 +959,16 @@ public sealed partial class MainWindow
         _folderResortCoalesceWindowStartUtc = null;
         if (_folderResortCoalescePendingSiblingLists.Count == 0)
         {
-            ResortAllFolderGroupsAndSyncHeaders();
+            ResortAllFolderGroups();
         }
         else
         {
             foreach (var list in _folderResortCoalescePendingSiblingLists)
                 ResortFolderSiblingBlock(list);
             _folderResortCoalescePendingSiblingLists.Clear();
-            SyncBrowserFolderListHeaderNodes();
+            SyncPinnedBrowserColumnHeaders();
         }
-        ScheduleAlignBrowsedFolderTreeRowToTopAfterResort();
+        ScheduleBrowserTreeViewportAfterMutation();
     }
 
     private void OnFolderResortCoalesceTick(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object args)
@@ -1363,10 +1296,34 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// After deferred folder sibling resorts, keep <see cref="_currentFolderPath"/> aligned to the top of the tree
-    /// scroll viewport. Retries when <see cref="TreeView.ContainerFromNode"/> is not yet realized.
+    /// Directory that defines browse context for tree viewport alignment (same hints as folder navigation).
     /// </summary>
-    private void ScheduleAlignBrowsedFolderTreeRowToTopAfterResort()
+    private string? ResolveBrowsedFolderPathForBrowserTreeViewport()
+    {
+        if (string.IsNullOrEmpty(_currentFolderPath) || !Directory.Exists(_currentFolderPath))
+            return null;
+
+        var selPath = FolderTree.SelectedNode?.Content is ImageRow sr ? sr.FullPath : null;
+        var browsed = BrowseContextDirectory.Resolve(
+            _browseNavAnchorPath,
+            selPath,
+            _currentImageFullPath,
+            _currentFolderPath);
+        if (string.IsNullOrEmpty(browsed))
+            browsed = _currentFolderPath;
+
+        if (!IsSameOrDescendantDirectory(_currentFolderPath, browsed))
+            browsed = _currentFolderPath;
+
+        return browsed;
+    }
+
+    /// <summary>
+    /// After the folder tree is mutated or repopulated: in browse-root mode (no subfolder context), scroll the
+    /// tree viewport to the top of the list; in subfolder mode, pin the browsed folder row to the top of the
+    /// viewport. Retries when containers are not yet realized. Does not scroll to top in subfolder mode on failure.
+    /// </summary>
+    private void ScheduleBrowserTreeViewportAfterMutation()
     {
         var dq = FolderTree.DispatcherQueue;
         if (dq == null)
@@ -1374,17 +1331,28 @@ public sealed partial class MainWindow
 
         void tryStep(int attempt)
         {
-            const int maxAttempts = 5;
+            const int maxAttempts = 8;
             if (string.IsNullOrEmpty(_currentFolderPath) || !Directory.Exists(_currentFolderPath))
                 return;
 
-            var folderNode = FindFolderTreeNodeByPath(FolderTree.RootNodes, _currentFolderPath);
-            if (folderNode?.Content is not FolderTreeEntry)
+            var browsedPath = ResolveBrowsedFolderPathForBrowserTreeViewport();
+            if (string.IsNullOrEmpty(browsedPath))
                 return;
 
             FolderTree.UpdateLayout();
-            if (TryBringFolderTreeNodeToTop(folderNode))
-                return;
+
+            var browseRootMode = SameDirectoryPath(browsedPath, _currentFolderPath);
+            if (browseRootMode)
+            {
+                if (TryScrollFolderTreeToTop())
+                    return;
+            }
+            else
+            {
+                var folderNode = TryResolveFolderTreeNodeForPath(browsedPath);
+                if (folderNode?.Content is FolderTreeEntry && TryBringFolderTreeNodeToTop(folderNode))
+                    return;
+            }
 
             if (attempt >= maxAttempts - 1)
                 return;
@@ -1397,43 +1365,6 @@ public sealed partial class MainWindow
         _ = dq.TryEnqueue(
             Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
             () => tryStep(0));
-    }
-
-    private void ScheduleWizardBrowserTreeScrollToTop(BrowserTreeRefocusAfterWizardContext refocusContext)
-    {
-        var dq = FolderTree.DispatcherQueue;
-        if (dq == null)
-            return;
-
-        _ = dq.TryEnqueue(
-            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
-            () =>
-            {
-                TreeViewNode? folderNode = null;
-                var preferred = refocusContext.PreferredNextFolderFullPath;
-                if (!string.IsNullOrEmpty(preferred) && Directory.Exists(preferred))
-                {
-                    var n = FindFolderTreeNodeByPath(FolderTree.RootNodes, preferred);
-                    if (n?.Content is FolderTreeEntry)
-                        folderNode = n;
-                }
-
-                if (folderNode == null)
-                {
-                    var work = refocusContext.ImageDeletionWorkingFolder;
-                    if (!string.IsNullOrEmpty(work) && Directory.Exists(work))
-                    {
-                        var n = FindFolderTreeNodeByPath(FolderTree.RootNodes, work);
-                        if (n?.Content is FolderTreeEntry)
-                            folderNode = n;
-                    }
-                }
-
-                if (folderNode != null && TryBringFolderTreeNodeToTop(folderNode))
-                    return;
-
-                TryScrollFolderTreeToTop();
-            });
     }
 
     internal async Task RefreshBrowserPaneAfterWizardImageDeletesAsync(
@@ -1484,8 +1415,7 @@ public sealed partial class MainWindow
         }
 
         await CommitIncrementalFolderPreviewAndSelectionAsync(refocusContext).ConfigureAwait(true);
-        if (refocusContext != null)
-            ScheduleWizardBrowserTreeScrollToTop(refocusContext);
+        ScheduleBrowserTreeViewportAfterMutation();
         UpdatePathOverlays();
         UpdateFullscreenMenuEnabled();
         PersistLayout();
@@ -1553,6 +1483,7 @@ public sealed partial class MainWindow
         }
 
         await CommitIncrementalFolderPreviewAndSelectionAsync(null).ConfigureAwait(true);
+        ScheduleBrowserTreeViewportAfterMutation();
         UpdatePathOverlays();
         UpdateFullscreenMenuEnabled();
         PersistLayout();
@@ -1583,7 +1514,7 @@ public sealed partial class MainWindow
         IReadOnlyList<FileSystemEntry> entries;
         try
         {
-            entries = await AppServices.FileSystem.ListDirectoryAsync(folderPath).ConfigureAwait(false);
+            entries = await AppServices.FileSystem.ListDirectoryAsync(folderPath).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -1637,6 +1568,22 @@ public sealed partial class MainWindow
             }
         }
 
+        ResortImageRowSiblingsInChildren(children);
+
+        if (!updateTransientStatus)
+            return;
+
+        var dirCount = entries.Count(e => e.IsDirectory);
+        var flatEntryCount = entries.Count;
+        var status = rows.Count == 0 && flatEntryCount > 0
+            ? $"0 image(s) · {flatEntryCount} item(s) in folder (none match supported raster extensions)"
+            : $"{rows.Count} image(s) · {dirCount} folder(s)";
+        SetTransientStatus(status);
+    }
+
+    /// <summary>Reorders <see cref="ImageRow"/> <see cref="TreeViewNode"/> siblings under <paramref name="children"/> to match <see cref="ApplyListSort"/> without touching disk.</summary>
+    private void ResortImageRowSiblingsInChildren(IList<TreeViewNode> children)
+    {
         var imageNodes = new List<TreeViewNode>();
         foreach (var n in children)
         {
@@ -1662,29 +1609,15 @@ public sealed partial class MainWindow
                 children.RemoveAt(i);
         }
 
-        SyncBrowserListHeaderRowInChildren(children);
-
         var insertAt = 0;
         for (var i = 0; i < children.Count; i++)
         {
-            if (children[i].Content is FolderTreeEntry or BrowserFolderListHeaderMarker)
+            if (children[i].Content is FolderTreeEntry)
                 insertAt = i + 1;
         }
 
         for (var i = 0; i < orderedNodes.Count; i++)
             children.Insert(insertAt + i, orderedNodes[i]);
-
-        SyncBrowserListHeaderRowInChildren(children);
-
-        if (!updateTransientStatus)
-            return;
-
-        var dirCount = entries.Count(e => e.IsDirectory);
-        var flatEntryCount = entries.Count;
-        var status = rows.Count == 0 && flatEntryCount > 0
-            ? $"0 image(s) · {flatEntryCount} item(s) in folder (none match supported raster extensions)"
-            : $"{rows.Count} image(s) · {dirCount} folder(s)";
-        SetTransientStatus(status);
     }
 
     private static void EnsureBrowseTreeAncestorsExpanded(TreeViewNode node)
@@ -2184,8 +2117,7 @@ public sealed partial class MainWindow
 
     private void DeferredBrowserChromeAfterStartupStep3()
     {
-        SyncBrowserFolderListHeaderNodes();
-        SyncBrowserFileListHeaderNodes();
+        SyncPinnedBrowserColumnHeaders();
     }
 
     internal void RefreshAllFolderEntrySizingDisplays()
@@ -2215,68 +2147,15 @@ public sealed partial class MainWindow
         _folderMetricsCts = new CancellationTokenSource();
     }
 
-    private void SyncBrowserFileListHeaderNodes()
-    {
-        var lists = new List<IList<TreeViewNode>> { FolderTree.RootNodes };
-        foreach (var n in EnumerateNodesDepthFirst(FolderTree.RootNodes))
-        {
-            if (n.Children.Count > 0)
-                lists.Add(n.Children);
-        }
-
-        foreach (var list in lists)
-            SyncBrowserListHeaderRowInChildren(list);
-    }
-
-    private void SyncBrowserListHeaderRowInChildren(IList<TreeViewNode> children)
-    {
-        for (var i = children.Count - 1; i >= 0; i--)
-        {
-            if (children[i].Content is BrowserFileListHeaderMarker)
-                children.RemoveAt(i);
-        }
-
-        if (!_layoutState.ShowBrowserFileColumnHeadings)
-            return;
-
-        var firstImage = -1;
-        for (var i = 0; i < children.Count; i++)
-        {
-            if (children[i].Content is ImageRow)
-            {
-                firstImage = i;
-                break;
-            }
-        }
-
-        if (firstImage < 0)
-            return;
-
-        var marker = new BrowserFileListHeaderMarker();
-        ApplyLayoutFileDetailsToHeaderMarker(marker);
-        children.Insert(
-            firstImage,
-            new TreeViewNode
-            {
-                Content = marker,
-                HasUnrealizedChildren = false,
-            });
-    }
-
     private void ApplyBrowserFileDetailsChrome()
     {
         foreach (var n in EnumerateNodesDepthFirst(FolderTree.RootNodes))
         {
-            switch (n.Content)
-            {
-                case BrowserFileListHeaderMarker m:
-                    ApplyLayoutFileDetailsToHeaderMarker(m);
-                    break;
-                case ImageRow row:
-                    ApplyLayoutFileDetailsToImageRow(row);
-                    break;
-            }
+            if (n.Content is ImageRow row)
+                ApplyLayoutFileDetailsToImageRow(row);
         }
+
+        SyncPinnedBrowserColumnHeaders();
     }
 
     private void UpdateBrowserToolbar()
@@ -2337,6 +2216,7 @@ public sealed partial class MainWindow
         _session.LastBrowseFolder = path;
         _browseNavAnchorPath = null;
         FolderTree.RootNodes.Clear();
+        SyncPinnedBrowserColumnHeaders();
         UpdateBrowserToolbar();
 
         try
@@ -2900,6 +2780,80 @@ public sealed partial class MainWindow
         return null;
     }
 
+    /// <summary>Tier A path index then depth-first scan (same policy as <see cref="TryGetResortSiblingListForFolderPath"/>).</summary>
+    private TreeViewNode? TryResolveFolderTreeNodeForPath(string folderFullPath)
+    {
+        if (string.IsNullOrEmpty(folderFullPath))
+            return null;
+
+        if (_folderTreeNodeByPath.TryGetValue(folderFullPath, out var indexed) && indexed != null)
+            return indexed;
+
+        string norm;
+        try
+        {
+            norm = Path.GetFullPath(folderFullPath);
+        }
+        catch
+        {
+            norm = folderFullPath;
+        }
+
+        if (!string.Equals(norm, folderFullPath, StringComparison.OrdinalIgnoreCase)
+            && _folderTreeNodeByPath.TryGetValue(norm, out indexed)
+            && indexed != null)
+        {
+            return indexed;
+        }
+
+        return FindFolderTreeNodeByPath(FolderTree.RootNodes, folderFullPath);
+    }
+
+    private bool IsFolderRowInSiblingCandidates(TreeViewNode contextNode, TreeViewNode possibleSibling)
+    {
+        IEnumerable<TreeViewNode> candidates = contextNode.Parent != null
+            ? contextNode.Parent.Children
+            : FolderTree.RootNodes;
+
+        foreach (var c in candidates)
+        {
+            if (ReferenceEquals(c, possibleSibling))
+                return true;
+        }
+
+        return false;
+    }
+
+    private TreeViewNode? FindFolderSiblingTreeNodeOrIndexed(TreeViewNode contextNode, string siblingFolderFullPath)
+    {
+        string targetNorm;
+        try
+        {
+            targetNorm = Path.GetFullPath(siblingFolderFullPath);
+        }
+        catch
+        {
+            targetNorm = siblingFolderFullPath;
+        }
+
+        if (_folderTreeNodeByPath.TryGetValue(siblingFolderFullPath, out var indexed)
+            && indexed != null
+            && IsFolderRowInSiblingCandidates(contextNode, indexed))
+        {
+            return indexed;
+        }
+
+        if (!string.Equals(siblingFolderFullPath, targetNorm, StringComparison.OrdinalIgnoreCase)
+            && _folderTreeNodeByPath.TryGetValue(targetNorm, out indexed)
+            && indexed != null
+            && IsFolderRowInSiblingCandidates(contextNode, indexed))
+        {
+            return indexed;
+        }
+
+        return FindFolderSiblingTreeNode(contextNode, siblingFolderFullPath);
+    }
+
     private List<TreeViewNode> CollectImageNodesForBrowseContextDirectory(string contextDir)
     {
         var list = new List<TreeViewNode>();
@@ -3239,55 +3193,83 @@ public sealed partial class MainWindow
             return;
         }
 
-        var contextNode = FindFolderTreeNodeByPath(FolderTree.RootNodes, contextDir);
-        if (contextNode == null)
-            return;
-
-        var siblingNode = FindFolderSiblingTreeNode(contextNode, targetFolderPath);
-        if (siblingNode == null)
-            return;
-
-        var folderPath = GetFolderPath(siblingNode);
-        if (string.IsNullOrEmpty(folderPath))
-            return;
-
-        await PopulateFolderTreeNodeChildrenAsync(siblingNode, folderPath, gen).ConfigureAwait(true);
-
-        if (gen != Volatile.Read(ref _populateBrowserGeneration))
-            return;
-
-        siblingNode.IsExpanded = true;
-
-        var visitedNested = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (!await TryFocusFirstMatchingImageUnderFolderNodeRecursiveAsync(
-                siblingNode,
-                folderPath,
-                depth: 0,
-                gen,
-                visitedNested).ConfigureAwait(true))
+        await RunOnUiAsync(async () =>
         {
-            if (gen == Volatile.Read(ref _populateBrowserGeneration))
+            for (var attempt = 0; attempt < SiblingFolderNavMaterializeMaxAttempts; attempt++)
             {
-                if (siblingNode.Children.Count == 0)
-                    SetTransientStatus("That folder is empty.");
-                else
-                    SetTransientStatus("No images found in that folder (or none match the current browse filter).");
+                if (gen != Volatile.Read(ref _populateBrowserGeneration))
+                    return;
+
+                var contextNode = TryResolveFolderTreeNodeForPath(contextDir);
+                var siblingNode = contextNode != null
+                    ? FindFolderSiblingTreeNodeOrIndexed(contextNode, targetFolderPath)
+                    : null;
+
+                if (contextNode != null && siblingNode != null)
+                {
+                    var folderPath = GetFolderPath(siblingNode);
+                    if (string.IsNullOrEmpty(folderPath))
+                        return;
+
+                    await PopulateFolderTreeNodeChildrenAsync(siblingNode, folderPath, gen).ConfigureAwait(true);
+
+                    if (gen != Volatile.Read(ref _populateBrowserGeneration))
+                        return;
+
+                    siblingNode.IsExpanded = true;
+
+                    var visitedNested = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    if (!await TryFocusFirstMatchingImageUnderFolderNodeRecursiveAsync(
+                            siblingNode,
+                            folderPath,
+                            depth: 0,
+                            gen,
+                            visitedNested).ConfigureAwait(true))
+                    {
+                        if (gen == Volatile.Read(ref _populateBrowserGeneration))
+                        {
+                            if (siblingNode.Children.Count == 0)
+                                SetTransientStatus("That folder is empty.");
+                            else
+                                SetTransientStatus("No images found in that folder (or none match the current browse filter).");
+                        }
+
+                        ClearImageSelectionAndPreviewCore();
+                    }
+
+                    _suppressFolderTreeCollapsedClear = true;
+                    try
+                    {
+                        contextNode.IsExpanded = false;
+                    }
+                    finally
+                    {
+                        _ = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread().TryEnqueue(
+                            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                            () => { _suppressFolderTreeCollapsedClear = false; });
+                    }
+
+                    ScheduleBrowserTreeViewportAfterMutation();
+                    return;
+                }
+
+                var browseRoot = _currentFolderPath;
+                var mayStillStage = !string.IsNullOrEmpty(browseRoot)
+                    && IsSameOrDescendantDirectory(browseRoot, targetFolderPath)
+                    && IsSameOrDescendantDirectory(browseRoot, contextDir);
+
+                if (!mayStillStage || attempt == SiblingFolderNavMaterializeMaxAttempts - 1)
+                    break;
+
+                await Task.Yield();
             }
 
-            ClearImageSelectionAndPreviewCore();
-        }
-
-        _suppressFolderTreeCollapsedClear = true;
-        try
-        {
-            contextNode.IsExpanded = false;
-        }
-        finally
-        {
-            _ = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread().TryEnqueue(
-                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
-                () => { _suppressFolderTreeCollapsedClear = false; });
-        }
+            if (gen == Volatile.Read(ref _populateBrowserGeneration))
+            {
+                SetTransientStatus(
+                    "Could not open that sibling folder in the tree yet. Try again after folder rows finish loading.");
+            }
+        }).ConfigureAwait(true);
     }
 
     private TreeViewNode? FindFolderSiblingTreeNode(TreeViewNode contextNode, string siblingFolderFullPath)
@@ -3535,9 +3517,6 @@ public sealed partial class MainWindow
 
     private void CancelInlineRename(bool commit)
     {
-        if (!commit && _renameTargetNode?.Content is FolderTreeEntry)
-            _skipNavigateAfterFolderCommit = false;
-
         if (!commit && _renameTargetNode?.Content is ImageRow row)
         {
             row.EditingName = row.DisplayName;
@@ -3599,10 +3578,12 @@ public sealed partial class MainWindow
         var ext = Path.GetExtension(oldPath);
         var desired = trimmed.EndsWith(ext, StringComparison.OrdinalIgnoreCase) ? trimmed : trimmed + ext;
 
+        var imageSiblingList = _renameTargetNode?.Parent?.Children;
+
         string destPath;
         try
         {
-            destPath = BrowserPaneRenameHelper.PickUniqueFileName(dir, desired);
+            destPath = BrowserPaneRenameHelper.PickUniqueFileName(dir, desired, oldPath);
         }
         catch (Exception ex)
         {
@@ -3641,6 +3622,11 @@ public sealed partial class MainWindow
         if (string.Equals(_browseNavAnchorPath, oldPath, StringComparison.OrdinalIgnoreCase))
             _browseNavAnchorPath = destPath;
 
+        if (imageSiblingList != null)
+            ResortImageRowSiblingsInChildren(imageSiblingList);
+
+        EnqueueFolderMetricsRescan(dir, FolderMetricsScanScope.ImmediateChildren);
+
         UpdatePathOverlays();
         PersistLayout();
         SetTransientStatus("Renamed.");
@@ -3665,10 +3651,13 @@ public sealed partial class MainWindow
             return;
         }
 
+        var resolvedTreeNode = _renameTargetNode ?? FindFolderTreeNodeByPath(FolderTree.RootNodes, oldPath);
+        var wasBrowseRoot = !string.IsNullOrEmpty(_currentFolderPath) && SameDirectoryPath(_currentFolderPath, oldPath);
+
         string destPath;
         try
         {
-            destPath = BrowserPaneRenameHelper.PickUniqueDirectoryName(parent, trimmed);
+            destPath = BrowserPaneRenameHelper.PickUniqueDirectoryName(parent, trimmed, oldPath);
         }
         catch (Exception ex)
         {
@@ -3695,7 +3684,6 @@ public sealed partial class MainWindow
             return;
         }
 
-        var renamedNode = _renameTargetNode;
         folderEntry.IsRenaming = false;
         _renameTargetNode = null;
 
@@ -3706,12 +3694,15 @@ public sealed partial class MainWindow
             _session.LastBrowseFolder = destPath;
         }
 
-        var skipNavigate = _skipNavigateAfterFolderCommit;
-        _skipNavigateAfterFolderCommit = false;
-
-        if (skipNavigate && renamedNode != null)
+        if (resolvedTreeNode != null)
         {
-            ApplyRenamedFolderSubtreeInPlace(renamedNode, oldPath, destPath, folderEntry);
+            ApplyRenamedFolderSubtreeInPlace(resolvedTreeNode, oldPath, destPath, folderEntry);
+            return;
+        }
+
+        if (wasBrowseRoot)
+        {
+            ApplyBrowseRootFolderRelocatedInPlace(oldPath, destPath);
             return;
         }
 
@@ -3734,6 +3725,92 @@ public sealed partial class MainWindow
         fe.IsRenaming = true;
         _renameTargetNode = node;
         return true;
+    }
+
+    private void ScheduleFolderRenameMetricsAndResort(
+        string destPath,
+        TreeViewNode? renamedSubtreeRoot,
+        IList<TreeViewNode>? forestForSubtreeMetrics)
+    {
+        var resortPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        CollectIndexedAncestorPathsForResort(destPath, resortPaths);
+        RequestCoalescedFolderResortForTouchedFolderPaths(resortPaths);
+
+        var trimmedDest = destPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var parentOfDest = Path.GetDirectoryName(trimmedDest);
+        if (!string.IsNullOrEmpty(parentOfDest))
+            EnqueueFolderMetricsRescan(parentOfDest, FolderMetricsScanScope.ImmediateChildren);
+
+        IEnumerable<TreeViewNode> scanNodes;
+        if (renamedSubtreeRoot != null)
+            scanNodes = EnumerateNodesDepthFirst(renamedSubtreeRoot);
+        else if (forestForSubtreeMetrics != null)
+            scanNodes = EnumerateNodesDepthFirst(forestForSubtreeMetrics);
+        else
+            scanNodes = Enumerable.Empty<TreeViewNode>();
+
+        foreach (var n in scanNodes)
+        {
+            if (n.Content is not FolderTreeEntry fe)
+                continue;
+            var scope = n.IsExpanded ? FolderMetricsScanScope.FullSubtree : FolderMetricsScanScope.ImmediateChildren;
+            EnqueueFolderMetricsRescan(fe.Path, scope);
+        }
+    }
+
+    private void ApplyBrowseRootFolderRelocatedInPlace(string oldPath, string destPath)
+    {
+        var pathsToUnindex = EnumerateNodesDepthFirst(FolderTree.RootNodes)
+            .Select(n => n.Content as FolderTreeEntry)
+            .Where(f => f != null)
+            .Select(f => f!.Path)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        foreach (var p in pathsToUnindex)
+        {
+            _folderTreeEntryByPath.Remove(p);
+            UnregisterFolderTreeNodeIndex(p);
+            _folderAggregateBytesByPath.Remove(p);
+            _folderImageFileCountByPath.Remove(p);
+        }
+
+        _sortSession.RelocatePathsForDirectoryRename(oldPath, destPath);
+
+        foreach (var n in EnumerateNodesDepthFirst(FolderTree.RootNodes))
+        {
+            if (n.Content is FolderTreeEntry fe)
+            {
+                var newP = RelocateFilesystemPathUnderRoot(fe.Path, oldPath, destPath);
+                if (!string.Equals(fe.Path, newP, StringComparison.OrdinalIgnoreCase))
+                {
+                    fe.Path = newP;
+                    fe.DisplayLabel = new DirectoryInfo(newP).Name;
+                }
+            }
+            else if (n.Content is ImageRow row)
+            {
+                var newP = RelocateFilesystemPathUnderRoot(row.FullPath, oldPath, destPath);
+                if (string.Equals(row.FullPath, newP, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var fi = new FileInfo(newP);
+                row.ApplyRenamedPath(newP, fi.Name, fi.Length, new DateTimeOffset(fi.LastWriteTimeUtc));
+            }
+        }
+
+        foreach (var n in EnumerateNodesDepthFirst(FolderTree.RootNodes))
+        {
+            if (n.Content is FolderTreeEntry fe2)
+                RegisterFolderTreeIndex(fe2, n);
+        }
+
+        RelocateAppPathsAfterFolderRename(oldPath, destPath);
+        RefreshAllSortFlagDisplaysInList();
+        UpdatePathOverlays();
+        if (!string.IsNullOrEmpty(_currentImageFullPath))
+            EnqueuePreviewNavigation(_currentImageFullPath, false);
+        PersistLayout();
+        SetTransientStatus("Renamed folder.");
+        ScheduleFolderRenameMetricsAndResort(destPath, renamedSubtreeRoot: null, FolderTree.RootNodes);
     }
 
     private void ApplyRenamedFolderSubtreeInPlace(
@@ -3798,6 +3875,7 @@ public sealed partial class MainWindow
             EnqueuePreviewNavigation(_currentImageFullPath, false);
         PersistLayout();
         SetTransientStatus("Renamed folder.");
+        ScheduleFolderRenameMetricsAndResort(destPath, renamedNode, forestForSubtreeMetrics: null);
     }
 
     private static string RelocateFilesystemPathUnderRoot(string fullPath, string oldRoot, string newRoot)

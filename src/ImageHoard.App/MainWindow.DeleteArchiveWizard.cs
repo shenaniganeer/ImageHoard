@@ -22,7 +22,6 @@ public sealed partial class MainWindow
     private bool _wizardSessionHadPermanentImageDeletes;
     private bool _wizardUndoRunning;
     internal bool WizardImageUndoInProgress => _wizardUndoRunning;
-    internal bool _skipNavigateAfterFolderCommit;
 
     internal bool SessionInverseKeepDeleteBeforeArchiveMove =>
         _session.InverseKeepDeleteBeforeArchiveMove;
@@ -197,7 +196,7 @@ public sealed partial class MainWindow
         DeleteArchiveWizardOverlayRoot.Focus(FocusState.Programmatic);
     }
 
-    internal async Task WizardExecuteInverseKeepDeleteAsync()
+    internal async Task<bool> WizardExecuteInverseKeepDeleteAsync()
     {
         var work = TryGetDeleteArchiveWizardWorkingFolder();
         if (string.IsNullOrEmpty(work))
@@ -206,7 +205,7 @@ public sealed partial class MainWindow
                 "Could not resolve the working folder. Select an image in the folder, or close and reopen the wizard.";
             SetTransientStatus(msg);
             ActiveDeleteArchiveWizardPanel?.ShowWizardOperationInfo("Working folder", msg, InfoBarSeverity.Warning);
-            return;
+            return false;
         }
         List<string> paths;
         try
@@ -219,7 +218,7 @@ public sealed partial class MainWindow
         catch (Exception ex)
         {
             SetTransientStatus("Could not list images: " + ex.Message);
-            return;
+            return false;
         }
 
         if (paths.Count == 0)
@@ -229,14 +228,14 @@ public sealed partial class MainWindow
                 "Nothing to delete",
                 "This folder has no supported image files.",
                 InfoBarSeverity.Informational);
-            return;
+            return false;
         }
 
         var toDelete = BatchDeletePlanner.GetInverseKeepDeletionSetIgnoringUnsetGate(paths, _sortSession);
         if (toDelete.Count == 0)
         {
             SetTransientStatus("Nothing to delete (all images are marked Keep).");
-            return;
+            return false;
         }
 
         var confirmDlg = new ContentDialog
@@ -245,7 +244,8 @@ public sealed partial class MainWindow
             Content = new TextBlock
             {
                 Text =
-                    $"Send {toDelete.Count} image(s) not marked Keep to the Recycle Bin (or permanently delete if the Recycle Bin is unavailable)?",
+                    $"{toDelete.Count} image(s) not marked Keep will be deleted.",
+                Foreground = new SolidColorBrush(Microsoft.UI.Colors.Crimson),
                 TextWrapping = TextWrapping.WrapWholeWords,
             },
             PrimaryButtonText = $"Delete {toDelete.Count} image(s)",
@@ -254,13 +254,13 @@ public sealed partial class MainWindow
             XamlRoot = RootGrid.XamlRoot,
         };
         if (await ShowWizardContentDialogAsync(confirmDlg) != ContentDialogResult.Primary)
-            return;
+            return false;
 
-        await WizardExecuteImageRecycleOrPermanentBatchAsync(toDelete, recordUndoForRecycledPaths: true, "BatchDelete")
+        return await WizardExecuteImageRecycleOrPermanentBatchAsync(toDelete, recordUndoForRecycledPaths: true, "BatchDelete")
             .ConfigureAwait(true);
     }
 
-    internal async Task WizardExecuteDeleteFlaggedOnlyAsync()
+    internal async Task<bool> WizardExecuteDeleteFlaggedOnlyAsync()
     {
         var work = TryGetDeleteArchiveWizardWorkingFolder();
         if (string.IsNullOrEmpty(work))
@@ -269,7 +269,7 @@ public sealed partial class MainWindow
                 "Could not resolve the working folder. Select an image in the folder, or close and reopen the wizard.";
             SetTransientStatus(msg);
             ActiveDeleteArchiveWizardPanel?.ShowWizardOperationInfo("Working folder", msg, InfoBarSeverity.Warning);
-            return;
+            return false;
         }
         List<string> paths;
         try
@@ -282,14 +282,14 @@ public sealed partial class MainWindow
         catch (Exception ex)
         {
             SetTransientStatus("Could not list images: " + ex.Message);
-            return;
+            return false;
         }
 
         var toDelete = BatchDeletePlanner.GetDeleteFlaggedPaths(paths, _sortSession);
         if (toDelete.Count == 0)
         {
             SetTransientStatus("No images marked Delete in this folder.");
-            return;
+            return false;
         }
 
         var confirmDlg = new ContentDialog
@@ -307,9 +307,9 @@ public sealed partial class MainWindow
             XamlRoot = RootGrid.XamlRoot,
         };
         if (await ShowWizardContentDialogAsync(confirmDlg) != ContentDialogResult.Primary)
-            return;
+            return false;
 
-        await WizardExecuteImageRecycleOrPermanentBatchAsync(
+        return await WizardExecuteImageRecycleOrPermanentBatchAsync(
                 toDelete,
                 recordUndoForRecycledPaths: true,
                 "BatchDeleteDeleteFlaggedOnly")
@@ -880,7 +880,6 @@ public sealed partial class MainWindow
             return;
         }
 
-        _skipNavigateAfterFolderCommit = true;
         Activate();
     }
 

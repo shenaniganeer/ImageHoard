@@ -585,6 +585,9 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     private bool ShouldSuppressWheelNavForOriginalSource(DependencyObject? source) =>
         IsDescendantOf(source, FolderTree);
 
+    private bool ChordActivationAppliesToCurrentUi(string commandId, System.Text.Json.JsonElement chord) =>
+        InputBindingActivation.MaskAppliesToUi(InputBindingActivation.ResolveMask(commandId, chord), _slideshowUiActive);
+
     private static bool IsInsideTextInput(DependencyObject? o)
     {
         while (o != null)
@@ -601,6 +604,8 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     {
         if (commandId is "sort.flagKeep" or "sort.flagDelete" or "sort.flagUnset" or "sort.clearAllFlags")
         {
+            if (_slideshowUiActive)
+                return false;
             if (source == null)
                 return false;
             if (IsDescendantOf(source, PreviewHostGrid))
@@ -611,7 +616,11 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         }
 
         if (commandId is "sort.deleteArchiveWizard" or "sort.commitBatchDelete" or "sort.moveToArchive")
+        {
+            if (_slideshowUiActive)
+                return false;
             return !IsInsideTextInput(source);
+        }
 
         if (commandId == ViewPanPreviewCommandId)
         {
@@ -678,12 +687,16 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
                 if (!InputPointerChordMatch.IsMouseWheelMatch(chord, shift, ctrl, alt, win, up, pressedSorted))
                     continue;
-                if (suppressNav && (commandId == "nav.nextImage" || commandId == "nav.prevImage"))
+                if (!ChordActivationAppliesToCurrentUi(commandId, chord))
+                    continue;
+                if (suppressNav && (commandId == "nav.nextImage" || commandId == "nav.prevImage"
+                        || commandId == "slideshow.nextTreeImage" || commandId == "slideshow.prevTreeImage"))
                     continue;
                 var wheelZoomAnchor = TryPrepareZoomAnchorFromWheelIfNeeded(e, commandId);
                 if (wheelZoomAnchor)
                     _suppressNextZoomAnchorCenterCapture = true;
-                if (TryExecuteInputCommand(commandId))
+                var mask = InputBindingActivation.ResolveMask(commandId, chord);
+                if (TryExecuteInputCommand(commandId, mask))
                     return true;
                 if (wheelZoomAnchor)
                 {
@@ -739,9 +752,11 @@ public sealed partial class MainWindow : Window, IPreferencesSession
                 continue;
             if (!InputPointerChordMatch.IsMouseChordMatch(chord, shift, ctrl, alt, win, pressedSorted))
                 continue;
+            if (!ChordActivationAppliesToCurrentUi(commandId, chord))
+                continue;
             if (!IsPointerChordAllowedForCommand(commandId, origin))
                 continue;
-            if (TryExecuteInputCommand(commandId))
+            if (TryExecuteInputCommand(commandId, InputBindingActivation.ResolveMask(commandId, chord)))
             {
                 e.Handled = true;
                 return;
@@ -757,9 +772,11 @@ public sealed partial class MainWindow : Window, IPreferencesSession
                 continue;
             if (!InputPointerChordMatch.IsMouseButtonMatch(chord, buttonName, 1, shift, ctrl, alt, win))
                 continue;
+            if (!ChordActivationAppliesToCurrentUi(commandId, chord))
+                continue;
             if (!IsPointerChordAllowedForCommand(commandId, origin))
                 continue;
-            if (TryExecuteInputCommand(commandId))
+            if (TryExecuteInputCommand(commandId, InputBindingActivation.ResolveMask(commandId, chord)))
             {
                 e.Handled = true;
                 return;
@@ -792,7 +809,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         if (mk == null)
             return false;
         var state = WinUiKeyboardInterop.GetKeyboardChordState(mk);
-        var cmd = KeyboardDispatchTable?.TryMatchFirst(state);
+        var cmd = KeyboardDispatchTable?.TryMatchFirst(state, _slideshowUiActive);
         if (string.IsNullOrEmpty(cmd))
             return false;
         if (!TryExecuteInputCommand(cmd))
@@ -815,7 +832,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         if (mk == null)
             return false;
         var state = WinUiKeyboardInterop.GetKeyboardChordState(mk);
-        var cmd = BrowserTreeKeyboardDispatchTable.TryMatchFirst(state);
+        var cmd = BrowserTreeKeyboardDispatchTable.TryMatchFirst(state, _slideshowUiActive);
         if (string.IsNullOrEmpty(cmd))
             return false;
         if (!TryExecuteInputCommand(cmd))
@@ -824,7 +841,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         return true;
     }
 
-    internal bool TryExecuteInputCommand(string? commandId)
+    internal bool TryExecuteInputCommand(string? commandId, InputBindingActivationMask? matchedActivationMask = null)
     {
         if (string.IsNullOrEmpty(commandId))
             return false;
@@ -840,11 +857,15 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         if (IsBrowserFindOverlayOpen && commandId is not ("ui.escape" or "browse.findInTree"))
             return false;
 
+        var effectiveMask = matchedActivationMask ?? InputBindingActivation.InferMaskForCommand(commandId);
+        if (!InputBindingActivation.MaskAppliesToUi(effectiveMask, _slideshowUiActive))
+            return false;
+
         if (IsBrowserPaneMutationInProgress
             && commandId is "nav.nextImage" or "nav.prevImage" or "nav.firstImage" or "nav.lastImage"
                 or "nav.nextDirectory" or "nav.prevDirectory" or "nav.cycleNavigationMode" or "slideshow.start"
                 or "slideshow.switchToBrowseAtCurrentLocation" or "slideshow.siblingNextImage" or "slideshow.siblingPrevImage"
-                or "slideshow.deleteCurrent"
+                or "slideshow.deleteCurrent" or "slideshow.nextTreeImage" or "slideshow.prevTreeImage"
                 or BrowserTreeKeyboardCommandIds.TreeNext or BrowserTreeKeyboardCommandIds.TreePrevious
                 or BrowserTreeKeyboardCommandIds.TreeExpand or BrowserTreeKeyboardCommandIds.TreeCollapse
                 or BrowserTreeKeyboardCommandIds.TreeDelete)
@@ -853,46 +874,24 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         switch (commandId)
         {
             case "nav.nextImage":
-                if (_slideshowUiActive && _slideshow != null)
-                {
-                    if (_slideshow.TryMoveNextTree(out var np) && np != null)
-                        EnqueuePreviewNavigation(np, true);
-                }
-                else
-                    BrowseNavigateByStep(BrowseNavStepKind.Next);
+                BrowseNavigateByStep(BrowseNavStepKind.Next);
                 return true;
             case "nav.prevImage":
-                if (_slideshowUiActive && _slideshow != null)
-                {
-                    if (_slideshow.TryMovePreviousTree(out var pp) && pp != null)
-                        EnqueuePreviewNavigation(pp, true);
-                }
-                else
-                    BrowseNavigateByStep(BrowseNavStepKind.Previous);
+                BrowseNavigateByStep(BrowseNavStepKind.Previous);
                 return true;
             case "nav.firstImage":
-                if (_slideshowUiActive && _slideshow != null)
-                    return false;
                 BrowseNavigateByStep(BrowseNavStepKind.First);
                 return true;
             case "nav.lastImage":
-                if (_slideshowUiActive && _slideshow != null)
-                    return false;
                 BrowseNavigateByStep(BrowseNavStepKind.Last);
                 return true;
             case "nav.nextDirectory":
-                if (_slideshowUiActive && _slideshow != null)
-                    return false;
                 BrowseNavigateSiblingFolderFromInput(1);
                 return true;
             case "nav.prevDirectory":
-                if (_slideshowUiActive && _slideshow != null)
-                    return false;
                 BrowseNavigateSiblingFolderFromInput(-1);
                 return true;
             case "nav.cycleNavigationMode":
-                if (_slideshowUiActive && _slideshow != null)
-                    return false;
                 CycleBrowseNavigationModeFromInput();
                 return true;
             case "ui.fullscreen":
@@ -939,6 +938,18 @@ public sealed partial class MainWindow : Window, IPreferencesSession
                 return true;
             case "slideshow.start":
                 SlideshowStart_Click(this, new RoutedEventArgs());
+                return true;
+            case "slideshow.nextTreeImage":
+                if (_slideshow == null)
+                    return false;
+                if (_slideshow.TryMoveNextTree(out var np) && np != null)
+                    EnqueuePreviewNavigation(np, true);
+                return true;
+            case "slideshow.prevTreeImage":
+                if (_slideshow == null)
+                    return false;
+                if (_slideshow.TryMovePreviousTree(out var pp) && pp != null)
+                    EnqueuePreviewNavigation(pp, true);
                 return true;
             case "slideshow.switchToBrowseAtCurrentLocation":
                 if (_isFullscreen && _slideshowUiActive && _slideshow != null)

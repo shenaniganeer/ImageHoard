@@ -41,4 +41,31 @@ public sealed class InputKeyboardDispatchTableTests
         // InDispatchOrder lists TreeCollapse, TreeExpand, TreeNext, TreePrevious — first with a binding wins.
         Assert.Equal("browse.treeNext", tree.TryMatchFirst(state));
     }
+
+    [Fact]
+    public void TryMatchFirst_slideshowUi_prefers_slideshow_command_when_keys_overlap_browse_nav()
+    {
+        var doc = new InputProfileDocument { Bindings = new Dictionary<string, List<JsonElement>>() };
+        var arrowRight = JsonSerializer.Deserialize<JsonElement>("""{"kind":"keyboard","keys":["ArrowRight"]}""")!;
+        doc.Bindings["nav.nextImage"] = new List<JsonElement> { JsonSerializer.Deserialize<JsonElement>(arrowRight.GetRawText())! };
+        doc.Bindings["slideshow.nextTreeImage"] = new List<JsonElement> { JsonSerializer.Deserialize<JsonElement>(arrowRight.GetRawText())! };
+
+        var main = InputKeyboardDispatchTable.FromProfileExcludingCommandIds(doc, BrowserTreeKeyboardCommandIds.AllTreeCommandIdSet);
+        var state = new KeyboardChordState(false, false, false, false, "ArrowRight");
+        Assert.Equal("nav.nextImage", main.TryMatchFirst(state, slideshowUiActive: false));
+        Assert.Equal("slideshow.nextTreeImage", main.TryMatchFirst(state, slideshowUiActive: true));
+    }
+
+    [Fact]
+    public void TryMatchFirst_browseUi_never_matches_slideshow_only_row()
+    {
+        var doc = new InputProfileDocument { Bindings = new Dictionary<string, List<JsonElement>>() };
+        var tab = JsonSerializer.Deserialize<JsonElement>("""{"kind":"keyboard","keys":["Tab"]}""")!;
+        doc.Bindings["slideshow.switchToBrowseAtCurrentLocation"] = new List<JsonElement> { tab };
+
+        var main = InputKeyboardDispatchTable.FromProfileExcludingCommandIds(doc, BrowserTreeKeyboardCommandIds.AllTreeCommandIdSet);
+        var state = new KeyboardChordState(false, false, false, false, "Tab");
+        Assert.Null(main.TryMatchFirst(state, slideshowUiActive: false));
+        Assert.Equal("slideshow.switchToBrowseAtCurrentLocation", main.TryMatchFirst(state, slideshowUiActive: true));
+    }
 }

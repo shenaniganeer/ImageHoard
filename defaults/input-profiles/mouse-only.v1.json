@@ -54,6 +54,8 @@
     "slideshow.siblingPrevImage": [
       { "kind": "mouseWheel", "wheel": "Up", "heldButtons": ["Right"] }
     ],
+    "slideshow.nextTreeImage": [{ "kind": "mouseWheel", "wheel": "Down" }],
+    "slideshow.prevTreeImage": [{ "kind": "mouseWheel", "wheel": "Up" }],
     "view.panPreview": [
       {
         "kind": "mouseButton",

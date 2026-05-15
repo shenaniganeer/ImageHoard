@@ -45,7 +45,8 @@ public static class InputBindingConflictChecker
         if (profile.Bindings == null)
             return issues;
 
-        var chordToCommands = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var chordInstances = new Dictionary<string, List<(string CommandId, InputBindingActivationMask Mask)>>(
+            StringComparer.Ordinal);
 
         foreach (var (commandId, chords) in profile.Bindings)
         {
@@ -58,25 +59,56 @@ public static class InputBindingConflictChecker
                 if (fingerprint.Length == 0)
                     continue;
 
-                if (!chordToCommands.TryGetValue(fingerprint, out var list))
+                var mask = InputBindingActivation.ResolveMask(commandId, chord);
+                if (!chordInstances.TryGetValue(fingerprint, out var list))
                 {
-                    list = new List<string>();
-                    chordToCommands[fingerprint] = list;
+                    list = new List<(string, InputBindingActivationMask)>();
+                    chordInstances[fingerprint] = list;
                 }
 
-                list.Add(commandId);
+                list.Add((commandId, mask));
             }
         }
 
-        foreach (var (fp, cmds) in chordToCommands)
+        foreach (var (fp, instances) in chordInstances)
         {
-            var distinct = cmds.Distinct(StringComparer.Ordinal).ToList();
-            if (distinct.Count <= 1)
+            var cmds = instances.Select(i => i.CommandId).Distinct(StringComparer.Ordinal).ToList();
+            if (cmds.Count < 2)
                 continue;
-            if (fp.StartsWith("keyboard:", StringComparison.Ordinal)
-                && IsExemptNavVersusBrowserTreeKeyboardOverlap(distinct))
+
+            var conflict = new HashSet<string>(StringComparer.Ordinal);
+            for (var i = 0; i < cmds.Count; i++)
+            {
+                for (var j = i + 1; j < cmds.Count; j++)
+                {
+                    var a = cmds[i];
+                    var b = cmds[j];
+                    var masksA = instances.Where(t => t.CommandId == a).Select(t => t.Mask).Distinct().ToList();
+                    var masksB = instances.Where(t => t.CommandId == b).Select(t => t.Mask).Distinct().ToList();
+                    foreach (var mA in masksA)
+                    {
+                        foreach (var mB in masksB)
+                        {
+                            if ((mA & mB) == 0)
+                                continue;
+                            if (fp.StartsWith("keyboard:", StringComparison.Ordinal)
+                                && mA == InputBindingActivationMask.Browse
+                                && mB == InputBindingActivationMask.Browse
+                                && IsExemptNavVersusBrowserTreeKeyboardPair(a, b))
+                                continue;
+
+                            conflict.Add(a);
+                            conflict.Add(b);
+                        }
+                    }
+                }
+            }
+
+            if (conflict.Count < 2)
                 continue;
-            issues.Add($"Chord '{fp}' maps to multiple commands: {string.Join(", ", distinct)}");
+
+            var ordered = conflict.OrderBy(s => s, StringComparer.Ordinal).ToList();
+            issues.Add($"Chord '{fp}' maps to multiple commands: {string.Join(", ", ordered)}");
         }
 
         return issues;
@@ -88,25 +120,14 @@ public static class InputBindingConflictChecker
         "nav.prevImage",
     };
 
-    /// <summary>Arrow keys intentionally overlap between global image navigation and tree-scoped commands; resolved at dispatch time by focus.</summary>
-    private static bool IsExemptNavVersusBrowserTreeKeyboardOverlap(IReadOnlyList<string> distinctCommandIds)
+    /// <summary>Arrow keys overlap between image navigation and tree-scoped commands; disambiguated by focus at dispatch.</summary>
+    private static bool IsExemptNavVersusBrowserTreeKeyboardPair(string commandIdA, string commandIdB)
     {
-        if (distinctCommandIds.Count != 2)
-            return false;
-
-        var anyNav = false;
-        var anyTree = false;
-        foreach (var id in distinctCommandIds)
-        {
-            if (NavVersusTreeExemptNavIds.Contains(id))
-                anyNav = true;
-            else if (BrowserTreeKeyboardCommandIds.IsTreeCommand(id))
-                anyTree = true;
-            else
-                return false;
-        }
-
-        return anyNav && anyTree;
+        var aNav = NavVersusTreeExemptNavIds.Contains(commandIdA);
+        var bNav = NavVersusTreeExemptNavIds.Contains(commandIdB);
+        var aTree = BrowserTreeKeyboardCommandIds.IsTreeCommand(commandIdA);
+        var bTree = BrowserTreeKeyboardCommandIds.IsTreeCommand(commandIdB);
+        return (aNav && bTree) || (bNav && aTree);
     }
 
     private static string Fingerprint(string kind, JsonElement chord)

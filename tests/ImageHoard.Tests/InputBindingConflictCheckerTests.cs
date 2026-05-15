@@ -134,4 +134,38 @@ public sealed class InputBindingConflictCheckerTests
         var issues = InputBindingConflictChecker.FindChordKeyConflicts(doc);
         Assert.NotEmpty(issues);
     }
+
+    [Fact]
+    public void FindChordKeyConflicts_same_mouse_button_browse_vs_slideshow_disjoint_masks_no_conflict()
+    {
+        var doc = new InputProfileDocument
+        {
+            Bindings = new Dictionary<string, List<System.Text.Json.JsonElement>>(),
+        };
+        var x2 = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
+            """{"kind":"mouseButton","button":"X2","clickCount":1}""");
+        doc.Bindings!["sort.deleteArchiveWizard"] = new List<System.Text.Json.JsonElement> { x2 };
+        doc.Bindings["slideshow.switchToBrowseAtCurrentLocation"] =
+            new List<System.Text.Json.JsonElement> { System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(x2.GetRawText())! };
+
+        var issues = InputBindingConflictChecker.FindChordKeyConflicts(doc);
+        Assert.Empty(issues);
+    }
+
+    [Fact]
+    public void FindChordKeyConflicts_same_mouse_button_both_browse_scoped_still_conflicts()
+    {
+        var doc = new InputProfileDocument
+        {
+            Bindings = new Dictionary<string, List<System.Text.Json.JsonElement>>(),
+        };
+        var x2 = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
+            """{"kind":"mouseButton","button":"X2","clickCount":1}""");
+        doc.Bindings!["sort.deleteArchiveWizard"] = new List<System.Text.Json.JsonElement> { x2 };
+        doc.Bindings["sort.clearAllFlags"] =
+            new List<System.Text.Json.JsonElement> { System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(x2.GetRawText())! };
+
+        var issues = InputBindingConflictChecker.FindChordKeyConflicts(doc);
+        Assert.NotEmpty(issues);
+    }
 }

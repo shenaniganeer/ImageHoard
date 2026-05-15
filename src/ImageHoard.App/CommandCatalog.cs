@@ -34,6 +34,8 @@ internal static class CommandCatalog
         new("slideshow.siblingNextImage", "Slideshow: next image in current file's folder (siblings)", true, HotkeySection.Slideshow),
         new("slideshow.siblingPrevImage", "Slideshow: previous image in current file's folder (siblings)", true, HotkeySection.Slideshow),
         new("slideshow.switchToBrowseAtCurrentLocation", "Slideshow: switch to browse mode at current location", true, HotkeySection.Slideshow),
+        new("slideshow.nextTreeImage", "Slideshow: next image in tree session", true, HotkeySection.Slideshow),
+        new("slideshow.prevTreeImage", "Slideshow: previous image in tree session", true, HotkeySection.Slideshow),
         new("slideshow.deleteCurrent", "Slideshow: delete current slideshow image", true, HotkeySection.Slideshow),
         new("browse.toggleSubfolderInclusion", "Browse: toggle include subfolders in list", true, HotkeySection.Browse),
         new("browse.openGoToPath", "Browse: open Go to path dialog", true, HotkeySection.Browse),

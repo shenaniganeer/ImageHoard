@@ -831,6 +831,8 @@ public sealed partial class MainWindow
     {
         if (IsHotkeyChordRecordingActive)
             return;
+        if (_slideshowUiActive)
+            return;
         if (!TryGetSortFlagTargetPath(out _))
             return;
 

@@ -5,9 +5,9 @@ namespace ImageHoard.Core.Input;
 /// <summary>Builds ordered keyboard dispatch rows from a merged profile.</summary>
 public sealed class InputKeyboardDispatchTable
 {
-    private readonly List<(string CommandId, string[] Keys)> _rows;
+    private readonly List<(string CommandId, string[] Keys, InputBindingActivationMask Mask)> _rows;
 
-    private InputKeyboardDispatchTable(List<(string CommandId, string[] Keys)> rows) =>
+    private InputKeyboardDispatchTable(List<(string CommandId, string[] Keys, InputBindingActivationMask Mask)> rows) =>
         _rows = rows;
 
     public static InputKeyboardDispatchTable FromProfile(InputProfileDocument doc) =>
@@ -18,7 +18,7 @@ public sealed class InputKeyboardDispatchTable
         InputProfileDocument doc,
         IReadOnlySet<string>? excludedCommandIds)
     {
-        var rows = new List<(string, string[])>();
+        var rows = new List<(string, string[], InputBindingActivationMask)>();
         if (doc.Bindings != null)
         {
             foreach (var kv in doc.Bindings)
@@ -29,7 +29,8 @@ public sealed class InputKeyboardDispatchTable
                 {
                     if (!TryGetKeyboardChordKeys(chord, out var keys))
                         continue;
-                    rows.Add((kv.Key, keys));
+                    var mask = InputBindingActivation.ResolveMask(kv.Key, chord);
+                    rows.Add((kv.Key, keys, mask));
                 }
             }
         }
@@ -42,7 +43,7 @@ public sealed class InputKeyboardDispatchTable
         InputProfileDocument doc,
         ReadOnlySpan<string> commandIdsInMatchOrder)
     {
-        var rows = new List<(string, string[])>();
+        var rows = new List<(string, string[], InputBindingActivationMask)>();
         if (doc.Bindings == null)
             return new InputKeyboardDispatchTable(rows);
 
@@ -54,7 +55,8 @@ public sealed class InputKeyboardDispatchTable
             {
                 if (!TryGetKeyboardChordKeys(chord, out var keys))
                     continue;
-                rows.Add((commandId, keys));
+                var mask = InputBindingActivation.ResolveMask(commandId, chord);
+                rows.Add((commandId, keys, mask));
             }
         }
 
@@ -82,11 +84,17 @@ public sealed class InputKeyboardDispatchTable
         return true;
     }
 
+    /// <summary>First matching command wins (JSON declaration order). Assumes browse UI (slideshow inactive).</summary>
+    public string? TryMatchFirst(in KeyboardChordState state) =>
+        TryMatchFirst(state, slideshowUiActive: false);
+
     /// <summary>First matching command wins (JSON declaration order).</summary>
-    public string? TryMatchFirst(in KeyboardChordState state)
+    public string? TryMatchFirst(in KeyboardChordState state, bool slideshowUiActive)
     {
-        foreach (var (commandId, keys) in _rows)
+        foreach (var (commandId, keys, mask) in _rows)
         {
+            if (!InputBindingActivation.MaskAppliesToUi(mask, slideshowUiActive))
+                continue;
             if (KeyboardChordMatcher.Matches(keys, state))
                 return commandId;
         }

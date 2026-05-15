@@ -31,6 +31,16 @@
     "slideshow.switchToBrowseAtCurrentLocation": [{ "kind": "keyboard", "keys": ["Tab"] }],
     "slideshow.siblingNextImage": [{ "kind": "keyboard", "keys": ["Control", "Alt", "ArrowRight"] }],
     "slideshow.siblingPrevImage": [{ "kind": "keyboard", "keys": ["Control", "Alt", "ArrowLeft"] }],
+    "slideshow.nextTreeImage": [
+      { "kind": "keyboard", "keys": ["ArrowRight"] },
+      { "kind": "keyboard", "keys": ["ArrowDown"] },
+      { "kind": "keyboard", "keys": ["Space"] }
+    ],
+    "slideshow.prevTreeImage": [
+      { "kind": "keyboard", "keys": ["ArrowLeft"] },
+      { "kind": "keyboard", "keys": ["ArrowUp"] },
+      { "kind": "keyboard", "keys": ["Backspace"] }
+    ],
     "browse.findInTree": [{ "kind": "keyboard", "keys": ["Control", "KeyF"] }],
     "browse.treeNext": [{ "kind": "keyboard", "keys": ["ArrowDown"] }],
     "browse.treePrevious": [{ "kind": "keyboard", "keys": ["ArrowUp"] }],

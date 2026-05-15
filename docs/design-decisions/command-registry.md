@@ -23,7 +23,7 @@ This document extends the **minimum** command set in [input-default-profiles.md]
 | `sort.clearAllFlags` | Clear all sort flags (in-memory session); **Sort → Clear all flags** menu (P0 chrome) | FR-SR-02 | Yes |
 | `slideshow.start` | Resume or start tree slideshow (**ContentDialog** when a suspended session exists; otherwise start at current browse folder) | FR-SL-02 / FR-SL-07 | Yes (KeyboardOnly default `Control+Shift+S`) |
 | `slideshow.switchToBrowseAtCurrentLocation` | Leave fullscreen slideshow UI, keep tree session for resume, open parent folder of current slide in browse | FR-SL-06 / FR-SL-07 | Yes (KeyboardOnly default `Tab`; MouseOnly wheel tilt left / `X3` when exposed) |
-| `slideshow.siblingNextImage` | In slideshow: next image among siblings in the current file’s directory (does not advance tree reservoir) | FR-SL-06 | Yes (MouseOnly default **Right**+wheel **Down**; KeyboardOnly `Control+Alt+ArrowRight`) |
+| `slideshow.siblingNextImage` | In slideshow: next image among siblings in the current file’s directory (does not advance tree slideshow history) | FR-SL-06 | Yes (MouseOnly default **Right**+wheel **Down**; KeyboardOnly `Control+Alt+ArrowRight`) |
 | `slideshow.siblingPrevImage` | In slideshow: previous sibling image in that directory | FR-SL-06 | Yes (MouseOnly **Right**+wheel **Up**; KeyboardOnly `Control+Alt+ArrowLeft`) |
 | `slideshow.deleteCurrent` | Delete current slideshow image (**ContentDialog**); requires **Settings → Library → Allow delete in slideshow** | FR-SL-05 | **Off** by default (no shipped chord); bind in Preferences when enabled |
 | `browse.toggleSubfolderInclusion` | Toggle “include subfolders” for **list** | FR-BR-02 | View menu **P0**; bind P1 |

@@ -78,11 +78,16 @@ public sealed class SlideshowCoordinator
         _siblingNav != null ? _siblingNav.CurrentPath : _tree.CurrentPath;
 
     /// <summary>
-    /// List position for the path overlay: tree uses session history index and discovered count;
-    /// sibling overlay uses ordered sibling index in the image's directory.
+    /// List position for the path overlay: tree uses display-history index and count plus discovered total;
+    /// sibling overlay uses ordered sibling index in the image's directory (<paramref name="treeDiscoveredImageCount"/> is 0).
     /// </summary>
-    public bool TryGetSlideshowOverlayListPosition(out int index1Based, out int total, out bool enumerationComplete)
+    public bool TryGetSlideshowOverlayListPosition(
+        out int index1Based,
+        out int total,
+        out bool enumerationComplete,
+        out int treeDiscoveredImageCount)
     {
+        treeDiscoveredImageCount = 0;
         if (_siblingNav != null)
         {
             enumerationComplete = true;
@@ -90,6 +95,6 @@ public sealed class SlideshowCoordinator
         }
 
         enumerationComplete = _tree.IsEnumerationComplete;
-        return _tree.TryGetTreeOverlayPosition(out index1Based, out total);
+        return _tree.TryGetTreeOverlayPosition(out index1Based, out total, out treeDiscoveredImageCount);
     }
 }

@@ -62,12 +62,13 @@ public sealed class SlideshowCoordinatorTests
             var sortedIndex =
                 string.Equals(Path.GetFileName(first!), "a.jpg", StringComparison.OrdinalIgnoreCase) ? 1 : 2;
 
-            Assert.True(coord.TryGetSlideshowOverlayListPosition(out var treeIdx, out var treeTotal, out _));
+            Assert.True(coord.TryGetSlideshowOverlayListPosition(out var treeIdx, out var treeTotal, out _, out var treeDiscovered));
             Assert.Equal(1, treeIdx);
-            Assert.True(treeTotal >= 2);
+            Assert.Equal(1, treeTotal);
+            Assert.True(treeDiscovered >= 2);
 
             Assert.True(await coord.TryMoveNextSiblingAsync(fs, first));
-            Assert.True(coord.TryGetSlideshowOverlayListPosition(out var folderIdx, out var folderTotal, out var folderDone));
+            Assert.True(coord.TryGetSlideshowOverlayListPosition(out var folderIdx, out var folderTotal, out var folderDone, out _));
             Assert.Equal(sortedIndex == 1 ? 2 : 1, folderIdx);
             Assert.Equal(2, folderTotal);
             Assert.True(folderDone);

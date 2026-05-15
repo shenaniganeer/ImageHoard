@@ -21,7 +21,7 @@
 ```
 src/
   ImageHoard.App/          # WinUI host, views, platform services
-  ImageHoard.Core/          # Domain: paths, slideshow reservoir, sort state (NFR-AN-01: no Win32 here)
+  ImageHoard.Core/          # Domain: paths, slideshow path store, sort state (NFR-AN-01: no Win32 here)
 tests/
   ImageHoard.Tests/      # xUnit; filesystem temp harnesses per PRD §13
 docs/                      # existing ADRs

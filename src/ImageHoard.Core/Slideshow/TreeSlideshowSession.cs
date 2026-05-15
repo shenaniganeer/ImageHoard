@@ -1,24 +1,19 @@
-using System.Collections.Concurrent;
-using System.Diagnostics;
 using ImageHoard.Core.Services;
 
 namespace ImageHoard.Core.Slideshow;
 
 /// <summary>
-/// Algorithm A — streaming random reservoir (FR-SL-01–03). Next uses random pick from the working reservoir;
-/// <see cref="RefillReservoir"/> drains inbound and, at cap, evicts LRU entries so discoveries are not stranded in the queue.
-/// Previous walks session history. Enumeration uses shuffled DFS so early discovery is not alphabetically clustered.
+/// Tree slideshow: discovered paths are retained (RAM + optional disk spill) so each new Next is uniform over all paths
+/// discovered so far; Previous / redo walk linear display history. Enumeration uses shuffled DFS (FR-SL-01–03).
 /// </summary>
 public sealed class TreeSlideshowSession
 {
     private readonly IFileSystem _fileSystem;
     private readonly Random _random;
-    private readonly List<string> _reservoir = new();
-    private readonly List<int> _reservoirEnqueueSeq = new();
-    private int _enqueueSeq;
+    private readonly SlideshowDiscoveredPathStore _pathStore;
+    private readonly List<string> _history = new();
+    private int _cursor = -1;
     private int _discoveredTotal;
-    private readonly ConcurrentQueue<string> _inbound = new();
-    private readonly Stack<string> _back = new();
     private readonly object _gate = new();
     private CancellationTokenSource? _enumCts;
     private Task? _enumTask;
@@ -26,10 +21,14 @@ public sealed class TreeSlideshowSession
     private string? _current;
     private string? _rootDirectory;
 
-    public TreeSlideshowSession(IFileSystem fileSystem, Random? random = null)
+    public TreeSlideshowSession(IFileSystem fileSystem, Random? random = null, int? discoveredPathsInMemoryMaxOverride = null)
     {
         _fileSystem = fileSystem;
         _random = random ?? new Random();
+        var ramCap = discoveredPathsInMemoryMaxOverride ?? SlideshowAlgorithmDefaults.DiscoveredPathsInMemoryMax;
+        if (ramCap < 1)
+            ramCap = 1;
+        _pathStore = new SlideshowDiscoveredPathStore(ramCap);
     }
 
     public string? CurrentPath
@@ -47,19 +46,24 @@ public sealed class TreeSlideshowSession
     /// <summary>Whether background enumeration has finished (success or cancel).</summary>
     public bool IsEnumerationComplete => Volatile.Read(ref _enumerationComplete);
 
-    /// <summary>1-based position in forward/back history when <see cref="CurrentPath"/> is non-null; otherwise 0.</summary>
-    public bool TryGetTreeOverlayPosition(out int index1Based, out int totalDiscovered)
+    /// <summary>
+    /// Overlay: 1-based position in display history, count of slides in history, and total paths discovered this session.
+    /// Returns false when there is no current slide; <paramref name="discoveredImageCount"/> is still set.
+    /// </summary>
+    public bool TryGetTreeOverlayPosition(out int historyIndex1Based, out int historyCount, out int discoveredImageCount)
     {
         lock (_gate)
         {
-            totalDiscovered = Volatile.Read(ref _discoveredTotal);
-            if (_current == null)
+            discoveredImageCount = _pathStore.Count;
+            if (_current == null || _cursor < 0 || _history.Count == 0)
             {
-                index1Based = 0;
+                historyIndex1Based = 0;
+                historyCount = 0;
                 return false;
             }
 
-            index1Based = _back.Count + 1;
+            historyIndex1Based = _cursor + 1;
+            historyCount = _history.Count;
             return true;
         }
     }
@@ -70,16 +74,12 @@ public sealed class TreeSlideshowSession
         StopEnumeration();
         lock (_gate)
         {
-            _reservoir.Clear();
-            _reservoirEnqueueSeq.Clear();
-            _enqueueSeq = 0;
-            _back.Clear();
+            _pathStore.Clear();
+            _history.Clear();
+            _cursor = -1;
             _current = null;
             _enumerationComplete = false;
             Interlocked.Exchange(ref _discoveredTotal, 0);
-            while (_inbound.TryDequeue(out _))
-            {
-            }
         }
 
         _enumCts = new CancellationTokenSource();
@@ -92,8 +92,11 @@ public sealed class TreeSlideshowSession
                     await foreach (var path in RecursiveImageEnumerator.EnumerateAsync(_fileSystem, rootDirectory, _random, ct)
                                        .ConfigureAwait(false))
                     {
-                        Interlocked.Increment(ref _discoveredTotal);
-                        _inbound.Enqueue(path);
+                        lock (_gate)
+                        {
+                            _pathStore.Append(path);
+                            Volatile.Write(ref _discoveredTotal, _pathStore.Count);
+                        }
                     }
                 }
                 catch (OperationCanceledException)
@@ -124,59 +127,15 @@ public sealed class TreeSlideshowSession
         _enumTask = null;
     }
 
-    /// <summary>Drain inbound into reservoir; at cap, evict LRU slots so new paths enter the draw pool (slideshow-algorithm-p0.md).</summary>
-    private void RefillReservoir()
-    {
-        lock (_gate)
-        {
-            while (_inbound.TryDequeue(out var p))
-            {
-                if (_reservoir.Count < SlideshowAlgorithmDefaults.ReservoirMax)
-                {
-                    _reservoir.Add(p);
-                    _reservoirEnqueueSeq.Add(++_enqueueSeq);
-                    continue;
-                }
-
-                var victim = FindLruVictimIndex();
-                _reservoir[victim] = p;
-                _reservoirEnqueueSeq[victim] = ++_enqueueSeq;
-            }
-        }
-    }
-
-    private int FindLruVictimIndex()
-    {
-        Debug.Assert(_reservoir.Count == _reservoirEnqueueSeq.Count);
-        Debug.Assert(_reservoir.Count > 0);
-        var minSeq = _reservoirEnqueueSeq[0];
-        var minI = 0;
-        for (var i = 1; i < _reservoirEnqueueSeq.Count; i++)
-        {
-            var s = _reservoirEnqueueSeq[i];
-            if (s < minSeq)
-            {
-                minSeq = s;
-                minI = i;
-            }
-        }
-
-        return minI;
-    }
-
     /// <summary>Waits until min pool or discovery finished (FR-SL-02).</summary>
     public async Task WaitForInitialPoolAsync(CancellationToken cancellationToken = default)
     {
         const int spinMs = 50;
         while (!cancellationToken.IsCancellationRequested)
         {
-            RefillReservoir();
             var done = Volatile.Read(ref _enumerationComplete);
-            int reservoirCount;
-            lock (_gate)
-                reservoirCount = _reservoir.Count;
-
-            if (reservoirCount >= SlideshowAlgorithmDefaults.MinPoolBeforeStart || done)
+            var count = Volatile.Read(ref _discoveredTotal);
+            if (count >= SlideshowAlgorithmDefaults.MinPoolBeforeStart || done)
                 return;
 
             await Task.Delay(spinMs, cancellationToken).ConfigureAwait(false);
@@ -192,53 +151,90 @@ public sealed class TreeSlideshowSession
         StopEnumeration();
         lock (_gate)
         {
-            _reservoir.Clear();
-            _reservoirEnqueueSeq.Clear();
-            _enqueueSeq = 0;
-            _back.Clear();
+            _pathStore.Clear();
+            _history.Clear();
+            _cursor = -1;
             _current = null;
-        }
-
-        while (_inbound.TryDequeue(out _))
-        {
+            Interlocked.Exchange(ref _discoveredTotal, 0);
         }
 
         Start(_rootDirectory);
     }
 
-    /// <summary>Random next image; returns false when exhausted.</summary>
+    /// <summary>Next slide: redo forward in history, or new uniform random from all discovered paths.</summary>
     public bool TryMoveNext(out string? path)
     {
         path = null;
-        RefillReservoir();
-        string? pick;
         lock (_gate)
         {
-            if (_current != null)
-                _back.Push(_current);
+            var done = Volatile.Read(ref _enumerationComplete);
+            var n = _pathStore.Count;
 
-            if (_reservoir.Count == 0)
+            if (_cursor >= 0 && _cursor < _history.Count - 1)
             {
-                if (!Volatile.Read(ref _enumerationComplete))
+                _cursor++;
+                _current = _history[_cursor];
+                path = _current;
+                return true;
+            }
+
+            if (n == 0)
+            {
+                if (!done)
                     return false;
 
                 _current = null;
                 return false;
             }
 
-            var idx = _random.Next(_reservoir.Count);
-            pick = _reservoir[idx];
-            var last = _reservoir[^1];
-            _reservoir[idx] = last;
-            _reservoir.RemoveAt(_reservoir.Count - 1);
-            var lastSeq = _reservoirEnqueueSeq[^1];
-            _reservoirEnqueueSeq[idx] = lastSeq;
-            _reservoirEnqueueSeq.RemoveAt(_reservoirEnqueueSeq.Count - 1);
+            var pickIndex = PickRandomIndexExcludingCurrent(n);
+            var pick = _pathStore.GetAt(pickIndex);
+
+            if (_history.Count == 0)
+            {
+                _history.Add(pick);
+                _cursor = 0;
+            }
+            else
+            {
+                _history.Add(pick);
+                _cursor = _history.Count - 1;
+            }
+
             _current = pick;
+            path = pick;
+            return true;
+        }
+    }
+
+    private int PickRandomIndexExcludingCurrent(int n)
+    {
+        if (n == 1)
+            return 0;
+
+        var exclude = _current;
+        if (string.IsNullOrEmpty(exclude))
+            return _random.Next(n);
+
+        const int maxAttempts = 32;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            var idx = _random.Next(n);
+            if (!string.Equals(_pathStore.GetAt(idx), exclude, StringComparison.OrdinalIgnoreCase))
+                return idx;
         }
 
-        path = pick;
-        return true;
+        var j = _random.Next(n);
+        if (!string.Equals(_pathStore.GetAt(j), exclude, StringComparison.OrdinalIgnoreCase))
+            return j;
+
+        for (var k = 0; k < n; k++)
+        {
+            if (!string.Equals(_pathStore.GetAt(k), exclude, StringComparison.OrdinalIgnoreCase))
+                return k;
+        }
+
+        return 0;
     }
 
     public bool TryMovePrevious(out string? path)
@@ -246,11 +242,12 @@ public sealed class TreeSlideshowSession
         path = null;
         lock (_gate)
         {
-            if (_back.Count == 0)
+            if (_cursor <= 0)
                 return false;
-            var prev = _back.Pop();
-            _current = prev;
-            path = prev;
+
+            _cursor--;
+            _current = _history[_cursor];
+            path = _current;
             return true;
         }
     }

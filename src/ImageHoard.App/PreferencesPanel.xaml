@@ -72,7 +72,7 @@
                         Margin="0,4,0,0"
                         TextWrapping="Wrap"
                         Opacity="0.7"
-                        Text="When on, shows current index and total in the file list (e.g. 2/78) on the overlay when the image is in that list." />
+                        Text="When on, shows position on the overlay: in browse mode, index and total in the current file list (e.g. 2/78). In tree slideshow, slide number and history length plus how many paths have been discovered (e.g. 3/12 · discovered 45,210)." />
                     <TextBlock
                         Margin="0,16,0,4"
                         FontWeight="SemiBold"

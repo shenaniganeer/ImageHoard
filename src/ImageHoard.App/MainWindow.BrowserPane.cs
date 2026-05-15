@@ -3883,7 +3883,7 @@ public sealed partial class MainWindow
 
         if (_slideshowUiActive && _slideshow != null)
         {
-            if (!_slideshow.TryGetSlideshowOverlayListPosition(out var index1Based, out var total, out _)
+            if (!_slideshow.TryGetSlideshowOverlayListPosition(out var index1Based, out var total, out _, out var discovered)
                 || index1Based <= 0
                 || total <= 0)
             {
@@ -3891,7 +3891,7 @@ public sealed partial class MainWindow
                 return;
             }
 
-            var slideshowText = $"{index1Based}/{total}";
+            var slideshowText = $"{index1Based}/{total} · discovered {discovered:N0}";
             NormalPathPositionText.Text = slideshowText;
             FullscreenPathPositionText.Text = slideshowText;
             NormalPathPositionText.Visibility = Visibility.Visible;

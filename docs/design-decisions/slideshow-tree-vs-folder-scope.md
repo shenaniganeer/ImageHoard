@@ -9,13 +9,13 @@
 
 ## Tree session (`nav.nextImage` / `nav.prevImage` in slideshow)
 
-- Draw from **Algorithm A** reservoir (see [slideshow-algorithm-p0.md](./slideshow-algorithm-p0.md)) rooted at the **slideshow start folder**.
+- Draw from **Algorithm A** discovered path store (see [slideshow-algorithm-p0.md](./slideshow-algorithm-p0.md)) rooted at the **slideshow start folder**.
 - Invoking tree next/prev **clears** any active sibling overlay so the next draw is unambiguously from the tree again.
 
 ## Sibling overlay (`slideshow.siblingNextImage` / `slideshow.siblingPrevImage`)
 
 - Build / reuse an **ordered sibling list** for `Directory.GetParent(currentImagePath)` (same filter and default name order as sequential browse).
-- **Does not** mutate tree reservoir, PRNG, or enumerator state; tree session keeps running in the background.
+- **Does not** mutate tree path store / history, PRNG, or enumerator state; tree session keeps running in the background.
 - Implemented as an overlay on `SlideshowCoordinator` (see `SiblingImageNavigator`).
 
 ## Switch to browse at current location (`slideshow.switchToBrowseAtCurrentLocation`)

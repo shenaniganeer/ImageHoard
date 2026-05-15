@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -58,6 +59,10 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
     private string? _currentFolderPath;
     private int _populateBrowserGeneration;
+    /// <summary>Holds wizard batch delete stats when refresh is deferred until a later disk operation completes.</summary>
+    private List<WizardPredeletedFileStat>? _deferredWizardBatchSucceededStats;
+    /// <summary>Refocus context paired with <see cref="_deferredWizardBatchSucceededStats"/>.</summary>
+    private BrowserTreeRefocusAfterWizardContext? _deferredWizardBatchRefocusContext;
     private bool _globalPointerHandlersRegistered;
     private bool _previewPanHandlersRegistered;
     /// <summary>Skips preview clear in <see cref="MainWindow.FolderTree_OnCollapsed"/> during programmatic collapse (e.g. sibling-folder navigation).</summary>

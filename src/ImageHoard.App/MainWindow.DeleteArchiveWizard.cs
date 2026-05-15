@@ -487,7 +487,8 @@ public sealed partial class MainWindow
             if (!await WizardExecuteImageRecycleOrPermanentBatchAsync(
                     toDeleteBeforeMove,
                     recordUndoForRecycledPaths: true,
-                    batchOpName).ConfigureAwait(true))
+                    batchOpName,
+                    deferBrowserPaneRefresh: true).ConfigureAwait(true))
                 return false;
         }
 
@@ -497,6 +498,7 @@ public sealed partial class MainWindow
         try
         {
             await AppServices.FileSystem.MergeMoveDirectoryAsync(work, dest).ConfigureAwait(true);
+            ClearDeferredWizardBatchBrowserRefreshCapture();
             if (_session.LogDestructiveOperations)
             {
                 var rec = new OperationLogBatchRecord
@@ -518,13 +520,10 @@ public sealed partial class MainWindow
             {
                 if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent))
                 {
-                    await NavigateToFolderAsync(parent).ConfigureAwait(true);
-                    ClearImageSelectionAndPreviewCore();
-                    await RefreshBrowserPaneAfterWizardImageDeletesAsync(
-                            Array.Empty<WizardPredeletedFileStat>(),
+                    await ReconcileBrowserPaneAfterWizardNavigateToParentAsync(
+                            parent,
                             new BrowserTreeRefocusAfterWizardContext(preferredNext))
                         .ConfigureAwait(true);
-                    PersistLayout();
                 }
                 else
                 {
@@ -551,6 +550,16 @@ public sealed partial class MainWindow
         }
         catch (Exception ex)
         {
+            if (_deferredWizardBatchRefocusContext != null)
+            {
+                IReadOnlyList<WizardPredeletedFileStat> stats = _deferredWizardBatchSucceededStats != null
+                    ? _deferredWizardBatchSucceededStats
+                    : Array.Empty<WizardPredeletedFileStat>();
+                await RefreshBrowserPaneAfterWizardImageDeletesAsync(stats, _deferredWizardBatchRefocusContext)
+                    .ConfigureAwait(true);
+                ClearDeferredWizardBatchBrowserRefreshCapture();
+            }
+
             var detail = "Move failed: " + ex.Message;
             SetTransientStatus(detail);
             ActiveDeleteArchiveWizardPanel?.ShowWizardOperationInfo("Move to archive", detail, InfoBarSeverity.Error);
@@ -654,13 +663,10 @@ public sealed partial class MainWindow
             {
                 if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent))
                 {
-                    await NavigateToFolderAsync(parent).ConfigureAwait(true);
-                    ClearImageSelectionAndPreviewCore();
-                    await RefreshBrowserPaneAfterWizardImageDeletesAsync(
-                            Array.Empty<WizardPredeletedFileStat>(),
+                    await ReconcileBrowserPaneAfterWizardNavigateToParentAsync(
+                            parent,
                             new BrowserTreeRefocusAfterWizardContext(preferredNext))
                         .ConfigureAwait(true);
-                    PersistLayout();
                 }
                 else
                 {
@@ -719,7 +725,8 @@ public sealed partial class MainWindow
         IReadOnlyList<string> toDelete,
         bool recordUndoForRecycledPaths,
         string operationNameForLog,
-        string? workingFolderOverride = null)
+        string? workingFolderOverride = null,
+        bool deferBrowserPaneRefresh = false)
     {
         if (toDelete.Count == 0)
         {
@@ -909,10 +916,19 @@ public sealed partial class MainWindow
                 && IsSameOrDescendantDirectory(_currentFolderPath, work))
                 imageDeletionWorkingFolder = work;
 
-            await RefreshBrowserPaneAfterWizardImageDeletesAsync(
-                    succeededStats,
-                    new BrowserTreeRefocusAfterWizardContext(null, imageDeletionWorkingFolder))
-                .ConfigureAwait(true);
+            if (deferBrowserPaneRefresh)
+            {
+                _deferredWizardBatchSucceededStats = new List<WizardPredeletedFileStat>(succeededStats);
+                _deferredWizardBatchRefocusContext =
+                    new BrowserTreeRefocusAfterWizardContext(null, imageDeletionWorkingFolder);
+            }
+            else
+            {
+                await RefreshBrowserPaneAfterWizardImageDeletesAsync(
+                        succeededStats,
+                        new BrowserTreeRefocusAfterWizardContext(null, imageDeletionWorkingFolder))
+                    .ConfigureAwait(true);
+            }
         }
 
         ActiveDeleteArchiveWizardPanel?.RefreshUndoAndNoticeUi();

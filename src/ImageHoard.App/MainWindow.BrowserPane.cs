@@ -644,7 +644,8 @@ public sealed partial class MainWindow
         int populateGen,
         int browserProbeGen,
         int flatEntryCount,
-        bool rootBrowsePopulate)
+        bool rootBrowsePopulate,
+        bool suppressViewportAfterRootPopulate = false)
     {
         var skipExpandProbeForMetrics = WillQueueImmediateFolderMetricsOnPopulate();
         List<(string Path, TreeViewNode Node)>? expandProbeTargets = skipExpandProbeForMetrics
@@ -704,7 +705,7 @@ public sealed partial class MainWindow
         if (rootBrowsePopulate)
             FinalizeBrowserRootPopulateStatusAndPersist(populateGen, flatEntryCount, sortedDirs.Count, rows);
 
-        if (rootBrowsePopulate)
+        if (rootBrowsePopulate && !suppressViewportAfterRootPopulate)
             ScheduleBrowserTreeViewportAfterMutation();
     }
 
@@ -748,7 +749,8 @@ public sealed partial class MainWindow
         int gen,
         int flatEntryCount,
         int dirCount,
-        IReadOnlyList<ImageRow> rows)
+        IReadOnlyList<ImageRow> rows,
+        bool scheduleViewportAfterPopulate = true)
     {
         if (gen != Volatile.Read(ref _populateBrowserGeneration))
             return;
@@ -776,7 +778,8 @@ public sealed partial class MainWindow
         UpdateFullscreenMenuEnabled();
         SchedulePersistLayoutDebounced();
         SyncPinnedBrowserColumnHeaders();
-        ScheduleBrowserTreeViewportAfterMutation();
+        if (scheduleViewportAfterPopulate)
+            ScheduleBrowserTreeViewportAfterMutation();
     }
 
     private static void CollectBrowserFolderChildListsPreorder(
@@ -1740,6 +1743,42 @@ public sealed partial class MainWindow
         }
 
         return tcs.Task;
+    }
+
+    private void ClearDeferredWizardBatchBrowserRefreshCapture()
+    {
+        _deferredWizardBatchSucceededStats = null;
+        _deferredWizardBatchRefocusContext = null;
+    }
+
+    /// <summary>
+    /// One populate generation, parent folder repopulation, wizard refocus selection, and a single viewport pass
+    /// (avoids <see cref="NavigateToFolderAsync"/> viewport + <see cref="RefreshBrowserPaneAfterWizardImageDeletesAsync"/> second bump).
+    /// </summary>
+    internal async Task ReconcileBrowserPaneAfterWizardNavigateToParentAsync(
+        string parentPath,
+        BrowserTreeRefocusAfterWizardContext? refocusContext)
+    {
+        EnterBrowserPaneMutation();
+        try
+        {
+            if (string.IsNullOrEmpty(parentPath) || !Directory.Exists(parentPath))
+                return;
+
+            await NavigateToFolderAsync(parentPath, suppressViewportAfterRootPopulate: true).ConfigureAwait(true);
+            ClearImageSelectionAndPreviewCore();
+            await CommitIncrementalFolderPreviewAndSelectionAsync(refocusContext).ConfigureAwait(true);
+            PrepareBrowserTreeViewportAfterWizardMutation();
+            await ScheduleBrowserTreeViewportAfterMutationAsync(GetBrowserTreeViewportPinPathAfterBrowseCommit())
+                .ConfigureAwait(true);
+            UpdatePathOverlays();
+            UpdateFullscreenMenuEnabled();
+            PersistLayout();
+        }
+        finally
+        {
+            LeaveBrowserPaneMutation();
+        }
     }
 
     internal async Task RefreshBrowserPaneAfterWizardImageDeletesAsync(
@@ -2714,7 +2753,7 @@ public sealed partial class MainWindow
         await ((IPreferencesSession)this).PromptEditArchiveRootAsync(RootGrid.XamlRoot);
     }
 
-    internal async Task NavigateToFolderAsync(string path)
+    internal async Task NavigateToFolderAsync(string path, bool suppressViewportAfterRootPopulate = false)
     {
         if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
             return;
@@ -2739,7 +2778,7 @@ public sealed partial class MainWindow
 
         try
         {
-            await PopulateBrowserRootsCoreAsync(path, gen).ConfigureAwait(true);
+            await PopulateBrowserRootsCoreAsync(path, gen, suppressViewportAfterRootPopulate).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -2749,7 +2788,7 @@ public sealed partial class MainWindow
         }
     }
 
-    private async Task PopulateBrowserRootsCoreAsync(string path, int gen)
+    private async Task PopulateBrowserRootsCoreAsync(string path, int gen, bool suppressViewportAfterRootPopulate = false)
     {
         IReadOnlyList<FileSystemEntry> entries;
         try
@@ -2804,7 +2843,8 @@ public sealed partial class MainWindow
                     gen,
                     gen,
                     flatEntryCount,
-                    rootBrowsePopulate: true).ConfigureAwait(true);
+                    rootBrowsePopulate: true,
+                    suppressViewportAfterRootPopulate).ConfigureAwait(true);
             }
             else
             {
@@ -2815,7 +2855,12 @@ public sealed partial class MainWindow
                     gen,
                     deferFolderMetricsBulk: false,
                     directoriesAlreadySorted: true);
-                FinalizeBrowserRootPopulateAfterImmediateAppend(gen, flatEntryCount, dirsList.Count, rows);
+                FinalizeBrowserRootPopulateAfterImmediateAppend(
+                    gen,
+                    flatEntryCount,
+                    dirsList.Count,
+                    rows,
+                    scheduleViewportAfterPopulate: !suppressViewportAfterRootPopulate);
             }
         }).ConfigureAwait(true);
     }

@@ -108,15 +108,7 @@ public sealed partial class MainWindow
         var node = FindImageNodeByPath(FolderTree.RootNodes, fullPath);
         if (node == null)
             return;
-        try
-        {
-            _suppressTreeSelectionPreviewEnqueue = true;
-            FolderTree.SelectedNode = node;
-        }
-        finally
-        {
-            _suppressTreeSelectionPreviewEnqueue = false;
-        }
+        SyncBrowseTreeSelection(node);
     }
 
     private async Task RunPreviewUiCommitHighAsync(Func<Task> work)

@@ -800,7 +800,8 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             && commandId is "nav.nextImage" or "nav.prevImage" or "nav.firstImage" or "nav.lastImage"
                 or "nav.nextDirectory" or "nav.prevDirectory" or "nav.cycleNavigationMode" or "slideshow.start"
                 or BrowserTreeKeyboardCommandIds.TreeNext or BrowserTreeKeyboardCommandIds.TreePrevious
-                or BrowserTreeKeyboardCommandIds.TreeExpand or BrowserTreeKeyboardCommandIds.TreeCollapse)
+                or BrowserTreeKeyboardCommandIds.TreeExpand or BrowserTreeKeyboardCommandIds.TreeCollapse
+                or BrowserTreeKeyboardCommandIds.TreeDelete)
             return true;
 
         switch (commandId)
@@ -941,6 +942,11 @@ public sealed partial class MainWindow : Window, IPreferencesSession
                 if (!IsFocusInsideBrowserTree())
                     return false;
                 BrowseTreeKeyboardCollapseFolderTarget();
+                return true;
+            case BrowserTreeKeyboardCommandIds.TreeDelete:
+                if (!IsFocusInsideBrowserTree())
+                    return false;
+                QueueExecuteBrowserTreeDeleteFromKeyboardAsync();
                 return true;
             default:
                 return false;

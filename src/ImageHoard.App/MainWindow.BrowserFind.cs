@@ -160,7 +160,7 @@ public sealed partial class MainWindow
                 return;
             SyncBrowseTreeSelection(node);
             FolderTree.UpdateLayout();
-            var sel = FolderTree.SelectedNode ?? node;
+            var sel = TryGetBrowserTreePrimaryNavNode() ?? node;
             TryBringFolderTreeNodeToTop(sel);
             await ScheduleBrowserTreeViewportAfterMutationAsync(
                     m.Path,
@@ -175,12 +175,13 @@ public sealed partial class MainWindow
         EnqueuePreviewNavigation(m.Path, false);
         await TrySyncBrowseTreeSelectionToImagePathAsync(m.Path).ConfigureAwait(true);
         var parentDir = Path.GetDirectoryName(m.Path);
+        var viewportPinDir = string.IsNullOrEmpty(parentDir) ? _currentFolderPath : parentDir;
         FolderTree.UpdateLayout();
-        var imageSel = FolderTree.SelectedNode ?? FindImageNodeByPath(FolderTree.RootNodes, m.Path);
+        var imageSel = TryGetBrowserTreePrimaryNavNode() ?? FindImageNodeByPath(FolderTree.RootNodes, m.Path);
         if (imageSel != null)
             TryBringFolderTreeNodeToTop(imageSel);
         await ScheduleBrowserTreeViewportAfterMutationAsync(
-                string.IsNullOrEmpty(parentDir) ? null : parentDir,
+                viewportPinDir,
                 preferTreeSelectionBeforeBrowsedFolder: true)
             .ConfigureAwait(true);
     }

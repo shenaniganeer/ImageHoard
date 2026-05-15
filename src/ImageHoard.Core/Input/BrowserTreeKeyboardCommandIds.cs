@@ -9,6 +9,7 @@ public static class BrowserTreeKeyboardCommandIds
     public const string TreePrevious = "browse.treePrevious";
     public const string TreeExpand = "browse.treeExpand";
     public const string TreeCollapse = "browse.treeCollapse";
+    public const string TreeDelete = "browse.treeDelete";
 
     /// <summary>Stable order when building the tree-only dispatch table (first matching chord wins).</summary>
     public static readonly string[] InDispatchOrder =
@@ -17,6 +18,7 @@ public static class BrowserTreeKeyboardCommandIds
         TreeExpand,
         TreeNext,
         TreePrevious,
+        TreeDelete,
     };
 
     public static bool IsTreeCommand(string commandId) =>
@@ -29,5 +31,6 @@ public static class BrowserTreeKeyboardCommandIds
         TreePrevious,
         TreeExpand,
         TreeCollapse,
+        TreeDelete,
     };
 }

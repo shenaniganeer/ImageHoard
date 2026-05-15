@@ -21,7 +21,7 @@
 | **FR-IN-02** | Two built-in profiles: **`KeyboardOnly`** and **`MouseOnly`**, plus aliases above; user profiles duplicate these in user settings (out of scope here). |
 | **FR-IN-03** | Mouse-only profile: wheel advances; primary / middle / right set flags; **X1 / X2** open the delete/archive wizard (see §Pipeline). |
 | **FR-IN-04** | `X3`–`X5` enumerated in schema when the OS exposes them; see §Gaming mice / practical limits. |
-| **FR-IN-05** | Destructive commits use explicit controls in the delete/archive wizard plus **ContentDialog** confirmation before inverse-keep delete, delete-flagged-only, move-to-archive, and enriched confirm for delete-folder when subfolders exist; merged profiles avoid duplicate keyboard chords. |
+| **FR-IN-05** | Destructive commits use explicit controls in the delete/archive wizard plus **ContentDialog** confirmation before inverse-keep delete, delete-flagged-only, move-to-archive, enriched confirm for delete-folder when subfolders exist, and **browser tree delete** (`browse.treeDelete`); merged profiles avoid duplicate keyboard chords. |
 | **FR-IN-06** | No gesture-only core action; mouse-only uses buttons, wheel, and optional tilt; slideshow scope has a documented non-gesture fallback (chrome control). |
 
 ## Profile model
@@ -54,6 +54,7 @@ Extended commands (browse, slideshow, viewer, settings): [command-registry.md](.
 | `ui.escape` | Back / close dialog (MouseOnly default: left+right chord; see merged note below) |
 | `view.clearSelection` | Clear image selection and blank preview when not fullscreen |
 | `view.panPreview` | Pan primary preview when it scrolls (modifier + drag; see shipped MouseOnly profile) |
+| `browse.treeDelete` | Delete the selected browser tree row to Recycle Bin (tree focus + `Delete`); selection is single-row on `FolderTree` |
 
 ## Pipeline bindings: wheel, X1, X2 (normative)
 

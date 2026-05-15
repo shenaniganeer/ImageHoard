@@ -562,18 +562,8 @@ public sealed partial class MainWindow
         }
     }
 
-    internal async Task<bool> WizardExecuteDeleteWorkingFolderToRecycleAsync()
+    internal async Task<bool> TryConfirmSendFolderPathToRecycleBinDialogAsync(string work)
     {
-        var work = TryGetDeleteArchiveWizardWorkingFolder();
-        if (string.IsNullOrEmpty(work))
-        {
-            const string msg =
-                "Could not resolve the working folder. Select an image in the folder, or close and reopen the wizard.";
-            SetTransientStatus(msg);
-            ActiveDeleteArchiveWizardPanel?.ShowWizardOperationInfo("Working folder", msg, InfoBarSeverity.Warning);
-            return false;
-        }
-
         var deleteFolderParts = new List<string> { "Send this folder and its contents to the Recycle Bin?", work };
         var hasSubfolders = await HasImmediateSubdirectoryAsync(AppServices.FileSystem, work).ConfigureAwait(true);
         if (hasSubfolders)
@@ -628,9 +618,11 @@ public sealed partial class MainWindow
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = RootGrid.XamlRoot,
         };
-        if (await ShowWizardContentDialogAsync(dlg) != ContentDialogResult.Primary)
-            return false;
+        return await ShowWizardContentDialogAsync(dlg).ConfigureAwait(true) == ContentDialogResult.Primary;
+    }
 
+    internal async Task<bool> ExecuteSendFolderToRecycleBinAfterConfirmAsync(string work)
+    {
         var preferredNext = await TryComputePreferredNextSiblingFolderAsync(work).ConfigureAwait(true);
 
         try
@@ -704,11 +696,30 @@ public sealed partial class MainWindow
         }
     }
 
+    internal async Task<bool> WizardExecuteDeleteWorkingFolderToRecycleAsync()
+    {
+        var work = TryGetDeleteArchiveWizardWorkingFolder();
+        if (string.IsNullOrEmpty(work))
+        {
+            const string msg =
+                "Could not resolve the working folder. Select an image in the folder, or close and reopen the wizard.";
+            SetTransientStatus(msg);
+            ActiveDeleteArchiveWizardPanel?.ShowWizardOperationInfo("Working folder", msg, InfoBarSeverity.Warning);
+            return false;
+        }
+
+        if (!await TryConfirmSendFolderPathToRecycleBinDialogAsync(work).ConfigureAwait(true))
+            return false;
+
+        return await ExecuteSendFolderToRecycleBinAfterConfirmAsync(work).ConfigureAwait(true);
+    }
+
     /// <returns><see langword="false"/> if the user cancelled the permanent-delete preflight; otherwise <see langword="true"/>.</returns>
     private async Task<bool> WizardExecuteImageRecycleOrPermanentBatchAsync(
         IReadOnlyList<string> toDelete,
         bool recordUndoForRecycledPaths,
-        string operationNameForLog)
+        string operationNameForLog,
+        string? workingFolderOverride = null)
     {
         if (toDelete.Count == 0)
         {
@@ -722,7 +733,7 @@ public sealed partial class MainWindow
             _wizardSessionHadPermanentImageDeletes = false;
         }
 
-        var work = TryGetDeleteArchiveWizardWorkingFolder() ?? string.Empty;
+        var work = workingFolderOverride ?? TryGetDeleteArchiveWizardWorkingFolder() ?? string.Empty;
         var preNeedsPermanentDialog = WizardImageDeletionPreflight.SuggestsPermanentMayBeNeeded(work);
 
         var userApprovedPermanentForFailures = false;

@@ -46,6 +46,7 @@ internal static class CommandCatalog
         new("browse.treePrevious", "Browse: tree — previous row (folders and images)", true, HotkeySection.Browse),
         new("browse.treeExpand", "Browse: tree — expand current folder", true, HotkeySection.Browse),
         new("browse.treeCollapse", "Browse: tree — collapse current folder", true, HotkeySection.Browse),
+        new("browse.treeDelete", "Browse: tree — delete selected item(s) to Recycle Bin", true, HotkeySection.Browse),
         new("view.cycleFitMode", "View: cycle image fit mode", true, HotkeySection.View),
         new("view.clearSelection", "View: clear image selection and preview", true, HotkeySection.View),
         new("view.panPreview", "View: pan primary preview (hold chord and drag)", true, HotkeySection.View),

@@ -468,15 +468,16 @@ public sealed partial class MainWindow
         return true;
     }
 
-    private void TryApplyPendingZoomScrollAnchorForHost(ZoomScrollHostKind host, ScrollViewer sv)
+    /// <returns>True when a matching pending anchor existed and <see cref="ScrollViewer.ChangeView"/> was applied.</returns>
+    private bool TryApplyPendingZoomScrollAnchorForHost(ZoomScrollHostKind host, ScrollViewer sv)
     {
         if (_pendingZoomScrollAnchor is not { } a || a.Host != host)
-            return;
+            return false;
         var z = Math.Clamp(_previewUserZoomFactor, PreviewZoomMinFactor, PreviewZoomMaxFactor);
         if (!TryComputeZoomScrollLayout(host, sv, z, out var vw, out var vh, out var dispW, out var dispH, out var contentW, out var contentH, out var imgLeft, out var imgTop))
         {
             ClearPendingZoomScrollAnchor();
-            return;
+            return false;
         }
 
         var newH = imgLeft + a.U * dispW - a.ViewportPx;
@@ -487,6 +488,14 @@ public sealed partial class MainWindow
         newV = Math.Clamp(newV, 0, maxV);
         sv.ChangeView(newH, newV, null);
         ClearPendingZoomScrollAnchor();
+        return true;
+    }
+
+    private static void ApplyDefaultFullscreenScrollCentering(ScrollViewer sv, double contentW, double contentH, double viewportW, double viewportH)
+    {
+        var maxH = Math.Max(0, contentW - viewportW);
+        var maxV = Math.Max(0, contentH - viewportH);
+        sv.ChangeView(maxH * 0.5, maxV * 0.5, null);
     }
 
     internal void PrepareFullscreenEnterNavigation()
@@ -585,7 +594,13 @@ public sealed partial class MainWindow
         FullscreenScrollContentGrid.Width = contentW;
         FullscreenScrollContentGrid.Height = contentH;
 
-        TryApplyPendingZoomScrollAnchorForHost(ZoomScrollHostKind.Fullscreen, FullscreenScrollViewer);
+        var anchorApplied = TryApplyPendingZoomScrollAnchorForHost(ZoomScrollHostKind.Fullscreen, FullscreenScrollViewer);
+        if (!anchorApplied
+            && _isFullscreen
+            && TryGetFullscreenViewportDips(out var fsVw, out var fsVh))
+        {
+            ApplyDefaultFullscreenScrollCentering(FullscreenScrollViewer, contentW, contentH, fsVw, fsVh);
+        }
     }
 
     private void UpdatePreviewScrollMetrics()
@@ -632,7 +647,7 @@ public sealed partial class MainWindow
         PreviewImage.Stretch = Stretch.Uniform;
         PreviewImage.HorizontalAlignment = HorizontalAlignment.Center;
         PreviewImage.VerticalAlignment = VerticalAlignment.Center;
-        TryApplyPendingZoomScrollAnchorForHost(ZoomScrollHostKind.Preview, PreviewScrollViewer);
+        _ = TryApplyPendingZoomScrollAnchorForHost(ZoomScrollHostKind.Preview, PreviewScrollViewer);
         ApplyFullscreenImageForFitMode();
     }
 

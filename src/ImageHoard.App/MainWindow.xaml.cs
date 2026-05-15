@@ -1063,6 +1063,10 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             NormalLayout.Visibility = Visibility.Collapsed;
             FullscreenLayout.Visibility = Visibility.Visible;
             PrepareFullscreenEnterNavigation();
+            UpdatePreviewScrollMetrics();
+            Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread()?.TryEnqueue(
+                Microsoft.UI.Dispatching.DispatcherQueuePriority.Normal,
+                () => UpdatePreviewScrollMetrics());
             UpdatePathOverlays();
             FullscreenLayout.Focus(FocusState.Programmatic);
             if (!string.IsNullOrEmpty(_currentImageFullPath) && _fitMode != ImageFitMode.OneToOne)

@@ -6,6 +6,44 @@ namespace ImageHoard.Tests;
 public sealed class TreeSlideshowSessionTests
 {
     [Fact]
+    public async Task TreeSlideshow_single_image_TryMoveNext_does_not_inflate_overlay_history()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ih_ss_one_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(Path.Combine(root, "only.jpg"), "x");
+
+        try
+        {
+            var fs = new LocalFileSystem();
+            var session = new TreeSlideshowSession(fs, new Random(0));
+            session.Start(root);
+            await session.WaitForInitialPoolAsync();
+
+            Assert.True(session.TryMoveNext(out var first) && first != null);
+            var path0 = session.CurrentPath;
+            Assert.True(session.TryGetTreeOverlayPosition(out var i1, out var c1, out _));
+            Assert.Equal(1, i1);
+            Assert.Equal(1, c1);
+
+            for (var step = 0; step < 10; step++)
+            {
+                Assert.True(session.TryMoveNext(out var p) && p != null);
+                Assert.Equal(path0, session.CurrentPath, StringComparer.OrdinalIgnoreCase);
+                Assert.True(session.TryGetTreeOverlayPosition(out var idx, out var hist, out _));
+                Assert.Equal(1, idx);
+                Assert.Equal(1, hist);
+            }
+
+            Assert.False(session.TryMovePrevious(out _));
+            session.StopEnumeration();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task TreeSlideshow_yields_images_from_subtrees()
     {
         var root = Path.Combine(Path.GetTempPath(), "ih_ss_" + Guid.NewGuid().ToString("N"));

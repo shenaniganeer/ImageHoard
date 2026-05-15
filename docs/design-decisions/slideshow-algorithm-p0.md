@@ -9,7 +9,7 @@
 
 Background enumeration walks the tree (no full prescan before the first slide). Every **new** tree “Next” draws **uniformly at random** from **all image paths discovered so far** in that session (including while discovery is still running). Paths are stored in an append-only **discovered path store**: up to **`DiscoveredPathsInMemoryMax`** paths stay in RAM; additional paths **spill** to a temporary length-prefixed UTF-8 file with per-record byte offsets so random access stays O(1) per pick without holding every path string in RAM.
 
-**Display history:** viewed slides are kept in a linear list with a cursor. **Previous** moves back along that list; **Next** either **redoes** forward if the user had gone back, or appends a **new** uniform random slide. The on-screen overlay shows **history position** and **discovered path count** (see coordination doc).
+**Display history:** viewed slides are kept in a linear list with a cursor. **Previous** moves back along that list; **Next** either **redoes** forward if the user had gone back, or appends a **new** uniform random slide. If the draw would be the same path as the current slide (e.g. only one path has been discovered), **Next** does **not** append a duplicate history entry — the overlay stays at 1/1. The on-screen overlay shows **history position** and **discovered path count** (see coordination doc).
 
 Algorithm B (periodic partial shuffle) remains an **optional optimization** or fallback if profiling shows better behavior on specific devices; **do not** ship B as default without A/B comparison on C-50k corpus.
 

@@ -190,6 +190,16 @@ public sealed class TreeSlideshowSession
             var pickIndex = PickRandomIndexExcludingCurrent(n);
             var pick = _pathStore.GetAt(pickIndex);
 
+            // Only one discovered path (or pick resolved to current): do not append duplicate history
+            // entries — overlay uses history length and the image is unchanged.
+            if (_history.Count > 0
+                && !string.IsNullOrEmpty(_current)
+                && string.Equals(pick, _current, StringComparison.OrdinalIgnoreCase))
+            {
+                path = _current;
+                return true;
+            }
+
             if (_history.Count == 0)
             {
                 _history.Add(pick);

@@ -43,8 +43,17 @@ public sealed partial class MainWindow
     private DateTimeOffset? _folderResortCoalesceWindowStartUtc;
     private CancellationTokenSource _browseExpandProbeCts = new();
     private readonly object _pendingFolderMetricsSnapLock = new();
-    private readonly List<(string Path, FolderMetricsSnapshot Snap, int Gen)> _pendingFolderMetricsSnapshots = new();
+    private readonly List<(string Path, FolderMetricsSnapshot Snap, int Gen, FolderMetricsSnapshotApplyKind ApplyKind)>
+        _pendingFolderMetricsSnapshots = new();
     private bool _folderMetricsUiFlushPending;
+
+    private enum FolderMetricsSnapshotApplyKind
+    {
+        /// <summary>Apply aggregate counts and immediate-child expand state when applicable.</summary>
+        All,
+        /// <summary>Apply only <see cref="TreeViewNode.HasUnrealizedChildren"/> from an immediate snapshot (counts already set from subtree cache).</summary>
+        ExpandStateOnly,
+    }
 
     private const int BrowserStagedPopulateFolderThreshold = 120;
 
@@ -1180,10 +1189,92 @@ public sealed partial class MainWindow
                 return;
 
             var dirMtime = TryReadDirectoryMetricsMtimeUtc(path);
+
+            if (scope == FolderMetricsScanScope.ImmediateChildren)
+            {
+                FolderMetricsSnapshot? cachedSubtree = null;
+                try
+                {
+                    cachedSubtree = await FolderMetricsCacheStore.TryGetLatestSnapshotForPathAsync(
+                            AppDataPaths.FolderMetricsCachePath,
+                            path,
+                            FolderMetricsScanScope.FullSubtree,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (gen != Volatile.Read(ref _populateBrowserGeneration))
+                    return;
+
+                var trustSubtree = FolderMetricsTrust.IsTrustedCachedSubtree(cachedSubtree, dirMtime, ignoreCache);
+                var trustImmediateCacheOnly = !ignoreCache
+                    && cached != null
+                    && cached.ScanScope == FolderMetricsScanScope.ImmediateChildren
+                    && FolderMetricsTrust.FolderMtimeMatches(cached.FolderMtimeUtc, dirMtime);
+
+                if (trustImmediateCacheOnly && trustSubtree)
+                {
+                    EnqueueFolderMetricsSnapshotForUiApply(path, cachedSubtree!, gen);
+                    EnqueueFolderMetricsSnapshotForUiApply(path, cached!, gen, FolderMetricsSnapshotApplyKind.ExpandStateOnly);
+                    return;
+                }
+
+                if (trustImmediateCacheOnly && !trustSubtree)
+                {
+                    EnqueueFolderMetricsSnapshotForUiApply(path, cached!, gen);
+                    return;
+                }
+
+                var cts = _folderMetricsCts;
+                if (cts == null)
+                    return;
+
+                FolderMetricsSnapshot immediateSnap;
+                try
+                {
+                    immediateSnap = await FolderMetricsScanner.ScanImmediateFilesAsync(AppServices.FileSystem, path, cts.Token)
+                        .ConfigureAwait(false);
+                }
+                catch
+                {
+                    return;
+                }
+
+                if (gen != Volatile.Read(ref _populateBrowserGeneration))
+                    return;
+
+                try
+                {
+                    await FolderMetricsCacheStore.AppendSnapshotAsync(
+                            AppDataPaths.FolderMetricsCachePath,
+                            immediateSnap,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (trustSubtree)
+                {
+                    EnqueueFolderMetricsSnapshotForUiApply(path, cachedSubtree!, gen);
+                    EnqueueFolderMetricsSnapshotForUiApply(path, immediateSnap, gen, FolderMetricsSnapshotApplyKind.ExpandStateOnly);
+                    return;
+                }
+
+                EnqueueFolderMetricsSnapshotForUiApply(path, immediateSnap, gen);
+                return;
+            }
+
             var trustCacheOnly = !ignoreCache
                 && cached != null
                 && cached.ScanScope == scope
-                && FolderMetricsMtimeMatches(cached.FolderMtimeUtc, dirMtime);
+                && FolderMetricsTrust.FolderMtimeMatches(cached.FolderMtimeUtc, dirMtime);
 
             if (trustCacheOnly)
             {
@@ -1191,18 +1282,15 @@ public sealed partial class MainWindow
                 return;
             }
 
-            var cts = _folderMetricsCts;
-            if (cts == null)
+            var ctsFull = _folderMetricsCts;
+            if (ctsFull == null)
                 return;
 
             FolderMetricsSnapshot snap;
             try
             {
-                snap = scope == FolderMetricsScanScope.FullSubtree
-                    ? await FolderMetricsScanner.ScanSubtreeAsync(AppServices.FileSystem, path, cts.Token)
-                        .ConfigureAwait(false)
-                    : await FolderMetricsScanner.ScanImmediateFilesAsync(AppServices.FileSystem, path, cts.Token)
-                        .ConfigureAwait(false);
+                snap = await FolderMetricsScanner.ScanSubtreeAsync(AppServices.FileSystem, path, ctsFull.Token)
+                    .ConfigureAwait(false);
             }
             catch
             {
@@ -1245,9 +1333,6 @@ public sealed partial class MainWindow
             return null;
         }
     }
-
-    private static bool FolderMetricsMtimeMatches(DateTimeOffset? cached, DateTimeOffset? onDisk) =>
-        cached.HasValue == onDisk.HasValue && (!cached.HasValue || cached.Value.Equals(onDisk!.Value));
 
     private void ApplySuccessfulWizardDeletesToIndexedFolderAggregates(IReadOnlyList<WizardPredeletedFileStat> succeeded)
     {
@@ -2577,12 +2662,16 @@ public sealed partial class MainWindow
         return true;
     }
 
-    private void EnqueueFolderMetricsSnapshotForUiApply(string path, FolderMetricsSnapshot snap, int gen)
+    private void EnqueueFolderMetricsSnapshotForUiApply(
+        string path,
+        FolderMetricsSnapshot snap,
+        int gen,
+        FolderMetricsSnapshotApplyKind applyKind = FolderMetricsSnapshotApplyKind.All)
     {
         var schedule = false;
         lock (_pendingFolderMetricsSnapLock)
         {
-            _pendingFolderMetricsSnapshots.Add((path, snap, gen));
+            _pendingFolderMetricsSnapshots.Add((path, snap, gen, applyKind));
             if (!_folderMetricsUiFlushPending)
             {
                 _folderMetricsUiFlushPending = true;
@@ -2602,7 +2691,7 @@ public sealed partial class MainWindow
         var resortPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (var chunk = 0; chunk < BrowserMetricsSnapshotApplyMaxChunksPerDispatcherCallback; chunk++)
         {
-            List<(string Path, FolderMetricsSnapshot Snap, int Gen)> batch;
+            List<(string Path, FolderMetricsSnapshot Snap, int Gen, FolderMetricsSnapshotApplyKind ApplyKind)> batch;
             lock (_pendingFolderMetricsSnapLock)
             {
                 if (_pendingFolderMetricsSnapshots.Count == 0)
@@ -2622,7 +2711,7 @@ public sealed partial class MainWindow
             {
                 if (item.Gen != Volatile.Read(ref _populateBrowserGeneration))
                     continue;
-                ApplyFolderMetricsSnapshotCore(item.Path, item.Snap, item.Gen, resortPaths);
+                ApplyFolderMetricsSnapshotCore(item.Path, item.Snap, item.Gen, resortPaths, item.ApplyKind);
             }
         }
 
@@ -2641,18 +2730,28 @@ public sealed partial class MainWindow
             RequestCoalescedFolderResortForTouchedFolderPaths(resortPaths);
     }
 
-    private void ApplyFolderMetricsSnapshotCore(string path, FolderMetricsSnapshot snap, int gen, HashSet<string> resortPaths)
+    private void ApplyFolderMetricsSnapshotCore(
+        string path,
+        FolderMetricsSnapshot snap,
+        int gen,
+        HashSet<string> resortPaths,
+        FolderMetricsSnapshotApplyKind applyKind)
     {
         if (gen != Volatile.Read(ref _populateBrowserGeneration))
             return;
-        if (!_folderTreeEntryByPath.TryGetValue(path, out var fe))
-            return;
-        fe.SetAggregateSize(snap.AggregateSizeBytes);
-        fe.SetImageFileCount(snap.ImageFileCount);
-        _folderAggregateBytesByPath[path] = snap.AggregateSizeBytes;
-        _folderImageFileCountByPath[path] = snap.ImageFileCount;
-        if (IsDeferredFolderMetricsSort(_layoutState.FolderListSort))
-            resortPaths.Add(path);
+
+        if (applyKind != FolderMetricsSnapshotApplyKind.ExpandStateOnly)
+        {
+            if (!_folderTreeEntryByPath.TryGetValue(path, out var fe))
+                return;
+            fe.SetAggregateSize(snap.AggregateSizeBytes);
+            fe.SetImageFileCount(snap.ImageFileCount);
+            _folderAggregateBytesByPath[path] = snap.AggregateSizeBytes;
+            _folderImageFileCountByPath[path] = snap.ImageFileCount;
+            if (IsDeferredFolderMetricsSort(_layoutState.FolderListSort))
+                resortPaths.Add(path);
+        }
+
         ApplyHasUnrealizedChildrenFromImmediateMetricsSnapshot(path, snap, gen);
     }
 

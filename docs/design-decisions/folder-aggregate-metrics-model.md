@@ -54,6 +54,10 @@ Per **directory path** (normalized long path string):
 
 When metrics snapshots are merged on the UI thread, updating **`TreeViewNode.HasUnrealizedChildren`** must not require a full-tree lookup each time. The app maintains **`_folderTreeNodeByPath`** next to **`_folderTreeEntryByPath`**; anyone who adds, removes, or rekeys folder rows must keep that map in sync. See [browser-folder-tree-path-to-node-index.md](./browser-folder-tree-path-to-node-index.md).
 
+### Browser tree: collapsed folder totals vs expand chevron
+
+For an **`ImmediateChildren`** metrics job (typical when a folder row is **collapsed**), the host still prefers a **trusted `FullSubtree` JSONL cache row** for the same path when **`FolderMetricsTrust.IsTrustedCachedSubtree`** holds (directory **`FolderMtimeUtc`** matches the cached subtree snapshot). In that case, **size and image count** on the row reflect the **entire subtree**, while **`HasUnrealizedChildren`** continues to come from a fresh or cached **immediate** listing so the expand chevron matches direct children. **`FolderMetricsSnapshotApplyKind`** in **`MainWindow.BrowserPane.cs`** separates count apply from expand-only apply on the pending snapshot queue. See **`FolderMetricsTrust`** in **`ImageHoard.Core.Metrics`**.
+
 ## Tests
 
 - Fixture: 3-level tree with known sizes → all five sort modes match golden totals.

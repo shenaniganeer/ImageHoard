@@ -6,9 +6,9 @@ namespace ImageHoard.Tests;
 public sealed class SlideshowCoordinatorTests
 {
     [Fact]
-    public async Task ToggleScope_switches_between_tree_and_folder()
+    public async Task Sibling_overlay_does_not_advance_tree_until_tree_nav()
     {
-        var root = Path.Combine(Path.GetTempPath(), "ih_scope_" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "ih_sib_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         await File.WriteAllTextAsync(Path.Combine(root, "a.jpg"), "x");
         await File.WriteAllTextAsync(Path.Combine(root, "b.jpg"), "y");
@@ -23,11 +23,17 @@ public sealed class SlideshowCoordinatorTests
             Assert.True(coord.Tree.TryMoveNext(out var first));
             Assert.NotNull(first);
 
-            await coord.ToggleScopeAsync(fs, first);
-            Assert.Equal(SlideshowScopeKind.Folder, coord.Scope);
+            Assert.False(coord.IsSiblingOverlayActive);
+            Assert.True(await coord.TryMoveNextSiblingAsync(fs, first));
+            Assert.True(coord.IsSiblingOverlayActive);
+            var sib = coord.GetCurrentPath();
+            Assert.NotNull(sib);
+            Assert.NotEqual(first, sib);
 
-            await coord.ToggleScopeAsync(fs, first);
-            Assert.Equal(SlideshowScopeKind.Tree, coord.Scope);
+            Assert.True(coord.TryMoveNextTree(out var treeNext));
+            Assert.False(coord.IsSiblingOverlayActive);
+            Assert.NotNull(treeNext);
+
             coord.Tree.StopEnumeration();
         }
         finally
@@ -37,9 +43,9 @@ public sealed class SlideshowCoordinatorTests
     }
 
     [Fact]
-    public async Task TryGetSlideshowOverlayListPosition_tree_scope_matches_folder_scope_sibling_index()
+    public async Task TryGetSlideshowOverlayListPosition_sibling_matches_folder_index()
     {
-        var root = Path.Combine(Path.GetTempPath(), "ih_ov_" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "ih_sibov_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         await File.WriteAllTextAsync(Path.Combine(root, "a.jpg"), "x");
         await File.WriteAllTextAsync(Path.Combine(root, "b.jpg"), "y");
@@ -60,9 +66,9 @@ public sealed class SlideshowCoordinatorTests
             Assert.Equal(1, treeIdx);
             Assert.True(treeTotal >= 2);
 
-            await coord.ToggleScopeAsync(fs, first);
+            Assert.True(await coord.TryMoveNextSiblingAsync(fs, first));
             Assert.True(coord.TryGetSlideshowOverlayListPosition(out var folderIdx, out var folderTotal, out var folderDone));
-            Assert.Equal(sortedIndex, folderIdx);
+            Assert.Equal(sortedIndex == 1 ? 2 : 1, folderIdx);
             Assert.Equal(2, folderTotal);
             Assert.True(folderDone);
 

@@ -843,6 +843,8 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         if (IsBrowserPaneMutationInProgress
             && commandId is "nav.nextImage" or "nav.prevImage" or "nav.firstImage" or "nav.lastImage"
                 or "nav.nextDirectory" or "nav.prevDirectory" or "nav.cycleNavigationMode" or "slideshow.start"
+                or "slideshow.switchToBrowseAtCurrentLocation" or "slideshow.siblingNextImage" or "slideshow.siblingPrevImage"
+                or "slideshow.deleteCurrent"
                 or BrowserTreeKeyboardCommandIds.TreeNext or BrowserTreeKeyboardCommandIds.TreePrevious
                 or BrowserTreeKeyboardCommandIds.TreeExpand or BrowserTreeKeyboardCommandIds.TreeCollapse
                 or BrowserTreeKeyboardCommandIds.TreeDelete)
@@ -853,7 +855,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             case "nav.nextImage":
                 if (_slideshowUiActive && _slideshow != null)
                 {
-                    if (_slideshow.TryMoveNext(out var np) && np != null)
+                    if (_slideshow.TryMoveNextTree(out var np) && np != null)
                         EnqueuePreviewNavigation(np, true);
                 }
                 else
@@ -862,7 +864,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             case "nav.prevImage":
                 if (_slideshowUiActive && _slideshow != null)
                 {
-                    if (_slideshow.TryMovePrevious(out var pp) && pp != null)
+                    if (_slideshow.TryMovePreviousTree(out var pp) && pp != null)
                         EnqueuePreviewNavigation(pp, true);
                 }
                 else
@@ -938,14 +940,22 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             case "slideshow.start":
                 SlideshowStart_Click(this, new RoutedEventArgs());
                 return true;
-            case "slideshow.toggleScope":
+            case "slideshow.switchToBrowseAtCurrentLocation":
                 if (_isFullscreen && _slideshowUiActive && _slideshow != null)
-                    _ = SlideshowToggleScopeFromKeysAsync();
+                    _ = SwitchToBrowseAtCurrentSlideshowLocationAsync();
                 return _isFullscreen && _slideshowUiActive;
-            case "slideshow.reshuffle":
-                if (_slideshow != null)
-                    SlideshowReshuffle_Click(this, new RoutedEventArgs());
-                return _slideshow != null;
+            case "slideshow.siblingNextImage":
+                if (_slideshowUiActive && _slideshow != null)
+                    _ = SlideshowSiblingNextFromInputAsync();
+                return _slideshowUiActive;
+            case "slideshow.siblingPrevImage":
+                if (_slideshowUiActive && _slideshow != null)
+                    _ = SlideshowSiblingPrevFromInputAsync();
+                return _slideshowUiActive;
+            case "slideshow.deleteCurrent":
+                if (_slideshowUiActive && _slideshow != null)
+                    _ = SlideshowDeleteCurrentFromInputAsync();
+                return _slideshowUiActive;
             case "sort.flagKeep":
                 if (!TryGetSortFlagTargetPath(out _))
                     return false;
@@ -1022,9 +1032,6 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         if (!e.Handled && !ShouldDeferAppKeyboardShortcuts())
             HandleSortKeyboardShortcuts(e);
 
-        if (TryHandleSlideshowKeys(e))
-            return;
-
         if (e.Key is VirtualKey.F11 or VirtualKey.Enter or VirtualKey.Escape)
         {
             ToggleFullscreen();
@@ -1037,7 +1044,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         var appWindow = GetAppWindow();
         if (!_isFullscreen)
         {
-            if (GetSelectedImageRow() is null)
+            if (GetSelectedImageRow() is null && string.IsNullOrEmpty(_currentImageFullPath))
                 return;
 
             appWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
@@ -1054,20 +1061,28 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             }
         }
         else
+            ExitFullscreenChrome();
+    }
+
+    /// <summary>Leave fullscreen layout without discarding a suspended slideshow session.</summary>
+    internal void ExitFullscreenChrome()
+    {
+        if (!_isFullscreen)
+            return;
+
+        var appWindow = GetAppWindow();
+        appWindow.SetPresenter(AppWindowPresenterKind.Default);
+        _isFullscreen = false;
+        FullscreenLayout.Visibility = Visibility.Collapsed;
+        NormalLayout.Visibility = Visibility.Visible;
+        PrepareFullscreenExitNavigation();
+        SuspendSlideshowUi();
+        UpdatePathOverlays();
+        RootGrid.Focus(FocusState.Programmatic);
+        if (!string.IsNullOrEmpty(_currentImageFullPath) && _fitMode != ImageFitMode.OneToOne)
         {
-            appWindow.SetPresenter(AppWindowPresenterKind.Default);
-            _isFullscreen = false;
-            FullscreenLayout.Visibility = Visibility.Collapsed;
-            NormalLayout.Visibility = Visibility.Visible;
-            PrepareFullscreenExitNavigation();
-            StopSlideshowSession();
-            UpdatePathOverlays();
-            RootGrid.Focus(FocusState.Programmatic);
-            if (!string.IsNullOrEmpty(_currentImageFullPath) && _fitMode != ImageFitMode.OneToOne)
-            {
-                InvalidateDecodeTargetTracking();
-                _ = ReloadIfDecodeTargetBoxChangedAsync();
-            }
+            InvalidateDecodeTargetTracking();
+            _ = ReloadIfDecodeTargetBoxChangedAsync();
         }
     }
 

@@ -28,7 +28,9 @@
     ],
     "sort.clearAllFlags": [{ "kind": "keyboard", "keys": ["Control", "KeyZ"] }],
     "slideshow.start": [{ "kind": "keyboard", "keys": ["Control", "Shift", "KeyS"] }],
-    "slideshow.toggleScope": [{ "kind": "keyboard", "keys": ["Tab"] }],
+    "slideshow.switchToBrowseAtCurrentLocation": [{ "kind": "keyboard", "keys": ["Tab"] }],
+    "slideshow.siblingNextImage": [{ "kind": "keyboard", "keys": ["Control", "Alt", "ArrowRight"] }],
+    "slideshow.siblingPrevImage": [{ "kind": "keyboard", "keys": ["Control", "Alt", "ArrowLeft"] }],
     "browse.findInTree": [{ "kind": "keyboard", "keys": ["Control", "KeyF"] }],
     "browse.treeNext": [{ "kind": "keyboard", "keys": ["ArrowDown"] }],
     "browse.treePrevious": [{ "kind": "keyboard", "keys": ["ArrowUp"] }],
@@ -40,6 +42,16 @@
       { "kind": "keyboard", "keys": ["F11"] },
       { "kind": "keyboard", "keys": ["Enter"] }
     ],
-    "view.clearSelection": [{ "kind": "keyboard", "keys": ["Escape"] }]
+    "view.clearSelection": [{ "kind": "keyboard", "keys": ["Escape"] }],
+    "view.zoomIn": [
+      { "kind": "keyboard", "keys": ["Control", "Equal"] },
+      { "kind": "keyboard", "keys": ["Control", "NumpadAdd"] }
+    ],
+    "view.zoomOut": [
+      { "kind": "keyboard", "keys": ["Control", "Minus"] },
+      { "kind": "keyboard", "keys": ["Control", "NumpadSubtract"] }
+    ],
+    "view.zoomActualPixels": [{ "kind": "keyboard", "keys": ["Control", "Shift", "Minus"] }],
+    "view.zoomResetFit": [{ "kind": "keyboard", "keys": ["Control", "Shift", "Equal"] }]
   }
 }

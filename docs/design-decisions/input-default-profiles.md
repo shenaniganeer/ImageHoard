@@ -22,12 +22,12 @@
 | **FR-IN-03** | Mouse-only profile: wheel advances; primary / middle / right set flags; **X1 / X2** open the delete/archive wizard (see §Pipeline). |
 | **FR-IN-04** | `X3`–`X5` enumerated in schema when the OS exposes them; see §Gaming mice / practical limits. |
 | **FR-IN-05** | Destructive commits use explicit controls in the delete/archive wizard plus **ContentDialog** confirmation before inverse-keep delete, delete-flagged-only, move-to-archive, enriched confirm for delete-folder when subfolders exist, and **browser tree delete** (`browse.treeDelete`); merged profiles avoid duplicate keyboard chords. |
-| **FR-IN-06** | No gesture-only core action; mouse-only uses buttons, wheel, and optional tilt; slideshow scope has a documented non-gesture fallback (chrome control). |
+| **FR-IN-06** | No gesture-only core action; mouse-only uses buttons, wheel, and optional tilt; slideshow **switch-to-browse** has keyboard **`Tab`** fallback when tilt / `X3` are unavailable. |
 
 ## Profile model
 
 - **`KeyboardOnly`:** Every command in the minimum command set has at least one **keyboard** chord; mouse is optional and omitted from the shipped file.
-- **`MouseOnly`:** Same command set using **mouse / wheel / chord / tilt**; default chords avoid **keyboard modifiers** except **`view.panPreview`** (uses `Shift` + primary button so pan does not collide with unmodified primary click for sort). Where hardware lacks tilt or `X3`, the app exposes **minimal on-screen controls** for `slideshow.toggleScope` (implementation detail; QA uses hardware from [test-plan-reference-hw.md](../test-plan-reference-hw.md) when available).
+- **`MouseOnly`:** Same command set using **mouse / wheel / chord / tilt**; default chords avoid **keyboard modifiers** except **`view.panPreview`** (uses `Shift` + primary button so pan does not collide with unmodified primary click for sort). Slideshow uses **`mouseWheel` + `heldButtons`** for sibling navigation while **Right** is held; **`slideshow.switchToBrowseAtCurrentLocation`** uses wheel tilt left or **`X3`** when the OS exposes it—otherwise use keyboard **`Tab`** in fullscreen slideshow (see [test-plan-reference-hw.md](../test-plan-reference-hw.md) for QA hardware).
 
 ## Command IDs (minimum set)
 
@@ -49,7 +49,10 @@ Extended commands (browse, slideshow, viewer, settings): [command-registry.md](.
 | `sort.commitBatchDelete` | *(legacy)* same as `sort.deleteArchiveWizard` | FR-SR-03/04 |
 | `sort.moveToArchive` | *(legacy)* same as `sort.deleteArchiveWizard` | FR-SR-05 |
 | `sort.clearAllFlags` | Clear all sort flags (in-memory session); **Sort → Clear all flags** menu (P0 chrome) |
-| `slideshow.toggleScope` | Tree session ↔ Folder scope (FR-SL-06) |
+| `slideshow.start` | Start or resume tree slideshow (see shipped profile + app dialog) |
+| `slideshow.switchToBrowseAtCurrentLocation` | Fullscreen slideshow → browse parent folder of current slide while retaining tree session for resume |
+| `slideshow.siblingNextImage` | Slideshow: next sibling image in current file’s directory |
+| `slideshow.siblingPrevImage` | Slideshow: previous sibling image in current file’s directory |
 | `ui.fullscreen` | Toggle fullscreen |
 | `ui.escape` | Back / close dialog (MouseOnly default: left+right chord; see merged note below) |
 | `view.clearSelection` | Clear image selection and blank preview when not fullscreen |
@@ -95,7 +98,9 @@ These are the **mouse-first sort** flows the PRD calls out (FR-IN-03). Side butt
 | Command | Default |
 |---------|---------|
 | `sort.clearAllFlags` | **Wheel tilt right**, else **triple middle click** within ~**600 ms** |
-| `slideshow.toggleScope` | **Wheel tilt left**, else **`X3`** if present, else **toolbar / on-screen scope** control |
+| `slideshow.switchToBrowseAtCurrentLocation` | **Wheel tilt left**, else **`X3`** if present, else keyboard **`Tab`** in slideshow |
+| `slideshow.siblingNextImage` | **Right** button held + wheel **Down** |
+| `slideshow.siblingPrevImage` | **Right** button held + wheel **Up** |
 | `ui.fullscreen` | **Double left** on viewer chrome / safe hit target |
 | `ui.escape` | **Left + right chord** (simultaneous within ~**50 ms**); must not fire while a drag is active |
 
@@ -111,12 +116,16 @@ Identifiers use [keyboard-key-identifiers.md](./keyboard-key-identifiers.md) (`K
 | `nav.lastImage` | `End` |
 | `nav.nextDirectory` | `Control`+`Alt`+`PageDown` |
 | `nav.prevDirectory` | `Control`+`Alt`+`PageUp` |
+| `nav.cycleNavigationMode` | `Control`+`Shift`+`KeyN` |
 | `sort.flagKeep` | `KeyK` |
 | `sort.flagDelete` | `KeyD` |
 | `sort.flagUnset` | `KeyU` |
 | `sort.deleteArchiveWizard` | `Control`+`Shift`+`Delete`, `Control`+`Shift`+`KeyM` |
 | `sort.clearAllFlags` | `Control`+`KeyZ` |
-| `slideshow.toggleScope` | `Tab` |
+| `slideshow.start` | `Control`+`Shift`+`KeyS` |
+| `slideshow.switchToBrowseAtCurrentLocation` | `Tab` |
+| `slideshow.siblingNextImage` | `Control`+`Alt`+`ArrowRight` |
+| `slideshow.siblingPrevImage` | `Control`+`Alt`+`ArrowLeft` |
 | `settings.open` | `Control`+`KeyP` |
 | `ui.fullscreen` | `F11`, `Enter` (when list focused) |
 | `view.clearSelection` | `Escape` |

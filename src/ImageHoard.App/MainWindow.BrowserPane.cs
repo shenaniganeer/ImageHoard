@@ -2297,7 +2297,7 @@ public sealed partial class MainWindow
         if (_renameTargetNode != null)
             CancelInlineRename(commit: false);
 
-        StopSlideshowSession();
+        DiscardSlideshowSession();
 
         PreviewImage.Source = null;
         FullscreenImage.Source = null;
@@ -3251,7 +3251,7 @@ public sealed partial class MainWindow
         if (_renameTargetNode != null)
             CancelInlineRename(commit: false);
 
-        StopSlideshowSession();
+        DiscardSlideshowSession();
 
         PreviewImage.Source = null;
         FullscreenImage.Source = null;
@@ -4308,7 +4308,7 @@ public sealed partial class MainWindow
     /// <summary>Clears preview and current image path state without changing tree selection (folder-only or non-image lead).</summary>
     private void ClearBrowserPaneImagePreviewStatePreserveTreeSelection()
     {
-        StopSlideshowSession();
+        DiscardSlideshowSession();
         PreviewImage.Source = null;
         FullscreenImage.Source = null;
         _currentImageFullPath = null;

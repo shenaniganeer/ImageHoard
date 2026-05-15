@@ -21,11 +21,11 @@ This document extends the **minimum** command set in [input-default-profiles.md]
 | `sort.commitBatchDelete` | *(legacy alias)* same handler as `sort.deleteArchiveWizard` | FR-SR-03/04 | Yes |
 | `sort.moveToArchive` | *(legacy alias)* same handler as `sort.deleteArchiveWizard` | FR-SR-05 | Yes |
 | `sort.clearAllFlags` | Clear all sort flags (in-memory session); **Sort → Clear all flags** menu (P0 chrome) | FR-SR-02 | Yes |
-| `slideshow.start` | Start tree slideshow from current browse folder | FR-SL-02 | Yes (KeyboardOnly default `Control+Shift+S`) |
-| `slideshow.toggleScope` | Tree ↔ Folder scope | FR-SL-06 | Yes |
-| `slideshow.reshuffle` | New random session | FR-SL-04 | **P1 default chord** (toolbar in P0) |
-| `slideshow.skipUnsupported` | Skip unsupported file | FR-SL-05 | Chrome + optional bind P1 |
-| `slideshow.deleteCurrent` | Delete current slide (dangerous) | FR-SL-05 | **Off** by default; if enabled, double-confirm; P1 default chord |
+| `slideshow.start` | Resume or start tree slideshow (**ContentDialog** when a suspended session exists; otherwise start at current browse folder) | FR-SL-02 / FR-SL-07 | Yes (KeyboardOnly default `Control+Shift+S`) |
+| `slideshow.switchToBrowseAtCurrentLocation` | Leave fullscreen slideshow UI, keep tree session for resume, open parent folder of current slide in browse | FR-SL-06 / FR-SL-07 | Yes (KeyboardOnly default `Tab`; MouseOnly wheel tilt left / `X3` when exposed) |
+| `slideshow.siblingNextImage` | In slideshow: next image among siblings in the current file’s directory (does not advance tree reservoir) | FR-SL-06 | Yes (MouseOnly default **Right**+wheel **Down**; KeyboardOnly `Control+Alt+ArrowRight`) |
+| `slideshow.siblingPrevImage` | In slideshow: previous sibling image in that directory | FR-SL-06 | Yes (MouseOnly **Right**+wheel **Up**; KeyboardOnly `Control+Alt+ArrowLeft`) |
+| `slideshow.deleteCurrent` | Delete current slideshow image (**ContentDialog**); requires **Settings → Library → Allow delete in slideshow** | FR-SL-05 | **Off** by default (no shipped chord); bind in Preferences when enabled |
 | `browse.toggleSubfolderInclusion` | Toggle “include subfolders” for **list** | FR-BR-02 | View menu **P0**; bind P1 |
 | `browse.openGoToPath` | Open “go to path” dialog | FR-BR-04 | Chrome P0; bind P1 |
 | `browse.openBookmarks` | Open bookmarks / favorites manager | FR-BR-04 | File → Favorites **P0**; bind P1 |
@@ -58,7 +58,8 @@ This document extends the **minimum** command set in [input-default-profiles.md]
 When promoting to shipped profiles:
 
 - `slideshow.start`: `Control+Shift+S` (KeyboardOnly); shipped in `keyboard-only.v1.json`.  
-- `slideshow.reshuffle`: `Control+Shift+R` (KeyboardOnly); mouse: **none** by default (avoid accidents).  
+- `slideshow.switchToBrowseAtCurrentLocation`: `Tab` (KeyboardOnly); shipped.  
+- `slideshow.siblingNextImage` / `slideshow.siblingPrevImage`: shipped (see `input-default-profiles.md`).  
 - `nav.cycleNavigationMode`: `Control+Shift+N` (KeyboardOnly); shipped in `keyboard-only.v1.json`.  
 - `view.cycleFitMode`: `KeyV` (KeyboardOnly).  
 - `view.panPreview`: `Shift` + primary click drag on preview (MouseOnly merged profile; rebinding in Preferences).  

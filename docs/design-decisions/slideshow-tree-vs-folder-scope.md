@@ -1,41 +1,39 @@
-# Slideshow — Tree session vs Folder scope (FR-SL-06, FR-SL-07)
+# Slideshow — Tree session, sibling overlay, and browse handoff (FR-SL-06, FR-SL-07)
 
-**Status:** Design locked for implementation  
-**Related:** PRD §4.4, §5; `slideshow-scope-toggle`
+**Status:** Supersedes the prior “tree vs folder scope toggle” model  
+**Related:** [slideshow-algorithm-p0.md](./slideshow-algorithm-p0.md), [input-default-profiles.md](./input-default-profiles.md), [command-registry.md](./command-registry.md)
 
 ## UI indicator (FR-SL-06)
 
-- **Persistent minimal badge** in fullscreen corner: **`TREE`** vs **`FOLDER`**.
-- Optional: subtle border tint difference (accessibility: not color-only—include text badge).
+- **Persistent minimal badge** in fullscreen corner: **`TREE`** when `nav.nextImage` / `nav.prevImage` advance the **random tree** session, vs **`SIBLINGS`** when the separate sibling commands are active (ordered list for the parent directory of the on-screen file).
 
-## Toggle command
+## Tree session (`nav.nextImage` / `nav.prevImage` in slideshow)
 
-- **Single bindable command:** `slideshow.toggleScope` (see [input-default-profiles.md](./input-default-profiles.md)).
-- **Latency:** instant mode switch; no full tree rescan.
+- Draw from **Algorithm A** reservoir (see [slideshow-algorithm-p0.md](./slideshow-algorithm-p0.md)) rooted at the **slideshow start folder**.
+- Invoking tree next/prev **clears** any active sibling overlay so the next draw is unambiguously from the tree again.
 
-## Tree session behavior
+## Sibling overlay (`slideshow.siblingNextImage` / `slideshow.siblingPrevImage`)
 
-- `nav.nextImage` / `nav.prevImage` draw from **Algorithm A** reservoir (see [slideshow-algorithm-p0.md](./slideshow-algorithm-p0.md)) rooted at **original slideshow root**.
-- **State to persist while in Folder scope:** PRNG seed/state, reservoir contents (or pointer + caps), **seen set** for “no repeat until reshuffle” if product defines that, **enumerator bookmark** (last DFS stack).
+- Build / reuse an **ordered sibling list** for `Directory.GetParent(currentImagePath)` (same filter and default name order as sequential browse).
+- **Does not** mutate tree reservoir, PRNG, or enumerator state; tree session keeps running in the background.
+- Implemented as an overlay on `SlideshowCoordinator` (see `SiblingImageNavigator`).
 
-## Folder scope behavior
+## Switch to browse at current location (`slideshow.switchToBrowseAtCurrentLocation`)
 
-- Build **ordered sibling list** for `Directory.GetParent(currentImagePath)`:
-  - **Filter:** same image allowlist as main app.
-  - **Order:** match **current folder list sort** for that directory; **default name ascending** (case-insensitive ordinal) if user never set sort for that folder.
-- `next` / `prev` walk this list **only**; **do not** mutate Tree reservoir order.
+- Exits fullscreen UI, sets **browse** context to the **parent folder** of the current slide and selects that image in the tree.
+- **Does not** call `TreeSlideshowSession.StopEnumeration()` — the user can **`slideshow.start`** and choose **Resume** to continue the same tree session without a full rediscovery pass.
 
-## Resume Tree session (FR-SL-07)
+## Resume (FR-SL-07)
 
-- On toggle **back to TREE**: resume **exactly** from suspended Tree state — next Tree `next` should behave as if Folder scope never happened (unless user deleted/moved current file—then **skip missing** with toast).
-- **Reshuffle (FR-SL-04)** remains explicit user action; leaving Folder scope does **not** reshuffle.
+- Leaving fullscreen (F11 / Enter / Escape) **suspends** slideshow UI (`_slideshowUiActive = false`) but keeps the coordinator until the user clears selection in a way that discards the session or starts a **new** tree slideshow from the resume dialog.
+- While a session is **suspended**, ordinary image row selection in the tree **does not** discard the coordinator (so keep/delete culling does not destroy the random-walk state).
 
-## Edge case — single sibling (PRD §12 Q9)
+## Edge case — single sibling
 
-**Locked behavior:** In Folder scope with **one** image, `next` and `prev` **no-op** (wrap to self) and show **toast** once: “Only one image in this folder.” **Do not** auto-switch to Tree session.
+**Locked behavior:** With **one** image in the folder, sibling next/prev **wrap** to the same file (same as `SiblingImageNavigator`); optional toast may be shown by the app (implementation detail).
 
 ## Acceptance tests
 
-1. Start Tree slideshow → toggle Folder → browse siblings → toggle Tree → verify no reset of random sequence (statistical smoke: log 20 draws before/after).
-2. Folder scope with 3 siblings → order matches Explorer name sort.
-3. Delete current file on disk while in Folder scope → graceful skip + message.
+1. Start tree slideshow → sibling next/prev → tree next → verify tree random state was not reset by sibling-only navigation (overlay clears on tree nav).
+2. Start tree slideshow → **Switch to browse** → flag images → **Resume** from dialog → verify enumerator was not restarted (`DiscoveredImageCount` monotonic vs discard + fresh start).
+3. Three siblings in one folder → sibling order matches Explorer name sort.

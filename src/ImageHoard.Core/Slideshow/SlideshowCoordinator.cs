@@ -2,74 +2,91 @@ using ImageHoard.Core.Services;
 
 namespace ImageHoard.Core.Slideshow;
 
-/// <summary>FR-SL-06/07 — coordinates Tree random session vs Folder sibling navigation.</summary>
+/// <summary>Coordinates tree random session with optional in-slideshow sibling navigation (overlay).</summary>
 public sealed class SlideshowCoordinator
 {
     private readonly TreeSlideshowSession _tree;
-    private SiblingImageNavigator? _folderNav;
-    private SlideshowScopeKind _scope = SlideshowScopeKind.Tree;
+    private SiblingImageNavigator? _siblingNav;
 
     public SlideshowCoordinator(TreeSlideshowSession treeSession)
     {
         _tree = treeSession;
     }
 
-    public SlideshowScopeKind Scope => _scope;
-
     public TreeSlideshowSession Tree => _tree;
 
-    public async Task ToggleScopeAsync(
-        IFileSystem fileSystem,
-        string? currentImagePath,
-        CancellationToken cancellationToken = default)
+    /// <summary>True when next/prev for siblings are active; tree reservoir is unchanged.</summary>
+    public bool IsSiblingOverlayActive => _siblingNav != null;
+
+    public void ClearSiblingOverlay() => _siblingNav = null;
+
+    /// <summary>Random tree next; clears sibling overlay.</summary>
+    public bool TryMoveNextTree(out string? path)
     {
-        if (_scope == SlideshowScopeKind.Tree)
-        {
-            if (string.IsNullOrEmpty(currentImagePath))
-                return;
-
-            _folderNav = await SiblingImageNavigator.CreateAsync(fileSystem, currentImagePath, cancellationToken)
-                .ConfigureAwait(false);
-            _scope = SlideshowScopeKind.Folder;
-        }
-        else
-        {
-            _folderNav = null;
-            _scope = SlideshowScopeKind.Tree;
-        }
-    }
-
-    public bool TryMoveNext(out string? path)
-    {
-        if (_scope == SlideshowScopeKind.Folder && _folderNav != null)
-            return _folderNav.TryMoveNext(out path);
-
+        _siblingNav = null;
         return _tree.TryMoveNext(out path);
     }
 
-    public bool TryMovePrevious(out string? path)
+    /// <summary>Random tree previous; clears sibling overlay.</summary>
+    public bool TryMovePreviousTree(out string? path)
     {
-        if (_scope == SlideshowScopeKind.Folder && _folderNav != null)
-            return _folderNav.TryMovePrevious(out path);
-
+        _siblingNav = null;
         return _tree.TryMovePrevious(out path);
     }
 
+    public async Task<bool> TryMoveNextSiblingAsync(
+        IFileSystem fileSystem,
+        string? displayedImagePath,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(displayedImagePath))
+            return false;
+
+        if (_siblingNav == null)
+        {
+            var nav = await SiblingImageNavigator.CreateAsync(fileSystem, displayedImagePath, cancellationToken)
+                .ConfigureAwait(false);
+            if (nav == null)
+                return false;
+            _siblingNav = nav;
+        }
+
+        return _siblingNav.TryMoveNext(out _);
+    }
+
+    public async Task<bool> TryMovePreviousSiblingAsync(
+        IFileSystem fileSystem,
+        string? displayedImagePath,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(displayedImagePath))
+            return false;
+
+        if (_siblingNav == null)
+        {
+            var nav = await SiblingImageNavigator.CreateAsync(fileSystem, displayedImagePath, cancellationToken)
+                .ConfigureAwait(false);
+            if (nav == null)
+                return false;
+            _siblingNav = nav;
+        }
+
+        return _siblingNav.TryMovePrevious(out _);
+    }
+
     public string? GetCurrentPath() =>
-        _scope == SlideshowScopeKind.Folder && _folderNav != null
-            ? _folderNav.CurrentPath
-            : _tree.CurrentPath;
+        _siblingNav != null ? _siblingNav.CurrentPath : _tree.CurrentPath;
 
     /// <summary>
-    /// List position for the path overlay: tree scope uses session history index and discovered count;
-    /// folder scope uses ordered sibling index in the image's directory.
+    /// List position for the path overlay: tree uses session history index and discovered count;
+    /// sibling overlay uses ordered sibling index in the image's directory.
     /// </summary>
     public bool TryGetSlideshowOverlayListPosition(out int index1Based, out int total, out bool enumerationComplete)
     {
-        if (_scope == SlideshowScopeKind.Folder && _folderNav != null)
+        if (_siblingNav != null)
         {
             enumerationComplete = true;
-            return _folderNav.TryGetFolderPosition(out index1Based, out total);
+            return _siblingNav.TryGetFolderPosition(out index1Based, out total);
         }
 
         enumerationComplete = _tree.IsEnumerationComplete;

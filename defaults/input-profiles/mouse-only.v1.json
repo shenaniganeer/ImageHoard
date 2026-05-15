@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "profileId": "MouseOnly",
   "displayName": "Mouse-only (sort / browse)",
-  "description": "Default profile for FR-SR-02 mouse-only acceptance and FR-IN-03. Uses wheel navigation, primary buttons for flags, X1/X2 for archive pipeline steps with double-confirm (FR-IN-05). Hardware without wheel tilt or X3 should expose slideshow scope via in-viewer chrome (implementation).",
+  "description": "Default profile for FR-SR-02 mouse-only acceptance and FR-IN-03. Uses wheel navigation, primary buttons for flags, X1/X2 for archive pipeline steps with double-confirm (FR-IN-05). Slideshow: right-button + wheel for sibling browse in fullscreen; wheel tilt left or X3 to switch to browse mode at current slide when hardware exposes them.",
   "bindings": {
     "nav.nextImage": [{ "kind": "mouseWheel", "wheel": "Down" }],
     "nav.prevImage": [{ "kind": "mouseWheel", "wheel": "Up" }],
@@ -39,14 +39,20 @@
         "notes": "Triple middle within ~600ms when wheel tilt is unavailable."
       }
     ],
-    "slideshow.toggleScope": [
+    "slideshow.switchToBrowseAtCurrentLocation": [
       { "kind": "mouseWheelTilt", "tilt": "Left" },
       {
         "kind": "mouseButton",
         "button": "X3",
         "clickCount": 1,
-        "notes": "When OS exposes a sixth discrete button; otherwise use on-screen scope control."
+        "notes": "When OS exposes a sixth discrete button; otherwise use keyboard Tab in slideshow."
       }
+    ],
+    "slideshow.siblingNextImage": [
+      { "kind": "mouseWheel", "wheel": "Down", "heldButtons": ["Right"] }
+    ],
+    "slideshow.siblingPrevImage": [
+      { "kind": "mouseWheel", "wheel": "Up", "heldButtons": ["Right"] }
     ],
     "view.panPreview": [
       {

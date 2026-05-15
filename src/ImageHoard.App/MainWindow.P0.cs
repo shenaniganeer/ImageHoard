@@ -30,7 +30,7 @@ public sealed partial class MainWindow
         OneToOne = 2,
     }
 
-    private void StopSlideshowSession()
+    private void DiscardSlideshowSession()
     {
         if (!_slideshowUiActive && _slideshow == null)
             return;
@@ -40,56 +40,15 @@ public sealed partial class MainWindow
         UpdateSlideshowScopeBadge();
     }
 
-    internal bool TryHandleSlideshowKeys(KeyRoutedEventArgs e)
+    private void SuspendSlideshowUi()
     {
-        if (!_slideshowUiActive || _slideshow == null)
-            return false;
-
-        if (IsBrowserPaneMutationInProgress)
-            return false;
-
-        if (e.Key == VirtualKey.Left)
-        {
-            if (_slideshow.TryMovePrevious(out var p) && p != null)
-                EnqueuePreviewNavigation(p, true);
-            e.Handled = true;
-            return true;
-        }
-
-        if (e.Key == VirtualKey.Right)
-        {
-            if (_slideshow.TryMoveNext(out var p) && p != null)
-                EnqueuePreviewNavigation(p, true);
-            e.Handled = true;
-            return true;
-        }
-
-        if (e.Key == VirtualKey.T)
-        {
-            _ = SlideshowToggleScopeFromKeysAsync();
-            e.Handled = true;
-            return true;
-        }
-
-        if (e.Key == VirtualKey.R)
-        {
-            _slideshow.Tree.Reshuffle();
-            e.Handled = true;
-            return true;
-        }
-
-        return false;
-    }
-
-    private async Task SlideshowToggleScopeFromKeysAsync()
-    {
-        if (_slideshow == null)
+        if (!_slideshowUiActive)
             return;
-        await _slideshow.ToggleScopeAsync(AppServices.FileSystem, _currentImageFullPath).ConfigureAwait(true);
-        if (_slideshow.Scope == SlideshowScopeKind.Folder && _slideshow.GetCurrentPath() is { } p)
-            await CommitPreviewImmediatelyAsync(p).ConfigureAwait(true);
+        _slideshowUiActive = false;
         UpdateSlideshowScopeBadge();
     }
+
+    internal bool HasSuspendedSlideshowSession => _slideshow != null && !_slideshowUiActive;
 
     private void InitializeFeatures()
     {
@@ -564,7 +523,65 @@ public sealed partial class MainWindow
     }
 
     private async void SlideshowStart_Click(object sender, RoutedEventArgs e) =>
+        await PromptResumeOrStartSlideshowAsync().ConfigureAwait(true);
+
+    private async Task PromptResumeOrStartSlideshowAsync()
+    {
+        if (_slideshowUiActive)
+            return;
+
+        if (HasSuspendedSlideshowSession)
+        {
+            var dlg = new ContentDialog
+            {
+                Title = "Slideshow",
+                Content = new TextBlock
+                {
+                    TextWrapping = TextWrapping.WrapWholeWords,
+                    MaxWidth = 420,
+                    Text = "Resume the slideshow you left (same random tree session), or start a new tree slideshow from the folder you are browsing now?",
+                },
+                PrimaryButtonText = "Resume",
+                SecondaryButtonText = "New at current folder",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = RootGrid.XamlRoot,
+            };
+            var r = await ShowWizardContentDialogAsync(dlg);
+            if (r == ContentDialogResult.Primary)
+            {
+                await ResumeSlideshowUiAsync().ConfigureAwait(true);
+                return;
+            }
+
+            if (r == ContentDialogResult.Secondary)
+            {
+                DiscardSlideshowSession();
+                await StartSlideshowFromTreeRootAsync(_currentFolderPath).ConfigureAwait(true);
+            }
+
+            return;
+        }
+
         await StartSlideshowFromTreeRootAsync(_currentFolderPath).ConfigureAwait(true);
+    }
+
+    private async Task ResumeSlideshowUiAsync()
+    {
+        if (_slideshow == null)
+            return;
+
+        _slideshow.ClearSiblingOverlay();
+        _slideshowUiActive = true;
+        UpdateSlideshowScopeBadge();
+        var path = _slideshow.GetCurrentPath();
+        if (string.IsNullOrEmpty(path))
+            path = _slideshow.Tree.CurrentPath;
+        if (!string.IsNullOrEmpty(path))
+            await CommitPreviewImmediatelyAsync(path).ConfigureAwait(true);
+        if (!_isFullscreen)
+            ToggleFullscreen();
+    }
 
     /// <summary>Tree-scope slideshow from <paramref name="rootDirectory"/> including subfolders (Algorithm A).</summary>
     private async Task StartSlideshowFromTreeRootAsync(string? rootDirectory, string? missingFolderMessage = null)
@@ -581,6 +598,7 @@ public sealed partial class MainWindow
             return;
         }
 
+        DiscardSlideshowSession();
         var tree = new TreeSlideshowSession(AppServices.FileSystem);
         _slideshow = new SlideshowCoordinator(tree);
         _slideshow.Tree.Start(rootDirectory);
@@ -598,7 +616,7 @@ public sealed partial class MainWindow
         if (!_slideshow.Tree.TryMoveNext(out var first) || first == null)
         {
             SetTransientStatus("No images under that folder.");
-            StopSlideshowSession();
+            DiscardSlideshowSession();
             return;
         }
 
@@ -619,23 +637,113 @@ public sealed partial class MainWindow
         }
 
         FullscreenScopeBadgeHost.Visibility = Visibility.Visible;
-        FullscreenScopeBadge.Text = _slideshow.Scope == SlideshowScopeKind.Tree ? "TREE" : "FOLDER";
+        FullscreenScopeBadge.Text = _slideshow.IsSiblingOverlayActive ? "SIBLINGS" : "TREE";
     }
 
-    private async void SlideshowToggleScope_Click(object sender, RoutedEventArgs e)
+    internal async Task SwitchToBrowseAtCurrentSlideshowLocationAsync()
     {
-        if (_slideshow == null || !_slideshowUiActive)
+        if (!_slideshowUiActive || _slideshow == null || string.IsNullOrEmpty(_currentImageFullPath))
             return;
-        await _slideshow.ToggleScopeAsync(AppServices.FileSystem, _currentImageFullPath).ConfigureAwait(true);
-        if (_slideshow.Scope == SlideshowScopeKind.Folder && _slideshow.GetCurrentPath() is { } p)
-            await CommitPreviewImmediatelyAsync(p).ConfigureAwait(true);
+
+        var imagePath = _currentImageFullPath;
+        var parent = Path.GetDirectoryName(imagePath);
+        if (string.IsNullOrEmpty(parent) || !Directory.Exists(parent))
+        {
+            SetTransientStatus("Could not open parent folder.");
+            return;
+        }
+
+        _slideshow.ClearSiblingOverlay();
+        SuspendSlideshowUi();
+        if (_isFullscreen)
+            ExitFullscreenChrome();
+
+        await NavigateToFolderAsync(parent).ConfigureAwait(true);
+        await TrySyncBrowseTreeSelectionToImagePathAsync(imagePath).ConfigureAwait(true);
+        await CommitPreviewImmediatelyAsync(imagePath).ConfigureAwait(true);
+        _session.LastSelectedImage = imagePath;
         UpdateSlideshowScopeBadge();
     }
 
-    private void SlideshowReshuffle_Click(object sender, RoutedEventArgs e)
+    private async Task SlideshowSiblingNextFromInputAsync()
     {
-        _slideshow?.Tree.Reshuffle();
-        SetTransientStatus("Slideshow reshuffled.");
+        if (!_slideshowUiActive || _slideshow == null)
+            return;
+        if (string.IsNullOrEmpty(_currentImageFullPath))
+            return;
+        if (!await _slideshow.TryMoveNextSiblingAsync(AppServices.FileSystem, _currentImageFullPath).ConfigureAwait(true))
+            return;
+        var p = _slideshow.GetCurrentPath();
+        if (!string.IsNullOrEmpty(p))
+            EnqueuePreviewNavigation(p, true);
+        UpdateSlideshowScopeBadge();
+    }
+
+    private async Task SlideshowSiblingPrevFromInputAsync()
+    {
+        if (!_slideshowUiActive || _slideshow == null)
+            return;
+        if (string.IsNullOrEmpty(_currentImageFullPath))
+            return;
+        if (!await _slideshow.TryMovePreviousSiblingAsync(AppServices.FileSystem, _currentImageFullPath).ConfigureAwait(true))
+            return;
+        var p = _slideshow.GetCurrentPath();
+        if (!string.IsNullOrEmpty(p))
+            EnqueuePreviewNavigation(p, true);
+        UpdateSlideshowScopeBadge();
+    }
+
+    private async Task SlideshowDeleteCurrentFromInputAsync()
+    {
+        if (!_slideshowUiActive || _slideshow == null || string.IsNullOrEmpty(_currentImageFullPath))
+            return;
+        if (!_session.SlideshowAllowDelete)
+        {
+            SetTransientStatus("Enable “Allow delete in slideshow” in Settings → Library to use this command.");
+            return;
+        }
+
+        var target = _currentImageFullPath;
+        var warn = new ContentDialog
+        {
+            Title = "Delete current slideshow image?",
+            Content = new TextBlock
+            {
+                TextWrapping = TextWrapping.WrapWholeWords,
+                MaxWidth = 440,
+                Text = $"Send this file to the Recycle Bin (or permanently delete if the Recycle Bin is unavailable)?\n\n{Path.GetFileName(target)}",
+            },
+            PrimaryButtonText = "Delete",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = RootGrid.XamlRoot,
+        };
+        if (await ShowWizardContentDialogAsync(warn) != ContentDialogResult.Primary)
+            return;
+
+        var dir = Path.GetDirectoryName(target);
+        var ok = await WizardExecuteImageRecycleOrPermanentBatchAsync(
+                new[] { target },
+                recordUndoForRecycledPaths: false,
+                operationNameForLog: "SlideshowDelete",
+                workingFolderOverride: string.IsNullOrEmpty(dir) ? null : dir,
+                deferBrowserPaneRefresh: false)
+            .ConfigureAwait(true);
+        if (!ok)
+            return;
+
+        _slideshow.ClearSiblingOverlay();
+        if (_slideshow.TryMoveNextTree(out var next) && next != null)
+            await CommitPreviewImmediatelyAsync(next).ConfigureAwait(true);
+        else
+        {
+            SetTransientStatus("No more images in slideshow.");
+            DiscardSlideshowSession();
+            if (_isFullscreen)
+                ExitFullscreenChrome();
+        }
+
+        UpdateSlideshowScopeBadge();
     }
 
     private async void SlideshowFairnessHelp_Click(object sender, RoutedEventArgs e)
@@ -648,12 +756,12 @@ public sealed partial class MainWindow
                 TextWrapping = TextWrapping.WrapWholeWords,
                 MaxWidth = 420,
                 Text =
-                    "Tree slideshow walks your folder in the background (no full scan before the first slide). Each Next picks at random from images discovered so far. Discovery order is shuffled so slides are not stuck in alphabetically first folders. If more than 2000 paths are seen, older pool entries rotate out (LRU) so new files can appear while memory stays capped. After the whole tree is found, Next is uniform over all images (still within that cap). Reshuffle starts a new session. For a future persistent index option, see the product roadmap.",
+                    "Tree slideshow walks your folder in the background (no full scan before the first slide). Each Next picks at random from images discovered so far. Discovery order is shuffled so slides are not stuck in alphabetically first folders. If more than 2000 paths are seen, older pool entries rotate out (LRU) so new files can appear while memory stays capped. After the whole tree is found, Next is uniform over all images (still within that cap). For a future persistent index option, see the product roadmap.",
             },
             CloseButtonText = "OK",
             XamlRoot = RootGrid.XamlRoot,
         };
-        await dlg.ShowAsync();
+        await ShowWizardContentDialogAsync(dlg);
     }
 
     private void SortFlagKeep_Click(object sender, RoutedEventArgs e) => SetSelectedSortFlag(SortFlagState.Keep);

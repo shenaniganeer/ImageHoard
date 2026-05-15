@@ -3,8 +3,7 @@ namespace ImageHoard.App;
 /// <summary>Hotkeys editor grouping (Preferences → Hotkeys).</summary>
 internal enum HotkeySection
 {
-    Navigation,
-    Sorting,
+    NavigationBrowseAndSort,
     Slideshow,
     Browse,
     View,
@@ -19,23 +18,23 @@ internal static class CommandCatalog
 
     public static IReadOnlyList<Entry> All { get; } =
     [
-        new("nav.nextImage", "Next image", true, HotkeySection.Navigation),
-        new("nav.prevImage", "Previous image", true, HotkeySection.Navigation),
-        new("nav.firstImage", "First image in folder list", true, HotkeySection.Navigation),
-        new("nav.lastImage", "Last image in folder list", true, HotkeySection.Navigation),
-        new("nav.nextDirectory", "Next sibling folder in the tree", true, HotkeySection.Navigation),
-        new("nav.prevDirectory", "Previous sibling folder in the tree", true, HotkeySection.Navigation),
-        new("nav.cycleNavigationMode", "Cycle browse navigation mode (folder list filter)", true, HotkeySection.Navigation),
-        new("sort.flagKeep", "Sort: flag Keep", true, HotkeySection.Sorting),
-        new("sort.flagDelete", "Sort: flag Delete", true, HotkeySection.Sorting),
-        new("sort.flagUnset", "Sort: flag Unset", true, HotkeySection.Sorting),
-        new("sort.deleteArchiveWizard", "Call delete/archive wizard", true, HotkeySection.Sorting),
-        new("sort.clearAllFlags", "Sort: clear all flags", true, HotkeySection.Sorting),
-        new("slideshow.start", "Slideshow: start from current folder (tree)", true, HotkeySection.Slideshow),
-        new("slideshow.toggleScope", "Slideshow: toggle tree / folder scope", true, HotkeySection.Slideshow),
-        new("slideshow.reshuffle", "Slideshow: reshuffle session", true, HotkeySection.Slideshow),
-        new("slideshow.skipUnsupported", "Slideshow: skip unsupported file", true, HotkeySection.Slideshow),
-        new("slideshow.deleteCurrent", "Slideshow: delete current slide", true, HotkeySection.Slideshow),
+        new("nav.nextImage", "Next image", true, HotkeySection.NavigationBrowseAndSort),
+        new("nav.prevImage", "Previous image", true, HotkeySection.NavigationBrowseAndSort),
+        new("nav.firstImage", "First image in folder list", true, HotkeySection.NavigationBrowseAndSort),
+        new("nav.lastImage", "Last image in folder list", true, HotkeySection.NavigationBrowseAndSort),
+        new("nav.nextDirectory", "Next sibling folder in the tree", true, HotkeySection.NavigationBrowseAndSort),
+        new("nav.prevDirectory", "Previous sibling folder in the tree", true, HotkeySection.NavigationBrowseAndSort),
+        new("nav.cycleNavigationMode", "Cycle browse navigation mode (folder list filter)", true, HotkeySection.NavigationBrowseAndSort),
+        new("slideshow.start", "Start or resume slideshow", true, HotkeySection.NavigationBrowseAndSort),
+        new("sort.flagKeep", "Sort: flag Keep", true, HotkeySection.NavigationBrowseAndSort),
+        new("sort.flagDelete", "Sort: flag Delete", true, HotkeySection.NavigationBrowseAndSort),
+        new("sort.flagUnset", "Sort: flag Unset", true, HotkeySection.NavigationBrowseAndSort),
+        new("sort.deleteArchiveWizard", "Call delete/archive wizard", true, HotkeySection.NavigationBrowseAndSort),
+        new("sort.clearAllFlags", "Sort: clear all flags", true, HotkeySection.NavigationBrowseAndSort),
+        new("slideshow.siblingNextImage", "Slideshow: next image in current file's folder (siblings)", true, HotkeySection.Slideshow),
+        new("slideshow.siblingPrevImage", "Slideshow: previous image in current file's folder (siblings)", true, HotkeySection.Slideshow),
+        new("slideshow.switchToBrowseAtCurrentLocation", "Slideshow: switch to browse mode at current location", true, HotkeySection.Slideshow),
+        new("slideshow.deleteCurrent", "Slideshow: delete current slideshow image", true, HotkeySection.Slideshow),
         new("browse.toggleSubfolderInclusion", "Browse: toggle include subfolders in list", true, HotkeySection.Browse),
         new("browse.openGoToPath", "Browse: open Go to path dialog", true, HotkeySection.Browse),
         new("browse.openBookmarks", "Browse: open favorites", true, HotkeySection.Browse),
@@ -62,8 +61,7 @@ internal static class CommandCatalog
 
     public static ReadOnlySpan<HotkeySection> SectionDisplayOrder =>
     [
-        HotkeySection.Navigation,
-        HotkeySection.Sorting,
+        HotkeySection.NavigationBrowseAndSort,
         HotkeySection.Slideshow,
         HotkeySection.Browse,
         HotkeySection.View,
@@ -74,9 +72,8 @@ internal static class CommandCatalog
     public static string SectionHeader(HotkeySection section) =>
         section switch
         {
-            HotkeySection.Navigation => "Navigation",
-            HotkeySection.Sorting => "Sorting",
-            HotkeySection.Slideshow => "Slideshow",
+            HotkeySection.NavigationBrowseAndSort => "Navigation: Browse & Sort Mode",
+            HotkeySection.Slideshow => "Navigation: Slideshow Mode",
             HotkeySection.Browse => "Browse",
             HotkeySection.View => "View",
             HotkeySection.Settings => "Settings",

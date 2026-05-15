@@ -14,14 +14,14 @@ namespace ImageHoard.App.Imaging;
 public static class WicBitmapLoader
 {
     /// <summary>Full-resolution decode (no target box); heaviest path.</summary>
-    public static Task<SoftwareBitmap?> DecodeWithOrientationAsync(string absolutePath) =>
+    public static Task<WicBitmapDecodeResult> DecodeWithOrientationAsync(string absolutePath) =>
         DecodeWithOrientationAsync(absolutePath, layout: null);
 
     /// <summary>
     /// When <paramref name="layout"/> is null, decodes at full oriented pixel size (legacy behavior).
     /// Otherwise scales once in WIC to match the layout box and max-edge policy.
     /// </summary>
-    public static async Task<SoftwareBitmap?> DecodeWithOrientationAsync(string absolutePath, WicDecodeLayout? layout)
+    public static async Task<WicBitmapDecodeResult> DecodeWithOrientationAsync(string absolutePath, WicDecodeLayout? layout)
     {
         try
         {
@@ -31,7 +31,7 @@ public static class WicBitmapLoader
             var orientedW = decoder.OrientedPixelWidth;
             var orientedH = decoder.OrientedPixelHeight;
             if (orientedW == 0 || orientedH == 0)
-                return null;
+                return new WicBitmapDecodeResult(null, 0, 0);
 
             var transform = new BitmapTransform();
             if (layout != null)
@@ -54,16 +54,17 @@ public static class WicBitmapLoader
                 }
             }
 
-            return await decoder.GetSoftwareBitmapAsync(
+            var bitmap = await decoder.GetSoftwareBitmapAsync(
                 BitmapPixelFormat.Bgra8,
                 BitmapAlphaMode.Premultiplied,
                 transform,
                 ExifOrientationMode.RespectExifOrientation,
                 ColorManagementMode.ColorManageToSRgb);
+            return new WicBitmapDecodeResult(bitmap, orientedW, orientedH);
         }
         catch
         {
-            return null;
+            return new WicBitmapDecodeResult(null, 0, 0);
         }
     }
 

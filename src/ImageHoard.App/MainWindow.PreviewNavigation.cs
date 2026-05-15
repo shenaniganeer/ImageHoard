@@ -159,7 +159,8 @@ public sealed partial class MainWindow
 
             SetTransientStatus("Loading preview…");
             var layout = CreateWicDecodeLayout();
-            var bmp = await WicBitmapLoader.DecodeWithOrientationAsync(path, layout).ConfigureAwait(true);
+            var decode = await WicBitmapLoader.DecodeWithOrientationAsync(path, layout).ConfigureAwait(true);
+            var bmp = decode.Bitmap;
 
             if (Volatile.Read(ref _previewInvalidateGeneration) != gen)
             {
@@ -209,6 +210,7 @@ public sealed partial class MainWindow
                     _currentImageFullPath = path;
                     RememberDecodeTargetBox(layout);
                     RememberPreviewBitmapPixelSize(bmp.PixelWidth, bmp.PixelHeight);
+                    RememberPreviewOrientedPixelSize(decode.OrientedPixelWidth, decode.OrientedPixelHeight);
                     UpdatePreviewScrollMetrics();
                     UpdatePathOverlays();
                     if (_slideshowUiActive)
@@ -249,6 +251,15 @@ public sealed partial class MainWindow
         Interlocked.Increment(ref _previewInvalidateGeneration);
         lock (_previewNavLock)
             _previewNavQueue.Clear();
+        await DecodeAndCommitPreviewAsync(path).ConfigureAwait(true);
+    }
+
+    /// <summary>Invalidates in-flight preview work and re-decodes the same path (user zoom change).</summary>
+    private async Task ReloadPreviewAfterZoomChangeAsync(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return;
+        Interlocked.Increment(ref _previewInvalidateGeneration);
         await DecodeAndCommitPreviewAsync(path).ConfigureAwait(true);
     }
 

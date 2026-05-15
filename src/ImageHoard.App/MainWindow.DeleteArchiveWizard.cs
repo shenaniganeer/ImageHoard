@@ -1,7 +1,9 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using ImageHoard.Core.Browse;
 using ImageHoard.Core.Logging;
 using ImageHoard.Core.Metrics;
@@ -840,86 +842,172 @@ public sealed partial class MainWindow
         var failed = 0;
 
         var preByPath = new Dictionary<string, WizardPredeletedFileStat>(StringComparer.OrdinalIgnoreCase);
-        foreach (var p in toDelete)
-        {
-            try
+        var existedAtStart = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        var scanLock = new object();
+        Parallel.ForEach(
+            toDelete,
+            new ParallelOptions { MaxDegreeOfParallelism = 8 },
+            p =>
             {
-                var fi = new FileInfo(p);
-                if (!fi.Exists)
-                    continue;
-                preByPath[p] = new WizardPredeletedFileStat(p, fi.Length, ImageExtensions.IsImageFile(p));
-            }
-            catch
-            {
-                // ignored
-            }
-        }
+                if (string.IsNullOrWhiteSpace(p))
+                    return;
+                try
+                {
+                    var fi = new FileInfo(p);
+                    if (!fi.Exists)
+                    {
+                        lock (scanLock)
+                            existedAtStart[p] = false;
+                        return;
+                    }
+
+                    var st = new WizardPredeletedFileStat(p, fi.Length, ImageExtensions.IsImageFile(p));
+                    lock (scanLock)
+                    {
+                        existedAtStart[p] = true;
+                        preByPath[p] = st;
+                    }
+                }
+                catch
+                {
+                    lock (scanLock)
+                        existedAtStart[p] = false;
+                }
+            });
 
         var succeededStats = new List<WizardPredeletedFileStat>();
 
         EnterBrowserPaneMutation();
         try
         {
-            foreach (var p in toDelete)
-        {
-            if (ShellRecycle.TrySendFileToRecycleBin(p))
+            const int permanentDeleteParallelism = 6;
+
+            var onDisk = toDelete.Where(p => existedAtStart.TryGetValue(p, out var ex) && ex).ToList();
+
+            var recycledOk = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            if (onDisk.Count > 0)
             {
-                toRecycleBin++;
-                entries.Add(new OperationLogEntry { Path = p, Result = "Ok" });
-                if (preByPath.TryGetValue(p, out var st))
-                    succeededStats.Add(st);
-                if (recordUndoForRecycledPaths &&
-                    !_wizardSessionUndoRecycledPaths.Contains(p, StringComparer.OrdinalIgnoreCase))
-                    _wizardSessionUndoRecycledPaths.Add(p);
-                continue;
+                if (ShellBulkRecycle.TryPerformBatchRecycleToBin(onDisk))
+                {
+                    foreach (var p in onDisk)
+                        recycledOk[p] = !File.Exists(p);
+                }
+                else
+                {
+                    foreach (var p in onDisk)
+                        recycledOk[p] = ShellRecycle.TrySendFileToRecycleBin(p);
+                }
             }
 
-            if (!userApprovedPermanentForFailures && !userApprovedMidBatchPermanent)
+            foreach (var p in toDelete)
             {
-                var midDlg = new ContentDialog
-                {
-                    Title = "Recycle Bin unavailable",
-                    Content = new TextBlock
-                    {
-                        Text =
-                            "At least one file could not be sent to the Recycle Bin. " +
-                            "Permanently delete files that cannot be recycled for the rest of this operation? " +
-                            "Permanent deletion cannot be undone from the app.",
-                        TextWrapping = TextWrapping.WrapWholeWords,
-                    },
-                    PrimaryButtonText = "Permanently delete",
-                    CloseButtonText = "Cancel",
-                    XamlRoot = RootGrid.XamlRoot,
-                };
-                if (await ShowWizardContentDialogAsync(midDlg) != ContentDialogResult.Primary)
-                {
-                    skippedDeclined++;
-                    entries.Add(new OperationLogEntry
-                    {
-                        Path = p,
-                        Result = "Skipped",
-                        Detail = "Permanent delete declined",
-                    });
+                if (!existedAtStart.TryGetValue(p, out var existed) || !existed)
                     continue;
+
+                if (recycledOk.TryGetValue(p, out var rec) && rec)
+                {
+                    toRecycleBin++;
+                    entries.Add(new OperationLogEntry { Path = p, Result = "Ok" });
+                    if (preByPath.TryGetValue(p, out var st))
+                        succeededStats.Add(st);
+                    if (recordUndoForRecycledPaths &&
+                        !_wizardSessionUndoRecycledPaths.Contains(p, StringComparer.OrdinalIgnoreCase))
+                        _wizardSessionUndoRecycledPaths.Add(p);
+                }
+            }
+
+            var stuck = toDelete
+                .Where(p => existedAtStart.TryGetValue(p, out var ex) && ex && !(recycledOk.TryGetValue(p, out var r) && r))
+                .ToList();
+
+            if (stuck.Count > 0)
+            {
+                if (!userApprovedPermanentForFailures && !userApprovedMidBatchPermanent)
+                {
+                    var midDlg = new ContentDialog
+                    {
+                        Title = "Recycle Bin unavailable",
+                        Content = new TextBlock
+                        {
+                            Text =
+                                "At least one file could not be sent to the Recycle Bin. " +
+                                "Permanently delete files that cannot be recycled for the rest of this operation? " +
+                                "Permanent deletion cannot be undone from the app.",
+                            TextWrapping = TextWrapping.WrapWholeWords,
+                        },
+                        PrimaryButtonText = "Permanently delete",
+                        CloseButtonText = "Cancel",
+                        XamlRoot = RootGrid.XamlRoot,
+                    };
+                    if (await ShowWizardContentDialogAsync(midDlg) != ContentDialogResult.Primary)
+                    {
+                        foreach (var p in stuck)
+                        {
+                            skippedDeclined++;
+                            entries.Add(new OperationLogEntry
+                            {
+                                Path = p,
+                                Result = "Skipped",
+                                Detail = "Permanent delete declined",
+                            });
+                        }
+                    }
+                    else
+                    {
+                        userApprovedMidBatchPermanent = true;
+                    }
                 }
 
-                userApprovedMidBatchPermanent = true;
-            }
+                if (userApprovedPermanentForFailures || userApprovedMidBatchPermanent)
+                {
+                    var stuckSet = stuck.ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    var permDetail = new ConcurrentDictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+                    await Parallel.ForEachAsync(
+                        stuck,
+                        new ParallelOptions { MaxDegreeOfParallelism = permanentDeleteParallelism },
+                        async (p, ct) =>
+                        {
+                            try
+                            {
+                                await Task.Run(
+                                        () =>
+                                        {
+                                            if (File.Exists(p))
+                                                File.Delete(p);
+                                        },
+                                        ct)
+                                    .ConfigureAwait(false);
+                                permDetail[p] = null;
+                            }
+                            catch (Exception ex)
+                            {
+                                permDetail[p] = ex.Message;
+                            }
+                        }).ConfigureAwait(true);
 
-            try
-            {
-                ShellRecycle.DeleteFilePermanently(p);
-                permanentDeleted++;
-                entries.Add(new OperationLogEntry { Path = p, Result = "Ok", Detail = "Permanent delete" });
-                if (preByPath.TryGetValue(p, out var st))
-                    succeededStats.Add(st);
+                    foreach (var p in toDelete)
+                    {
+                        if (!stuckSet.Contains(p))
+                            continue;
+                        if (!permDetail.TryGetValue(p, out var detail) || detail != null)
+                        {
+                            failed++;
+                            entries.Add(new OperationLogEntry
+                            {
+                                Path = p,
+                                Result = "Failed",
+                                Detail = detail ?? "Unknown error",
+                            });
+                            continue;
+                        }
+
+                        permanentDeleted++;
+                        entries.Add(new OperationLogEntry { Path = p, Result = "Ok", Detail = "Permanent delete" });
+                        if (preByPath.TryGetValue(p, out var st))
+                            succeededStats.Add(st);
+                    }
+                }
             }
-            catch (Exception ex)
-            {
-                failed++;
-                entries.Add(new OperationLogEntry { Path = p, Result = "Failed", Detail = ex.Message });
-            }
-        }
 
         if (recordUndoForRecycledPaths && permanentDeleted > 0)
             _wizardSessionHadPermanentImageDeletes = true;

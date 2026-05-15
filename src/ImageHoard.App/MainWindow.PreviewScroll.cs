@@ -23,6 +23,8 @@ public sealed partial class MainWindow
 
     private int _previewDecodedPixelWidth;
     private int _previewDecodedPixelHeight;
+    private uint _previewOrientedPixelWidth;
+    private uint _previewOrientedPixelHeight;
     private double _previewUserZoomFactor = 1.0;
     private string? _previewZoomCommittedImagePath;
     private bool _previewPanActive;
@@ -42,6 +44,52 @@ public sealed partial class MainWindow
     {
         _previewDecodedPixelWidth = 0;
         _previewDecodedPixelHeight = 0;
+        _previewOrientedPixelWidth = 0;
+        _previewOrientedPixelHeight = 0;
+    }
+
+    private void RememberPreviewOrientedPixelSize(uint width, uint height)
+    {
+        _previewOrientedPixelWidth = width;
+        _previewOrientedPixelHeight = height;
+    }
+
+    /// <summary>
+    /// Logical DIP intrinsic size for layout: oriented file pixels for fit modes, decoded pixels for 1:1 (decode may be max-edge capped).
+    /// </summary>
+    private bool TryGetPreviewImageIntrinsicDips(double rasterizationScale, out double imgDipW, out double imgDipH)
+    {
+        if (_fitMode == ImageFitMode.OneToOne)
+        {
+            if (_previewDecodedPixelWidth <= 0 || _previewDecodedPixelHeight <= 0)
+            {
+                imgDipW = 0;
+                imgDipH = 0;
+                return false;
+            }
+
+            imgDipW = _previewDecodedPixelWidth / rasterizationScale;
+            imgDipH = _previewDecodedPixelHeight / rasterizationScale;
+            return true;
+        }
+
+        if (_previewOrientedPixelWidth > 0 && _previewOrientedPixelHeight > 0)
+        {
+            imgDipW = _previewOrientedPixelWidth / rasterizationScale;
+            imgDipH = _previewOrientedPixelHeight / rasterizationScale;
+            return true;
+        }
+
+        if (_previewDecodedPixelWidth > 0 && _previewDecodedPixelHeight > 0)
+        {
+            imgDipW = _previewDecodedPixelWidth / rasterizationScale;
+            imgDipH = _previewDecodedPixelHeight / rasterizationScale;
+            return true;
+        }
+
+        imgDipW = 0;
+        imgDipH = 0;
+        return false;
     }
 
     private void ResetPreviewUserZoom()
@@ -73,8 +121,11 @@ public sealed partial class MainWindow
     {
         if (!HasDecodedPreviewForZoom())
             return false;
+        var path = _currentImageFullPath;
+        if (string.IsNullOrEmpty(path))
+            return false;
         _previewUserZoomFactor = Math.Clamp(_previewUserZoomFactor * PreviewZoomStepRatio, PreviewZoomMinFactor, PreviewZoomMaxFactor);
-        UpdatePreviewScrollMetrics();
+        _ = ReloadPreviewAfterZoomChangeAsync(path);
         return true;
     }
 
@@ -82,8 +133,11 @@ public sealed partial class MainWindow
     {
         if (!HasDecodedPreviewForZoom())
             return false;
+        var path = _currentImageFullPath;
+        if (string.IsNullOrEmpty(path))
+            return false;
         _previewUserZoomFactor = Math.Clamp(_previewUserZoomFactor / PreviewZoomStepRatio, PreviewZoomMinFactor, PreviewZoomMaxFactor);
-        UpdatePreviewScrollMetrics();
+        _ = ReloadPreviewAfterZoomChangeAsync(path);
         return true;
     }
 
@@ -91,8 +145,11 @@ public sealed partial class MainWindow
     {
         if (!HasDecodedPreviewForZoom())
             return false;
+        var path = _currentImageFullPath;
+        if (string.IsNullOrEmpty(path))
+            return false;
         ResetPreviewUserZoom();
-        UpdatePreviewScrollMetrics();
+        _ = ReloadPreviewAfterZoomChangeAsync(path);
         return true;
     }
 
@@ -103,8 +160,8 @@ public sealed partial class MainWindow
         if (!TryGetPreviewViewportDips(out var vw, out var vh))
             return false;
         var scale = (double)(RootGrid.XamlRoot?.RasterizationScale ?? 1.0);
-        var imgDipW = _previewDecodedPixelWidth / scale;
-        var imgDipH = _previewDecodedPixelHeight / scale;
+        if (!TryGetPreviewImageIntrinsicDips(scale, out var imgDipW, out var imgDipH))
+            return false;
         ComputeImageDisplayBaselineDipsWindowed(vw, vh, imgDipW, imgDipH, out var baseW, out var baseH);
         if (baseW < 1e-6 || baseH < 1e-6)
             return false;
@@ -161,7 +218,6 @@ public sealed partial class MainWindow
                 return;
             if (!HasDecodedPreviewForZoom())
                 return;
-            ResetPreviewUserZoom();
             TryExecuteViewZoomActualPixels();
             return;
         }
@@ -288,8 +344,8 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// Fullscreen image size applies <see cref="_previewUserZoomFactor"/> relative to the fit-mode baseline
-    /// (<b>Shrink &amp; stretch</b>: uniform contain in the viewport, including compositor upscale when the image is smaller
-    /// than the viewport; <b>Shrink only</b>: same contain rule capped at decoded DIP size (no upscale); <b>1:1</b>: decoded DIP size).
+    /// (<b>Shrink &amp; stretch</b>: uniform contain in the viewport, including compositor upscale when the intrinsic image is smaller
+    /// than the viewport; <b>Shrink only</b>: same contain rule capped at oriented intrinsic logical size (no upscale at zoom 1); <b>1:1</b>: decoded DIP size).
     /// </summary>
     private void ApplyFullscreenImageForFitMode()
     {
@@ -302,8 +358,14 @@ public sealed partial class MainWindow
         }
 
         var scale = (double)(RootGrid.XamlRoot?.RasterizationScale ?? 1.0);
-        var imgDipW = _previewDecodedPixelWidth / scale;
-        var imgDipH = _previewDecodedPixelHeight / scale;
+        if (!TryGetPreviewImageIntrinsicDips(scale, out var imgDipW, out var imgDipH))
+        {
+            FullscreenImage.ClearValue(FrameworkElement.WidthProperty);
+            FullscreenImage.ClearValue(FrameworkElement.HeightProperty);
+            FullscreenImage.Stretch = Stretch.Uniform;
+            return;
+        }
+
         var z = _previewUserZoomFactor;
 
         if (!TryGetFullscreenViewportDips(out var vw, out var vh))
@@ -346,8 +408,12 @@ public sealed partial class MainWindow
             return;
         }
 
-        var imgDipW = _previewDecodedPixelWidth / scale;
-        var imgDipH = _previewDecodedPixelHeight / scale;
+        if (!TryGetPreviewImageIntrinsicDips(scale, out var imgDipW, out var imgDipH))
+        {
+            ApplyFullscreenImageForFitMode();
+            return;
+        }
+
         var z = _previewUserZoomFactor;
 
         ComputeImageDisplayBaselineDipsWindowed(vw, vh, imgDipW, imgDipH, out var baseW, out var baseH);

@@ -79,6 +79,9 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
     internal bool IsBrowserPaneMutationInProgress => Volatile.Read(ref _browserPaneMutationDepth) > 0;
 
+    /// <summary>Non-zero while Preferences → Hotkeys is recording a chord; blocks global shortcuts and overlay Escape dismissal.</summary>
+    internal bool IsHotkeyChordRecordingActive { get; private set; }
+
     private void EnterBrowserPaneMutation()
     {
         Interlocked.Increment(ref _browserPaneMutationDepth);
@@ -507,7 +510,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         if (!e.Handled && TryDispatchInputCommand(e))
             return;
 
-        if (e.Key == VirtualKey.F11)
+        if (!IsHotkeyChordRecordingActive && e.Key == VirtualKey.F11)
         {
             ToggleFullscreen();
             e.Handled = true;
@@ -603,6 +606,15 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         if (commandId == ViewPanPreviewCommandId)
         {
             return source != null && IsDescendantOf(source, PreviewHostGrid);
+        }
+
+        if (commandId is ViewZoomInCommandId or ViewZoomOutCommandId)
+        {
+            if (source == null)
+                return false;
+            if (IsDescendantOf(source, PreviewHostGrid))
+                return true;
+            return _isFullscreen && IsDescendantOf(source, FullscreenImage);
         }
 
         return true;
@@ -793,6 +805,9 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         if (string.IsNullOrEmpty(commandId))
             return false;
 
+        if (IsHotkeyChordRecordingActive)
+            return false;
+
         if (IsPreferencesOverlayOpen && commandId is not ("ui.escape" or "settings.open" or "browse.findInTree"))
             return false;
         if (IsDeleteArchiveWizardOverlayOpen
@@ -873,6 +888,14 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             case "view.cycleFitMode":
                 ViewCycleFitFromInput();
                 return true;
+            case ViewZoomInCommandId:
+                return TryExecuteViewZoomIn();
+            case ViewZoomOutCommandId:
+                return TryExecuteViewZoomOut();
+            case ViewZoomResetFitCommandId:
+                return TryExecuteViewZoomResetFit();
+            case ViewZoomActualPixelsCommandId:
+                return TryRequestViewZoomActualPixelsFromInput();
             case "browse.toggleSubfolderInclusion":
                 ToggleIncludeSubfoldersFromInput();
                 return true;

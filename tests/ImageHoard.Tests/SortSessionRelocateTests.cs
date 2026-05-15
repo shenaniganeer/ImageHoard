@@ -37,4 +37,36 @@ public sealed class SortSessionRelocateTests
         Assert.Equal(SortFlagState.Delete, session.GetState(newNested));
         Assert.Equal(SortFlagState.Unset, session.GetState(oldNested));
     }
+
+    [Fact]
+    public void RelocateImagePath_remaps_single_file_key()
+    {
+        var session = new SortSession();
+        var oldPath = @"C:\share\album\old\pic.jpg";
+        var newPath = @"C:\share\album\new\pic.jpg";
+        session.SetState(oldPath, SortFlagState.Keep);
+
+        session.RelocateImagePath(oldPath, newPath);
+
+        Assert.Equal(SortFlagState.Unset, session.GetState(oldPath));
+        Assert.Equal(SortFlagState.Keep, session.GetState(newPath));
+    }
+
+    [Fact]
+    public void RelocateImagePath_noop_when_old_key_missing()
+    {
+        var session = new SortSession();
+        session.RelocateImagePath(@"C:\a.jpg", @"C:\b.jpg");
+        Assert.Equal(SortFlagState.Unset, session.GetState(@"C:\b.jpg"));
+    }
+
+    [Fact]
+    public void RelocateImagePath_noop_when_paths_equal_ignore_case()
+    {
+        var session = new SortSession();
+        var p = @"C:\folder\Pic.JPG";
+        session.SetState(p, SortFlagState.Delete);
+        session.RelocateImagePath(p, @"c:\folder\pic.jpg");
+        Assert.Equal(SortFlagState.Delete, session.GetState(p));
+    }
 }

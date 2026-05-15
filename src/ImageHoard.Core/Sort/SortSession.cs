@@ -15,6 +15,19 @@ public sealed class SortSession
 
     public void Clear() => _byPath.Clear();
 
+    /// <summary>After a single image file was moved on disk, remap its sort-flag key from <paramref name="oldImagePath"/> to <paramref name="newImagePath"/>.</summary>
+    public void RelocateImagePath(string oldImagePath, string newImagePath)
+    {
+        if (string.IsNullOrEmpty(oldImagePath) || string.IsNullOrEmpty(newImagePath))
+            return;
+        if (string.Equals(oldImagePath, newImagePath, StringComparison.OrdinalIgnoreCase))
+            return;
+        if (!_byPath.TryGetValue(oldImagePath, out var state))
+            return;
+        _byPath.Remove(oldImagePath);
+        _byPath[newImagePath] = state;
+    }
+
     /// <summary>After a directory rename/move on disk, remap stored flag keys under <paramref name="oldDirectoryPath"/>.</summary>
     public void RelocatePathsForDirectoryRename(string oldDirectoryPath, string newDirectoryPath)
     {

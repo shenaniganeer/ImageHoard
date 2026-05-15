@@ -15,6 +15,8 @@ public sealed partial class MainWindow
     private DispatcherQueueTimer? _previewResizeDebounceTimer;
     private int _lastDecodeTargetBoxWidthPx = -1;
     private int _lastDecodeTargetBoxHeightPx = -1;
+    /// <summary>Next preview decode uses full-resolution layout (max-edge cap); consumed in <see cref="CreateWicDecodeLayout"/>.</summary>
+    private bool _forceNextPreviewFullResolutionDecode;
 
     private void PreviewHostGrid_SizeChanged(object sender, SizeChangedEventArgs e)
     {
@@ -88,22 +90,18 @@ public sealed partial class MainWindow
         return dw >= 0.10 || dh >= 0.10;
     }
 
-    private WicDecodeLayout CreateWicDecodeLayout()
+    /// <summary>Physical pixel size of the preview decode target box (viewport or work area when fullscreen), excluding fit-mode / one-shot overrides.</summary>
+    private void GetPreviewDecodeTargetBoxPhysicalPx(double rasterizationScale, out int targetW, out int targetH)
     {
-        var maxEdge = ResolveMaxDecodeEdgePx();
-        var scale = (double)(RootGrid.XamlRoot?.RasterizationScale ?? 1.0);
         if (!TryGetPreviewViewportDips(out var dipW, out var dipH))
         {
             dipW = PreviewHostGrid.ActualWidth;
             dipH = PreviewHostGrid.ActualHeight;
         }
 
-        var previewPxW = DipToPhysicalPx(dipW, scale);
-        var previewPxH = DipToPhysicalPx(dipH, scale);
+        var previewPxW = DipToPhysicalPx(dipW, rasterizationScale);
+        var previewPxH = DipToPhysicalPx(dipH, rasterizationScale);
         TryGetPrimaryWorkAreaPx(out var workW, out var workH);
-
-        int targetW;
-        int targetH;
         if (_isFullscreen)
         {
             targetW = Math.Max(1, workW);
@@ -114,20 +112,45 @@ public sealed partial class MainWindow
             targetW = Math.Max(1, previewPxW);
             targetH = Math.Max(1, previewPxH);
         }
+    }
+
+    private bool TryConsumeForceNextPreviewFullResolutionDecode()
+    {
+        if (!_forceNextPreviewFullResolutionDecode)
+            return false;
+        _forceNextPreviewFullResolutionDecode = false;
+        return true;
+    }
+
+    internal void SetForceNextPreviewFullResolutionDecode() => _forceNextPreviewFullResolutionDecode = true;
+
+    private WicDecodeLayout CreateWicDecodeLayout()
+    {
+        var maxEdge = ResolveMaxDecodeEdgePx();
+        var scale = (double)(RootGrid.XamlRoot?.RasterizationScale ?? 1.0);
 
         if (_fitMode == ImageFitMode.OneToOne)
+        {
+            _ = TryConsumeForceNextPreviewFullResolutionDecode();
+            return new WicDecodeLayout(int.MaxValue, int.MaxValue, BitmapUniformKind.FullResolution, maxEdge);
+        }
+
+        if (TryConsumeForceNextPreviewFullResolutionDecode())
             return new WicDecodeLayout(int.MaxValue, int.MaxValue, BitmapUniformKind.FullResolution, maxEdge);
 
-        var kind = _fitMode == ImageFitMode.Fill ? BitmapUniformKind.Fill : BitmapUniformKind.Fit;
-        return new WicDecodeLayout(targetW, targetH, kind, maxEdge);
+        GetPreviewDecodeTargetBoxPhysicalPx(scale, out var targetW, out var targetH);
+        return new WicDecodeLayout(targetW, targetH, BitmapUniformKind.Fit, maxEdge);
     }
 
     private void RememberDecodeTargetBox(in WicDecodeLayout layout)
     {
+        var scale = (double)(RootGrid.XamlRoot?.RasterizationScale ?? 1.0);
         if (layout.UniformKind == BitmapUniformKind.FullResolution)
         {
-            _lastDecodeTargetBoxWidthPx = -1;
-            _lastDecodeTargetBoxHeightPx = -1;
+            // Store the same physical target box a Fit decode would use so resize debounce compares like-for-like.
+            GetPreviewDecodeTargetBoxPhysicalPx(scale, out var tw, out var th);
+            _lastDecodeTargetBoxWidthPx = tw;
+            _lastDecodeTargetBoxHeightPx = th;
         }
         else
         {

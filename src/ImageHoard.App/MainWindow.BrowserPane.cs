@@ -133,6 +133,9 @@ public sealed partial class MainWindow
         var slideshowItem = new MenuFlyoutItem { Text = "Start slideshow from folder" };
         slideshowItem.Click += (_, _) => BrowserContextStartSlideshowFromFolder_Click();
         _browserTreeContextMenu.Items.Add(slideshowItem);
+        var archiveWizardItem = new MenuFlyoutItem { Text = "Open archive wizard in this folder" };
+        archiveWizardItem.Click += (_, _) => BrowserContextOpenArchiveWizardInFolder_Click();
+        _browserTreeContextMenu.Items.Add(archiveWizardItem);
         var favoriteItem = new MenuFlyoutItem { Text = "Add folder to favorites" };
         favoriteItem.Click += (_, _) => BrowserContextAddFavorite_Click();
         _browserTreeContextMenu.Items.Add(favoriteItem);
@@ -361,6 +364,28 @@ public sealed partial class MainWindow
             root = ResolveFolderPathForFavoriteFromNode(_browserContextMenuTargetNode);
 
         await StartSlideshowFromTreeRootAsync(root, "No folder to start from.").ConfigureAwait(true);
+    }
+
+    private void BrowserContextOpenArchiveWizardInFolder_Click()
+    {
+        string? folder;
+        if (_browserContextMenuIsToolbarCurrentFolder)
+        {
+            _browserContextMenuIsToolbarCurrentFolder = false;
+            folder = _currentFolderPath;
+        }
+        else
+        {
+            if (_browserContextMenuTargetNode == null)
+                return;
+            SyncBrowseTreeSelection(_browserContextMenuTargetNode);
+            folder = ResolveFolderPathForFavoriteFromNode(_browserContextMenuTargetNode);
+        }
+
+        if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
+            return;
+
+        ShowOrActivateDeleteArchiveWizardForFolder(folder);
     }
 
     private static string? ResolveFolderPathForFavoriteFromNode(TreeViewNode? node) =>
@@ -2758,6 +2783,8 @@ public sealed partial class MainWindow
         if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
             return;
 
+        ResetPreviewUserZoom();
+
         if (!string.IsNullOrEmpty(_currentFolderPath)
             && string.Equals(path, _currentFolderPath, StringComparison.OrdinalIgnoreCase)
             && string.IsNullOrEmpty(_pendingSelectImagePath)
@@ -3136,6 +3163,7 @@ public sealed partial class MainWindow
         _lastDecodeTargetBoxWidthPx = -1;
         _lastDecodeTargetBoxHeightPx = -1;
         ClearPreviewBitmapPixelSize();
+        OnPreviewImagePathCommitted(null);
         UpdatePreviewScrollMetrics();
         UpdatePathOverlays();
         UpdateFullscreenMenuEnabled();
@@ -4978,6 +5006,7 @@ public sealed partial class MainWindow
         _session.LastBrowseFolder = reloc(_session.LastBrowseFolder);
         _session.LastSelectedImage = reloc(_session.LastSelectedImage);
         _deleteArchiveWizardCapturedWorkingFolder = reloc(_deleteArchiveWizardCapturedWorkingFolder);
+        _deleteArchiveWizardFolderPathOverride = reloc(_deleteArchiveWizardFolderPathOverride);
     }
 
     /// <summary>Reference equality for WinRT sibling lists (WinUI exposes a non-generic <c>ReferenceEqualityComparer</c> that shadows BCL).</summary>

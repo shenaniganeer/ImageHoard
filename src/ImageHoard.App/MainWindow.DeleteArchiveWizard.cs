@@ -18,6 +18,9 @@ public sealed partial class MainWindow
     /// <summary>While the delete/archive wizard is open, remembers the working directory so actions still work if the preview path is stale or the image file no longer exists.</summary>
     private string? _deleteArchiveWizardCapturedWorkingFolder;
 
+    /// <summary>When set (e.g. browser tree "open archive wizard in this folder"), scopes the wizard to this directory ahead of the current image's parent.</summary>
+    private string? _deleteArchiveWizardFolderPathOverride;
+
     private readonly List<string> _wizardSessionUndoRecycledPaths = new();
     private bool _wizardSessionHadPermanentImageDeletes;
     private bool _wizardUndoRunning;
@@ -36,6 +39,7 @@ public sealed partial class MainWindow
     {
         ClearWizardImageUndoSession();
         _deleteArchiveWizardCapturedWorkingFolder = null;
+        _deleteArchiveWizardFolderPathOverride = null;
         DeleteArchiveWizardOverlayRoot.Visibility = Visibility.Collapsed;
     }
 
@@ -130,6 +134,18 @@ public sealed partial class MainWindow
 
     private string? TryGetDeleteArchiveWizardWorkingFolder()
     {
+        if (!string.IsNullOrEmpty(_deleteArchiveWizardFolderPathOverride))
+        {
+            if (Directory.Exists(_deleteArchiveWizardFolderPathOverride))
+            {
+                if (IsDeleteArchiveWizardOverlayOpen)
+                    _deleteArchiveWizardCapturedWorkingFolder = _deleteArchiveWizardFolderPathOverride;
+                return _deleteArchiveWizardFolderPathOverride;
+            }
+
+            _deleteArchiveWizardFolderPathOverride = null;
+        }
+
         var fromImage = TryResolveDeleteArchiveWizardDirectoryFromCurrentImage();
         if (!string.IsNullOrEmpty(fromImage))
         {
@@ -174,6 +190,7 @@ public sealed partial class MainWindow
     {
         HideBrowserFindOverlay();
         HidePreferencesOverlay();
+        _deleteArchiveWizardFolderPathOverride = null;
         var work = TryGetDeleteArchiveWizardWorkingFolder();
         if (string.IsNullOrEmpty(work))
         {
@@ -193,6 +210,54 @@ public sealed partial class MainWindow
 
         DeleteArchiveWizardOverlayRoot.Visibility = Visibility.Visible;
         DeleteArchiveWizardPanelElement.SetFolderPathDisplay(work);
+        DeleteArchiveWizardPanelElement.OnOverlayShown();
+        DeleteArchiveWizardOverlayRoot.Focus(FocusState.Programmatic);
+    }
+
+    internal void ShowOrActivateDeleteArchiveWizardForFolder(string folderPath)
+    {
+        if (string.IsNullOrWhiteSpace(folderPath))
+            return;
+
+        string normalized;
+        try
+        {
+            normalized = Path.GetFullPath(folderPath.Trim());
+        }
+        catch
+        {
+            SetTransientStatus("Could not resolve that folder path.");
+            return;
+        }
+
+        if (!Directory.Exists(normalized))
+        {
+            SetTransientStatus("Folder does not exist.");
+            return;
+        }
+
+        if (!TreeDeletePathsAreUnderBrowseRoot(new[] { normalized }))
+        {
+            SetTransientStatus("Folder is outside the browse tree.");
+            return;
+        }
+
+        HideBrowserFindOverlay();
+        HidePreferencesOverlay();
+
+        _deleteArchiveWizardFolderPathOverride = normalized;
+        _deleteArchiveWizardCapturedWorkingFolder = normalized;
+
+        if (IsDeleteArchiveWizardOverlayOpen)
+        {
+            DeleteArchiveWizardPanelElement.SetFolderPathDisplay(normalized);
+            DeleteArchiveWizardPanelElement.OnOverlayShown();
+            DeleteArchiveWizardOverlayRoot.Focus(FocusState.Programmatic);
+            return;
+        }
+
+        DeleteArchiveWizardOverlayRoot.Visibility = Visibility.Visible;
+        DeleteArchiveWizardPanelElement.SetFolderPathDisplay(normalized);
         DeleteArchiveWizardPanelElement.OnOverlayShown();
         DeleteArchiveWizardOverlayRoot.Focus(FocusState.Programmatic);
     }

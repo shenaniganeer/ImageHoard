@@ -37,10 +37,12 @@ This document extends the **minimum** command set in [input-default-profiles.md]
 | `browse.treeExpand` | Browser tree: expand current folder row (or parent folder when an image row is selected) | FR-BR-02 | Yes (KeyboardOnly default `ArrowRight`; overlaps `nav.nextImage`) |
 | `browse.treeCollapse` | Browser tree: collapse current folder row (or parent folder when an image row is selected) | FR-BR-02 | Yes (KeyboardOnly default `ArrowLeft`; overlaps `nav.prevImage`) |
 | `browse.treeDelete` | Browser tree: delete the selected folder/image row to Recycle Bin; **ContentDialog** confirms; uses `WizardExecuteImageRecycleOrPermanentBatchAsync` / `ExecuteSendFolderToRecycleBinAfterConfirmAsync` with paths deduped under browse root | FR-BR-02 / FR-SR-08 | Yes (KeyboardOnly default `Delete` while tree has focus) |
-| `view.cycleFitMode` | Cycle fit / fill / 1:1 (or next mode) | FR-VW-01 | Chrome P0; bind **recommended P0** `KeyV` or toolbar |
+| `view.cycleFitMode` | Cycle shrink only / shrink & stretch / 1:1 (or next mode) | FR-VW-01 | Chrome P0; bind **recommended P0** `KeyV` or toolbar |
 | `view.panPreview` | Pan primary preview (modifier + drag) when image exceeds pane | FR-VW-01 | Yes (MouseOnly default `Shift` + primary click drag; scrollbars also) |
-| `view.zoomIn` | Zoom in (when not slideshow-only) | FR-VW-01 | P1 |
-| `view.zoomOut` | Zoom out | FR-VW-01 | P1 |
+| `view.zoomIn` | Zoom in (primary preview + fullscreen); **10%** steps from current scale | FR-VW-01 | Yes (KeyboardOnly `Control+Equal` / `Control+NumpadAdd`; MouseOnly `Control`+wheel **Up**) |
+| `view.zoomOut` | Zoom out | FR-VW-01 | Yes (KeyboardOnly `Control+Minus` / `Control+NumpadSubtract`; MouseOnly `Control`+wheel **Down**) |
+| `view.zoomResetFit` | Reset preview zoom to default fit for current **Image fit** mode | FR-VW-01 | Yes (KeyboardOnly default `Control+Shift+Equal`) |
+| `view.zoomActualPixels` | Set preview zoom to **original decoded resolution** (1:1 DIPs) | FR-VW-01 | Yes (KeyboardOnly default `Control+Shift+Minus`) |
 | `view.clearSelection` | Clear browser image selection and blank preview (no-op in fullscreen for dispatch; `Escape` exits fullscreen instead) | FR-VW-01 | Yes (KeyboardOnly default `Escape`; no shipped MouseOnly keyboard chord) |
 | `settings.open` | Open **Preferences** window (Options → Preferences…) | FR-ST-01 | Yes (KeyboardOnly default `Control+P`; Options → Preferences remains P0 chrome) |
 | `settings.clearCaches` | FR-ST-03 clear folder metrics + thumbnails | FR-ST-03 | Chrome P0; bind P1 |
@@ -61,7 +63,8 @@ When promoting to shipped profiles:
 - `view.cycleFitMode`: `KeyV` (KeyboardOnly).  
 - `view.panPreview`: `Shift` + primary click drag on preview (MouseOnly merged profile; rebinding in Preferences).  
 - `browse.revealInExplorer`: `Control+Shift+E`.
-- `browse.findInTree`: `Control+F` (KeyboardOnly); shipped in `keyboard-only.v1.json`.
+- `browse.findInTree`: `Control+F` (KeyboardOnly); shipped in `keyboard-only.v1.json`.  
+- `view.zoomIn` / `view.zoomOut` / `view.zoomResetFit` / `view.zoomActualPixels`: shipped in `keyboard-only.v1.json` and `mouse-only.v1.json` (Ctrl+wheel).
 - `settings.open`: `Control+P` (KeyboardOnly); shipped in `keyboard-only.v1.json`.
 
 ## Acceptance

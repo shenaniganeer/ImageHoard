@@ -186,6 +186,8 @@ public sealed partial class MainWindow
 
     void IPreferencesSession.ReloadInputBindingsAfterHotkeysPersist() => TryLoadInputProfile();
 
+    void IPreferencesSession.SetHotkeyChordRecordingActive(bool active) => IsHotkeyChordRecordingActive = active;
+
     void IPreferencesSession.SyncChromeFromState()
     {
         ShowPathOnOverlayWindowedToggle.IsChecked = _layoutState.ShowPathOnOverlayWindowed;

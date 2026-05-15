@@ -66,4 +66,27 @@ public static class WicBitmapLoader
             return null;
         }
     }
+
+    /// <summary>
+    /// Reads oriented pixel dimensions from the container without decoding pixels (metadata only).
+    /// Returns (0,0) on failure.
+    /// </summary>
+    public static async Task<(uint Width, uint Height)> GetOrientedPixelDimensionsAsync(string absolutePath)
+    {
+        try
+        {
+            var file = await StorageFile.GetFileFromPathAsync(absolutePath);
+            using IRandomAccessStream stream = await file.OpenReadAsync();
+            var decoder = await BitmapDecoder.CreateAsync(stream);
+            var w = decoder.OrientedPixelWidth;
+            var h = decoder.OrientedPixelHeight;
+            if (w == 0 || h == 0)
+                return (0, 0);
+            return (w, h);
+        }
+        catch
+        {
+            return (0, 0);
+        }
+    }
 }

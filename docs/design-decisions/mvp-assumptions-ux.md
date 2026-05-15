@@ -5,7 +5,7 @@
 
 ## Viewer fit modes (FR-VW-01)
 
-- **Fit**, **Fill**, **1:1**, and **custom zoom** cycle via `view.cycleFitMode` (see [command-registry.md](./command-registry.md)).  
+- **Shrink only**, **Shrink & stretch**, **1:1**, and **custom zoom** cycle via `view.cycleFitMode` (see [command-registry.md](./command-registry.md)).  
 - **Persistence:** **per session** only in P0 (reset on app restart). **Per-user default** from Settings is **P1** unless schedule allows.
 
 ## Dual monitor

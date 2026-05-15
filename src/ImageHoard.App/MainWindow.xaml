@@ -440,20 +440,26 @@
                     </MenuFlyoutSubItem>
                     <MenuFlyoutSubItem Text="Image fit">
                         <RadioMenuFlyoutItem
-                            x:Name="FitModeFitItem"
-                            Text="Fit"
+                            x:Name="FitModeShrinkOnlyItem"
+                            Text="Shrink only"
                             GroupName="ImageFit"
-                            Click="ViewFit_Fit_Click" />
+                            Click="ViewFit_ShrinkOnly_Click" />
                         <RadioMenuFlyoutItem
-                            x:Name="FitModeFillItem"
-                            Text="Fill"
+                            x:Name="FitModeShrinkAndStretchItem"
+                            Text="Shrink &amp; stretch"
                             GroupName="ImageFit"
-                            Click="ViewFit_Fill_Click" />
+                            Click="ViewFit_ShrinkAndStretch_Click" />
                         <RadioMenuFlyoutItem
                             x:Name="FitModeOneToOneItem"
                             Text="1:1"
                             GroupName="ImageFit"
                             Click="ViewFit_OneToOne_Click" />
+                    </MenuFlyoutSubItem>
+                    <MenuFlyoutSubItem Text="Zoom">
+                        <MenuFlyoutItem Text="Zoom In" Click="ImageZoomIn_Click" />
+                        <MenuFlyoutItem Text="Zoom Out" Click="ImageZoomOut_Click" />
+                        <MenuFlyoutItem Text="Default fit" Click="ImageZoomDefaultFit_Click" />
+                        <MenuFlyoutItem Text="Original file resolution" Click="ImageZoomOriginalResolution_Click" />
                     </MenuFlyoutSubItem>
                     <MenuFlyoutSeparator />
                     <MenuFlyoutItem

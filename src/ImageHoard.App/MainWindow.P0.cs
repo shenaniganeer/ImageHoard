@@ -20,14 +20,14 @@ public sealed partial class MainWindow
 {
     private SlideshowCoordinator? _slideshow;
     private bool _slideshowUiActive;
-    private ImageFitMode _fitMode = ImageFitMode.Fit;
+    private ImageFitMode _fitMode = ImageFitMode.ShrinkOnly;
     private readonly SortSession _sortSession = new();
 
     private enum ImageFitMode
     {
-        Fit,
-        Fill,
-        OneToOne,
+        ShrinkOnly = 0,
+        ShrinkAndStretch = 1,
+        OneToOne = 2,
     }
 
     private void StopSlideshowSession()
@@ -308,8 +308,8 @@ public sealed partial class MainWindow
 
     private void UpdateFitModeMenuChecks()
     {
-        FitModeFitItem.IsChecked = _fitMode == ImageFitMode.Fit;
-        FitModeFillItem.IsChecked = _fitMode == ImageFitMode.Fill;
+        FitModeShrinkOnlyItem.IsChecked = _fitMode == ImageFitMode.ShrinkOnly;
+        FitModeShrinkAndStretchItem.IsChecked = _fitMode == ImageFitMode.ShrinkAndStretch;
         FitModeOneToOneItem.IsChecked = _fitMode == ImageFitMode.OneToOne;
     }
 
@@ -323,13 +323,7 @@ public sealed partial class MainWindow
 
     private void UpdatePreviewStretch()
     {
-        var stretch = _fitMode switch
-        {
-            ImageFitMode.Fill => Stretch.UniformToFill,
-            ImageFitMode.OneToOne => Stretch.None,
-            _ => Stretch.Uniform,
-        };
-        FullscreenImage.Stretch = stretch;
+        ApplyFullscreenImageForFitMode();
         UpdatePreviewScrollMetrics();
     }
 
@@ -378,15 +372,15 @@ public sealed partial class MainWindow
             _ = RefreshBrowserTreeFromSettingsAsync();
     }
 
-    private void ViewFit_Fit_Click(object sender, RoutedEventArgs e)
+    private void ViewFit_ShrinkOnly_Click(object sender, RoutedEventArgs e)
     {
-        _fitMode = ImageFitMode.Fit;
+        _fitMode = ImageFitMode.ShrinkOnly;
         ApplyFitModeUi();
     }
 
-    private void ViewFit_Fill_Click(object sender, RoutedEventArgs e)
+    private void ViewFit_ShrinkAndStretch_Click(object sender, RoutedEventArgs e)
     {
-        _fitMode = ImageFitMode.Fill;
+        _fitMode = ImageFitMode.ShrinkAndStretch;
         ApplyFitModeUi();
     }
 
@@ -395,6 +389,14 @@ public sealed partial class MainWindow
         _fitMode = ImageFitMode.OneToOne;
         ApplyFitModeUi();
     }
+
+    private void ImageZoomIn_Click(object sender, RoutedEventArgs e) => _ = TryExecuteViewZoomIn();
+
+    private void ImageZoomOut_Click(object sender, RoutedEventArgs e) => _ = TryExecuteViewZoomOut();
+
+    private void ImageZoomDefaultFit_Click(object sender, RoutedEventArgs e) => _ = TryExecuteViewZoomResetFit();
+
+    private void ImageZoomOriginalResolution_Click(object sender, RoutedEventArgs e) => RequestViewZoomActualPixelsAsync();
 
     private Task ReloadCurrentPreviewAsync()
     {
@@ -719,6 +721,8 @@ public sealed partial class MainWindow
 
     private void HandleSortKeyboardShortcuts(KeyRoutedEventArgs e)
     {
+        if (IsHotkeyChordRecordingActive)
+            return;
         if (!TryGetSortFlagTargetPath(out _))
             return;
 

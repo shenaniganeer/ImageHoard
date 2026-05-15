@@ -64,6 +64,8 @@ public sealed partial class MainWindow
     {
         if (e.Key == VirtualKey.Escape)
         {
+            if (IsHotkeyChordRecordingActive)
+                return;
             HidePreferencesOverlay();
             e.Handled = true;
         }
@@ -95,6 +97,8 @@ public sealed partial class MainWindow
 
         if (IsPreferencesOverlayOpen)
         {
+            if (IsHotkeyChordRecordingActive)
+                return false;
             HidePreferencesOverlay();
             return true;
         }

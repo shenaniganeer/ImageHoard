@@ -58,4 +58,7 @@ public interface IPreferencesSession
     void ReloadInputBindingsAfterHotkeysPersist();
 
     void SyncChromeFromState();
+
+    /// <summary>Called when hotkeys chord capture starts or ends; the host suppresses global input while active.</summary>
+    void SetHotkeyChordRecordingActive(bool active);
 }

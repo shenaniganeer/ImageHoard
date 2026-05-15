@@ -30,8 +30,11 @@ public sealed partial class PreferencesPanel : UserControl
             ApplyMenuPaneWidthFromTitles);
     }
 
-    internal void OnOverlayHidden() =>
+    internal void OnOverlayHidden()
+    {
         HotkeysEditor.RequestDismissPreferences = null;
+        _host.SetHotkeyChordRecordingActive(false);
+    }
 
     private void RootNav_Loaded(object sender, RoutedEventArgs e)
     {
@@ -151,6 +154,7 @@ public sealed partial class PreferencesPanel : UserControl
         HotkeysEditor.LoadEditDocumentsAsync = () => _host.LoadHotkeysEditDocumentsAsync();
         HotkeysEditor.BindingsPersisted = () => _host.ReloadInputBindingsAfterHotkeysPersist();
         HotkeysEditor.RequestDismissPreferences = () => RequestDismiss?.Invoke(this, EventArgs.Empty);
+        HotkeysEditor.ChordCaptureActiveChanged = active => _host.SetHotkeyChordRecordingActive(active);
         HotkeysEditor.Reset(docs.Value.Builtin, docs.Value.Merged);
         _hotkeysTabPrimed = true;
     }

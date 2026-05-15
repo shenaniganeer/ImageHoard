@@ -58,7 +58,7 @@ internal static class WinUiKeyboardInterop
             VirtualKey.F10 => "F10",
             VirtualKey.F11 => "F11",
             VirtualKey.F12 => "F12",
-            _ => null,
+            _ => MdnPrimaryKeyFromVirtualKey.TryOemAndNumpad((int)key),
         };
     }
 }

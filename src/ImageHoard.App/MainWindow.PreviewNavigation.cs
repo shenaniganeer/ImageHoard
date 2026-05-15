@@ -177,8 +177,9 @@ public sealed partial class MainWindow
                     PreviewImage.Source = null;
                     FullscreenImage.Source = null;
                     ClearPreviewBitmapPixelSize();
-                    UpdatePreviewScrollMetrics();
+                    OnPreviewImagePathCommitted(path);
                     _currentImageFullPath = path;
+                    UpdatePreviewScrollMetrics();
                     _lastDecodeTargetBoxWidthPx = -1;
                     _lastDecodeTargetBoxHeightPx = -1;
                     UpdatePathOverlays();
@@ -204,6 +205,7 @@ public sealed partial class MainWindow
                     await src.SetBitmapAsync(bmp);
                     PreviewImage.Source = src;
                     FullscreenImage.Source = src;
+                    OnPreviewImagePathCommitted(path);
                     _currentImageFullPath = path;
                     RememberDecodeTargetBox(layout);
                     RememberPreviewBitmapPixelSize(bmp.PixelWidth, bmp.PixelHeight);
@@ -228,6 +230,7 @@ public sealed partial class MainWindow
                     _lastDecodeTargetBoxWidthPx = -1;
                     _lastDecodeTargetBoxHeightPx = -1;
                     ClearPreviewBitmapPixelSize();
+                    OnPreviewImagePathCommitted(null);
                     UpdatePreviewScrollMetrics();
                     UpdatePathOverlays();
                     return Task.CompletedTask;

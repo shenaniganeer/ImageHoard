@@ -44,6 +44,9 @@ public sealed partial class HotkeysEditorControl : UserControl
     /// <summary>Invoked after overrides file was written successfully.</summary>
     public Action? BindingsPersisted { get; set; }
 
+    /// <summary>Invoked with true when chord capture arms, false when it disarms.</summary>
+    public Action<bool>? ChordCaptureActiveChanged { get; set; }
+
     /// <summary>Dismisses the preferences overlay without reverting bindings.</summary>
     public Action? RequestDismissPreferences { get; set; }
 
@@ -187,10 +190,12 @@ public sealed partial class HotkeysEditorControl : UserControl
             : "Recording (add variant): key chord; or hold one mouse button and press another for a chord; or single click (release to finish); or hold button(s) and scroll the wheel. Escape cancels.";
         AttachCapturePointerHandlers();
         _ = CaptureFocusSink.Focus(FocusState.Programmatic);
+        ChordCaptureActiveChanged?.Invoke(true);
     }
 
     private void DisarmCapture(bool restoreFocusToSource)
     {
+        var wasArmed = _armedCommandId != null;
         DetachCapturePointerHandlers();
         ClearMouseRecordPending();
         _armedCommandId = null;
@@ -198,6 +203,8 @@ public sealed partial class HotkeysEditorControl : UserControl
         SaveButton.IsEnabled = true;
         var returnTb = _armedSourceTextBox;
         _armedSourceTextBox = null;
+        if (wasArmed)
+            ChordCaptureActiveChanged?.Invoke(false);
         if (restoreFocusToSource && returnTb != null)
             _ = returnTb.Focus(FocusState.Programmatic);
     }

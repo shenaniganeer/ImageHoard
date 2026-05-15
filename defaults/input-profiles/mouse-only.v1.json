@@ -57,6 +57,8 @@
         "notes": "Drag on primary preview to pan when image exceeds the pane (scrollbars also available)."
       }
     ],
+    "view.zoomIn": [{ "kind": "mouseWheel", "wheel": "Up", "modifiers": ["Control"] }],
+    "view.zoomOut": [{ "kind": "mouseWheel", "wheel": "Down", "modifiers": ["Control"] }],
     "ui.fullscreen": [
       {
         "kind": "mouseButton",

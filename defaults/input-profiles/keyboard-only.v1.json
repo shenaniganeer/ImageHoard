@@ -40,6 +40,16 @@
       { "kind": "keyboard", "keys": ["F11"] },
       { "kind": "keyboard", "keys": ["Enter"] }
     ],
-    "view.clearSelection": [{ "kind": "keyboard", "keys": ["Escape"] }]
+    "view.clearSelection": [{ "kind": "keyboard", "keys": ["Escape"] }],
+    "view.zoomIn": [
+      { "kind": "keyboard", "keys": ["Control", "Equal"] },
+      { "kind": "keyboard", "keys": ["Control", "NumpadAdd"] }
+    ],
+    "view.zoomOut": [
+      { "kind": "keyboard", "keys": ["Control", "Minus"] },
+      { "kind": "keyboard", "keys": ["Control", "NumpadSubtract"] }
+    ],
+    "view.zoomActualPixels": [{ "kind": "keyboard", "keys": ["Control", "Shift", "Minus"] }],
+    "view.zoomResetFit": [{ "kind": "keyboard", "keys": ["Control", "Shift", "Equal"] }]
   }
 }

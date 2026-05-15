@@ -39,4 +39,25 @@ public sealed class NaturalStringComparerTests
         Assert.True(Comparer.Compare(b, a) > 0);
         Assert.Equal(0, Comparer.Compare(a, a));
     }
+
+    [Fact]
+    public void Non_letters_sort_before_letters_in_text_runs()
+    {
+        Assert.True(Comparer.Compare("_A", "A") < 0);
+        Assert.True(Comparer.Compare("_A", "a") < 0);
+        Assert.True(Comparer.Compare("_b", "a") < 0);
+        var sorted = new[] { "A", "_A", "a" }.OrderBy(s => s, Comparer).ToArray();
+        Assert.Equal("_A", sorted[0]);
+        Assert.Equal(new[] { "A", "a" }, sorted.Skip(1).OrderBy(s => s, StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
+    public void Symbols_sort_before_digits_at_mixed_boundary()
+    {
+        Assert.True(Comparer.Compare("_1", "1") < 0);
+        Assert.True(Comparer.Compare("1", "_1") > 0);
+        Assert.True(Comparer.Compare(".9", "9") < 0);
+        var ordered = new[] { "9", "_9", "a9" }.OrderBy(s => s, Comparer).ToArray();
+        Assert.Equal(new[] { "_9", "9", "a9" }, ordered);
+    }
 }

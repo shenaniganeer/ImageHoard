@@ -2,6 +2,8 @@ namespace ImageHoard.Core;
 
 /// <summary>
 /// Ordinal-ignore-case string compare with ASCII digit runs ordered by numeric value (natural / "version" sort).
+/// Non-digit text runs order non-letters (symbols, punctuation, etc.) before Unicode letters; letters compare case-insensitively.
+/// At a digit vs non-digit boundary, non-letter non-digits sort before ASCII digits (letters still use case-insensitive ordinal vs the digit code unit).
 /// </summary>
 public sealed class NaturalStringComparer : IComparer<string?>
 {
@@ -61,22 +63,66 @@ public sealed class NaturalStringComparer : IComparer<string?>
                     i++;
                 while (j < b.Length && !IsAsciiDigit(b[j]))
                     j++;
-                var c = a.Slice(ca, i - ca).CompareTo(b.Slice(cb, j - cb), StringComparison.OrdinalIgnoreCase);
+                var c = CompareNonDigitTextRun(a.Slice(ca, i - ca), b.Slice(cb, j - cb));
                 if (c != 0)
                     return c;
             }
             else
             {
-                var ac = char.ToUpperInvariant(a[i]);
-                var bc = char.ToUpperInvariant(b[j]);
-                if (ac != bc)
-                    return ac < bc ? -1 : 1;
+                var ca = a[i];
+                var cb = b[j];
+                var symA = !da && !char.IsLetter(ca);
+                var symB = !db && !char.IsLetter(cb);
+                if (symA && db)
+                    return -1;
+                if (da && symB)
+                    return 1;
+
+                var ua = char.ToUpperInvariant(ca);
+                var ub = char.ToUpperInvariant(cb);
+                if (ua != ub)
+                    return ua < ub ? -1 : 1;
                 i++;
                 j++;
             }
         }
 
         return a.Length - b.Length;
+    }
+
+    /// <summary>
+    /// Compare two spans that contain no ASCII digits. Non-letters sort before letters; letters are case-insensitive; non-letters use ordinal order.
+    /// </summary>
+    private static int CompareNonDigitTextRun(ReadOnlySpan<char> a, ReadOnlySpan<char> b)
+    {
+        var i = 0;
+        var j = 0;
+        while (i < a.Length && j < b.Length)
+        {
+            var ca = a[i];
+            var cb = b[j];
+            var letterA = char.IsLetter(ca);
+            var letterB = char.IsLetter(cb);
+            if (letterA != letterB)
+                return letterA ? 1 : -1;
+            if (!letterA)
+            {
+                if (ca != cb)
+                    return ca.CompareTo(cb);
+                i++;
+                j++;
+                continue;
+            }
+
+            var ua = char.ToUpperInvariant(ca);
+            var ub = char.ToUpperInvariant(cb);
+            if (ua != ub)
+                return ua < ub ? -1 : 1;
+            i++;
+            j++;
+        }
+
+        return (a.Length - i).CompareTo(b.Length - j);
     }
 
     private static bool IsAsciiDigit(char c) => c is >= '0' and <= '9';

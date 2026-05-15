@@ -437,6 +437,10 @@
                             x:Name="ShowPathOnOverlayFullscreenToggle"
                             Text="Show file path (fullscreen)"
                             Click="ShowPathOnOverlayFullscreenToggle_Click" />
+                        <ToggleMenuFlyoutItem
+                            x:Name="ShowOverlayListPositionMenuToggle"
+                            Text="Show list position on overlay"
+                            Click="ShowOverlayListPositionMenuToggle_Click" />
                     </MenuFlyoutSubItem>
                     <MenuFlyoutSubItem Text="Image fit">
                         <RadioMenuFlyoutItem

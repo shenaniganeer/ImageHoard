@@ -18,6 +18,12 @@
 - **Does not** mutate tree path store / history, PRNG, or enumerator state; tree session keeps running in the background.
 - Implemented as an overlay on `SlideshowCoordinator` (see `SiblingImageNavigator`).
 
+## Slideshow delete (`slideshow.deleteCurrent`, FR-SL-05)
+
+- After a successful delete: if **SIBLINGS** was active, the preview returns to the **tree session’s** current path (`TreeSlideshowSession.CurrentPath`) when that file still exists and is not the deleted path; otherwise the app advances with **`TryMoveNextTree`** like pure tree mode.
+- If no slide can be shown afterward and the window is **fullscreen**, the app **exits fullscreen** first (suspending slideshow UI), then **discards** the tree session—matching normal “leave slideshow” browse handoff.
+- Permanent-delete **preflight** and **Recycle Bin unavailable** prompts from the shared wizard batch helper are **skipped** for this command only (single up-front delete confirm remains).
+
 ## Switch to browse at current location (`slideshow.switchToBrowseAtCurrentLocation`)
 
 - Exits fullscreen UI, sets **browse** context to the **parent folder** of the current slide and selects that image in the tree.

@@ -421,7 +421,7 @@ public sealed partial class MainWindow
 
         if (string.IsNullOrEmpty(_session.ArchiveRoot))
         {
-            const string msg = "Set an archive target folder (browser pane footer or Preferences → Library).";
+            const string msg = "Set an archive target folder (browser pane footer or Preferences → Advanced).";
             SetTransientStatus(msg);
             ActiveDeleteArchiveWizardPanel?.ShowWizardOperationInfo("Move to archive", msg, InfoBarSeverity.Warning);
             return false;
@@ -566,19 +566,16 @@ public sealed partial class MainWindow
         {
             await AppServices.FileSystem.MergeMoveDirectoryAsync(work, dest).ConfigureAwait(true);
             ClearDeferredWizardBatchBrowserRefreshCapture();
-            if (_session.LogDestructiveOperations)
+            var rec = new OperationLogBatchRecord
             {
-                var rec = new OperationLogBatchRecord
+                Operation = "MoveToArchive",
+                Summary = new OperationLogSummary { Ok = 1, Failed = 0, Skipped = 0 },
+                Entries =
                 {
-                    Operation = "MoveToArchive",
-                    Summary = new OperationLogSummary { Ok = 1, Failed = 0, Skipped = 0 },
-                    Entries =
-                    {
-                        new OperationLogEntry { Path = work, Result = "Ok", Detail = dest },
-                    },
-                };
-                await OperationLogWriter.AppendAsync(AppDataPaths.OperationsLogPath, rec).ConfigureAwait(true);
-            }
+                    new OperationLogEntry { Path = work, Result = "Ok", Detail = dest },
+                },
+            };
+            await OperationLogWriter.AppendAsync(AppDataPaths.OperationsLogPath, rec).ConfigureAwait(true);
 
             SetTransientStatus("Folder moved to archive.");
             _deleteArchiveWizardCapturedWorkingFolder = null;
@@ -705,22 +702,19 @@ public sealed partial class MainWindow
         {
             EnterBrowserPaneMutation();
             ShellRecycle.SendDirectoryToRecycleBin(work);
-            if (_session.LogDestructiveOperations)
+            var rec = new OperationLogBatchRecord
             {
-                var rec = new OperationLogBatchRecord
-                {
-                    Operation = "DeleteFolderRecycle",
-                    Summary = new OperationLogSummary { Ok = 1, Failed = 0, Skipped = 0 },
-                    Entries = { new OperationLogEntry { Path = work, Result = "Ok" } },
-                };
-                try
-                {
-                    await OperationLogWriter.AppendAsync(AppDataPaths.OperationsLogPath, rec).ConfigureAwait(true);
-                }
-                catch
-                {
-                    // ignored
-                }
+                Operation = "DeleteFolderRecycle",
+                Summary = new OperationLogSummary { Ok = 1, Failed = 0, Skipped = 0 },
+                Entries = { new OperationLogEntry { Path = work, Result = "Ok" } },
+            };
+            try
+            {
+                await OperationLogWriter.AppendAsync(AppDataPaths.OperationsLogPath, rec).ConfigureAwait(true);
+            }
+            catch
+            {
+                // ignored
             }
 
             SetTransientStatus("Folder sent to the Recycle Bin.");
@@ -793,7 +787,8 @@ public sealed partial class MainWindow
         bool recordUndoForRecycledPaths,
         string operationNameForLog,
         string? workingFolderOverride = null,
-        bool deferBrowserPaneRefresh = false)
+        bool deferBrowserPaneRefresh = false,
+        bool assumePermanentFallbackForRecycleFailures = false)
     {
         if (toDelete.Count == 0)
         {
@@ -813,25 +808,30 @@ public sealed partial class MainWindow
         var userApprovedPermanentForFailures = false;
         if (preNeedsPermanentDialog)
         {
-            var preDlg = new ContentDialog
+            if (assumePermanentFallbackForRecycleFailures)
+                userApprovedPermanentForFailures = true;
+            else
             {
-                Title = "Permanent delete may be required",
-                Content = new TextBlock
+                var preDlg = new ContentDialog
                 {
-                    Text =
-                        "This folder appears to be on a network location where the Recycle Bin is often unavailable. " +
-                        "If sending to the Recycle Bin fails, ImageHoard can permanently delete those files instead. " +
-                        "Permanent deletion cannot be undone from the app.\n\n" +
-                        $"Files in this operation: {toDelete.Count}.",
-                    TextWrapping = TextWrapping.WrapWholeWords,
-                },
-                PrimaryButtonText = "Continue",
-                CloseButtonText = "Cancel",
-                XamlRoot = RootGrid.XamlRoot,
-            };
-            if (await ShowWizardContentDialogAsync(preDlg) != ContentDialogResult.Primary)
-                return false;
-            userApprovedPermanentForFailures = true;
+                    Title = "Permanent delete may be required",
+                    Content = new TextBlock
+                    {
+                        Text =
+                            "This folder appears to be on a network location where the Recycle Bin is often unavailable. " +
+                            "If sending to the Recycle Bin fails, ImageHoard can permanently delete those files instead. " +
+                            "Permanent deletion cannot be undone from the app.\n\n" +
+                            $"Files in this operation: {toDelete.Count}.",
+                        TextWrapping = TextWrapping.WrapWholeWords,
+                    },
+                    PrimaryButtonText = "Continue",
+                    CloseButtonText = "Cancel",
+                    XamlRoot = RootGrid.XamlRoot,
+                };
+                if (await ShowWizardContentDialogAsync(preDlg) != ContentDialogResult.Primary)
+                    return false;
+                userApprovedPermanentForFailures = true;
+            }
         }
 
         var userApprovedMidBatchPermanent = false;
@@ -922,6 +922,11 @@ public sealed partial class MainWindow
 
             if (stuck.Count > 0)
             {
+                if (assumePermanentFallbackForRecycleFailures
+                    && !userApprovedPermanentForFailures
+                    && !userApprovedMidBatchPermanent)
+                    userApprovedMidBatchPermanent = true;
+
                 if (!userApprovedPermanentForFailures && !userApprovedMidBatchPermanent)
                 {
                     var midDlg = new ContentDialog
@@ -1012,7 +1017,7 @@ public sealed partial class MainWindow
         if (recordUndoForRecycledPaths && permanentDeleted > 0)
             _wizardSessionHadPermanentImageDeletes = true;
 
-        if (_session.LogDestructiveOperations && entries.Count > 0)
+        if (entries.Count > 0)
         {
             var rec = new OperationLogBatchRecord
             {

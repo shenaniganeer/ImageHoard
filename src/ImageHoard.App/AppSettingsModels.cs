@@ -17,12 +17,6 @@ internal sealed class AppSettingsFile
     [JsonPropertyName("favorites")]
     public List<string>? Favorites { get; set; }
 
-    [JsonPropertyName("logDestructiveOperations")]
-    public bool? LogDestructiveOperations { get; set; }
-
-    [JsonPropertyName("slideshowAllowDelete")]
-    public bool? SlideshowAllowDelete { get; set; }
-
     /// <summary>When true, move-to-archive from the delete/archive wizard runs inverse-keep delete in the folder first.</summary>
     [JsonPropertyName("inverseKeepDeleteBeforeArchiveMove")]
     public bool? InverseKeepDeleteBeforeArchiveMove { get; set; }
@@ -106,9 +100,6 @@ internal sealed class UiSettingsSection
     [JsonPropertyName("showBrowserFolderImageCount")]
     public bool? ShowBrowserFolderImageCount { get; set; }
 
-    [JsonPropertyName("calculateFolderSizesInBackground")]
-    public bool? CalculateFolderSizesInBackground { get; set; }
-
     [JsonPropertyName("folderListSort")]
     public string? FolderListSort { get; set; }
 
@@ -137,7 +128,7 @@ internal sealed class UiLayoutState
 
     public bool FilesExpanderOpen { get; set; } = true;
 
-    public bool IncludeSubfoldersInList { get; set; }
+    public bool IncludeSubfoldersInList { get; set; } = true;
 
     public ListSortKind ListSort { get; set; } = ListSortKind.NameNatural;
 
@@ -154,8 +145,6 @@ internal sealed class UiLayoutState
     public bool ShowBrowserFolderSize { get; set; } = true;
 
     public bool ShowBrowserFolderImageCount { get; set; } = true;
-
-    public bool CalculateFolderSizesInBackground { get; set; }
 
     public FolderListSortKind FolderListSort { get; set; } = FolderListSortKind.NameNatural;
 
@@ -178,10 +167,6 @@ internal sealed class AppSessionSettings
     public string? StagingRoot { get; set; }
 
     public List<string> Favorites { get; set; } = new();
-
-    public bool LogDestructiveOperations { get; set; } = true;
-
-    public bool SlideshowAllowDelete { get; set; }
 
     public string? LastBrowseFolder { get; set; }
 

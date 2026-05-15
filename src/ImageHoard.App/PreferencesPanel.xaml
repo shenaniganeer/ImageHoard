@@ -14,67 +14,58 @@
         Loaded="RootNav_Loaded"
         SelectionChanged="RootNav_SelectionChanged">
         <NavigationView.MenuItems>
-            <NavigationViewItem x:Name="NavItemGeneral" Content="General" Tag="general" />
             <NavigationViewItem x:Name="NavItemHotkeys" Content="Hotkeys" Tag="hotkeys" />
-            <NavigationViewItem Content="Library" Tag="library" />
+            <NavigationViewItem x:Name="NavItemAdvanced" Content="Advanced" Tag="advanced" />
         </NavigationView.MenuItems>
-        <Grid x:Name="PagesHost" Padding="16,8,16,16">
+        <Grid
+            x:Name="PagesHost"
+            MinWidth="752"
+            MinHeight="752"
+            Padding="16,8,16,16">
             <ScrollViewer
-                x:Name="PageGeneral"
+                x:Name="PageAdvanced"
+                VerticalAlignment="Stretch"
                 VerticalScrollBarVisibility="Auto"
                 HorizontalScrollBarVisibility="Disabled"
-                Visibility="Visible">
-                <StackPanel MaxWidth="560" HorizontalAlignment="Left">
-                    <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="General" />
+                Visibility="Collapsed">
+                <StackPanel MaxWidth="720" HorizontalAlignment="Left">
+                    <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Advanced" />
                     <TextBlock
                         Margin="0,8,0,16"
                         TextWrapping="Wrap"
                         Opacity="0.7"
-                        Text="Layout, browsing, slideshow options, and operation logging." />
-
+                        Text="Archive destination, caches, and preview navigation tuning. Other layout and overlay options are under the View and Image menus." />
                     <TextBlock
                         Margin="0,8,0,4"
                         FontWeight="SemiBold"
-                        Text="View" />
+                        Text="Library" />
                     <TextBlock
                         Margin="0,0,0,8"
                         TextWrapping="Wrap"
                         Opacity="0.7"
-                        Text="Layout and how the image list and preview behave." />
-                    <ToggleSwitch
-                        x:Name="ShowBrowserPaneToggle"
-                        Header="Show browser pane"
-                        OnContent="On"
-                        OffContent="Off"
-                        Toggled="ShowBrowserPaneToggle_Toggled" />
-                    <ToggleSwitch
-                        x:Name="ShowPathOnOverlayWindowedToggle"
-                        Margin="0,16,0,0"
-                        Header="Show file path on image overlay (windowed preview)"
-                        OnContent="On"
-                        OffContent="Off"
-                        Toggled="ShowPathOnOverlayWindowedToggle_Toggled" />
-                    <ToggleSwitch
-                        x:Name="ShowPathOnOverlayFullscreenToggle"
-                        Margin="0,16,0,0"
-                        Header="Show file path on image overlay (fullscreen)"
-                        OnContent="On"
-                        OffContent="Off"
-                        Toggled="ShowPathOnOverlayFullscreenToggle_Toggled" />
-                    <ToggleSwitch
-                        x:Name="ShowOverlayListPositionToggle"
-                        Margin="0,16,0,0"
-                        Header="Show list position on image overlay"
-                        OnContent="On"
-                        OffContent="Off"
-                        Toggled="ShowOverlayListPositionToggle_Toggled" />
+                        Text="Archive destination and caches." />
+                    <TextBlock Text="Archive target folder" />
                     <TextBlock
-                        Margin="0,4,0,0"
+                        x:Name="ArchiveRootDisplay"
+                        Margin="0,4,0,8"
                         TextWrapping="Wrap"
-                        Opacity="0.7"
-                        Text="When on, shows position on the overlay: in browse mode, index and total in the current file list (e.g. 2/78). In tree slideshow, slide number and history length plus how many paths have been discovered (e.g. 3/12 · discovered 45,210)." />
+                        IsTextSelectionEnabled="True" />
+                    <Button
+                        Content="Select archive target folder"
+                        HorizontalAlignment="Left"
+                        Click="SetArchiveRoot_Click" />
+                    <TextBlock Margin="0,24,0,8" Text="Caches" />
+                    <Button
+                        Content="Clear caches (metrics)"
+                        HorizontalAlignment="Left"
+                        Click="ClearCaches_Click" />
+                    <Button
+                        Margin="0,8,0,0"
+                        Content="Clear caches + operation log"
+                        HorizontalAlignment="Left"
+                        Click="ClearCachesAndLog_Click" />
                     <TextBlock
-                        Margin="0,16,0,4"
+                        Margin="0,24,0,4"
                         FontWeight="SemiBold"
                         Text="Preview" />
                     <TextBlock
@@ -91,99 +82,12 @@
                         LargeChange="0.5"
                         SpinButtonPlacementMode="Inline"
                         ValueChanged="PreviewNavCatchUpLagNumberBox_ValueChanged" />
-                    <TextBlock Margin="0,16,0,8" Text="Default list sort" />
-                    <StackPanel>
-                        <RadioButton
-                            x:Name="SortNameNaturalRadio"
-                            GroupName="PrefListSort"
-                            Content="Name (natural order)"
-                            Checked="SortRadio_Checked" />
-                        <RadioButton
-                            x:Name="SortNameRadio"
-                            GroupName="PrefListSort"
-                            Content="Name (A–Z only)"
-                            Checked="SortRadio_Checked" />
-                        <RadioButton
-                            x:Name="SortDateRadio"
-                            GroupName="PrefListSort"
-                            Content="Date modified"
-                            Checked="SortRadio_Checked" />
-                        <RadioButton
-                            x:Name="SortSizeRadio"
-                            GroupName="PrefListSort"
-                            Content="Size"
-                            Checked="SortRadio_Checked" />
-                    </StackPanel>
-
-                    <TextBlock
-                        Margin="0,24,0,4"
-                        FontWeight="SemiBold"
-                        Text="Browse" />
-                    <TextBlock
-                        Margin="0,0,0,8"
-                        TextWrapping="Wrap"
-                        Opacity="0.7"
-                        Text="How folders and file lists are enumerated." />
-                    <ToggleSwitch
-                        x:Name="IncludeSubfoldersToggle"
-                        Header="Include subfolders in file list"
-                        OnContent="On"
-                        OffContent="Off"
-                        Toggled="IncludeSubfoldersToggle_Toggled" />
-                    <ToggleSwitch
-                        x:Name="CollectFolderStatisticsInBackgroundToggle"
-                        Margin="0,16,0,0"
-                        Header="Collect folder statistics in background"
-                        OnContent="On"
-                        OffContent="Off"
-                        Toggled="CollectFolderStatisticsInBackgroundToggle_Toggled" />
-                    <TextBlock
-                        Margin="0,4,0,0"
-                        TextWrapping="Wrap"
-                        Opacity="0.7"
-                        Text="When on, folder size and image count can update asynchronously while browsing (if those columns are shown under View → Folder details)." />
-
-                    <TextBlock
-                        Margin="0,24,0,4"
-                        FontWeight="SemiBold"
-                        Text="Slideshow" />
-                    <TextBlock
-                        Margin="0,0,0,8"
-                        TextWrapping="Wrap"
-                        Opacity="0.7"
-                        Text="Slideshow-specific behavior (some options apply when delete-from-slideshow is wired)." />
-                    <ToggleSwitch
-                        x:Name="SlideshowAllowDeleteToggle"
-                        Header="Allow delete in slideshow"
-                        OnContent="On"
-                        OffContent="Off"
-                        Toggled="SlideshowAllowDeleteToggle_Toggled" />
-                    <TextBlock
-                        Margin="0,4,0,0"
-                        TextWrapping="Wrap"
-                        Opacity="0.7"
-                        Text="Saved for future use with the slideshow delete command; shortcuts are edited under Preferences → Hotkeys." />
-
-                    <TextBlock
-                        Margin="0,24,0,4"
-                        FontWeight="SemiBold"
-                        Text="Destructive operations" />
-                    <ToggleSwitch
-                        x:Name="LogOperationsToggle"
-                        OnContent="On"
-                        OffContent="Off"
-                        Toggled="LogOperationsToggle_Toggled" />
-                    <TextBlock
-                        Margin="0,4,0,0"
-                        TextWrapping="Wrap"
-                        Opacity="0.7"
-                        Text="When on, batch delete and move-to-archive write JSON lines to the operation log (if enabled in Settings)." />
                 </StackPanel>
             </ScrollViewer>
             <Grid
                 x:Name="PageHotkeys"
                 VerticalAlignment="Stretch"
-                Visibility="Collapsed">
+                Visibility="Visible">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -218,40 +122,6 @@
                     HorizontalAlignment="Left"
                     VerticalAlignment="Stretch" />
             </Grid>
-            <ScrollViewer
-                x:Name="PageLibrary"
-                VerticalScrollBarVisibility="Auto"
-                HorizontalScrollBarVisibility="Disabled"
-                Visibility="Collapsed">
-                <StackPanel MaxWidth="560" HorizontalAlignment="Left">
-                    <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Library" />
-                    <TextBlock
-                        Margin="0,8,0,16"
-                        TextWrapping="Wrap"
-                        Opacity="0.7"
-                        Text="Archive destination and caches." />
-                    <TextBlock Text="Archive target folder" />
-                    <TextBlock
-                        x:Name="ArchiveRootDisplay"
-                        Margin="0,4,0,8"
-                        TextWrapping="Wrap"
-                        IsTextSelectionEnabled="True" />
-                    <Button
-                        Content="Select archive target folder"
-                        HorizontalAlignment="Left"
-                        Click="SetArchiveRoot_Click" />
-                    <TextBlock Margin="0,24,0,8" Text="Caches" />
-                    <Button
-                        Content="Clear caches (metrics)"
-                        HorizontalAlignment="Left"
-                        Click="ClearCaches_Click" />
-                    <Button
-                        Margin="0,8,0,0"
-                        Content="Clear caches + operation log"
-                        HorizontalAlignment="Left"
-                        Click="ClearCachesAndLog_Click" />
-                </StackPanel>
-            </ScrollViewer>
         </Grid>
     </NavigationView>
 </UserControl>

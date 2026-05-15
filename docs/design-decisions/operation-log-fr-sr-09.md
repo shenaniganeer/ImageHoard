@@ -1,6 +1,6 @@
 # Operation log (FR-SR-09, NFR-RL-01)
 
-**Status:** Locked — **enabled by default** for destructive batches (opt-out in Settings)  
+**Status:** Locked — **always enabled** for destructive batches (no user opt-out in P0 UI)  
 **Related:** FR-SR-09, NFR-RL-01, [fr-st-01-settings-persistence.md](./fr-st-01-settings-persistence.md)
 
 ## Purpose
@@ -38,8 +38,7 @@ Append-only evidence of batch **delete**, **move to archive**, and optional **re
 
 ## Settings
 
-- Toggle **“Log destructive operations”** (default **on**).  
-- Button **“Clear logs”** removes `operations.jsonl` and archives.
+- **Preferences → Advanced** (or **Settings** menu): **“Clear caches + operation log”** removes `operations.jsonl` and archives.
 
 ## NAS test alignment
 

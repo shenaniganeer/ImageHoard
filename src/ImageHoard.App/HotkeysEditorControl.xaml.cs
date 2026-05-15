@@ -47,9 +47,6 @@ public sealed partial class HotkeysEditorControl : UserControl
     /// <summary>Invoked with true when chord capture arms, false when it disarms.</summary>
     public Action<bool>? ChordCaptureActiveChanged { get; set; }
 
-    /// <summary>Dismisses the preferences overlay without reverting bindings.</summary>
-    public Action? RequestDismissPreferences { get; set; }
-
     public void Reset(InputProfileDocument builtinBase, InputProfileDocument mergedForEdit)
     {
         if (!_rowsBuilt)
@@ -312,7 +309,7 @@ public sealed partial class HotkeysEditorControl : UserControl
     {
         for (var o = originalSource as DependencyObject; o != null; o = VisualTreeHelper.GetParent(o))
         {
-            if (ReferenceEquals(o, SaveButton) || ReferenceEquals(o, CloseButton) || ReferenceEquals(o, CancelButton))
+            if (ReferenceEquals(o, SaveButton) || ReferenceEquals(o, CancelButton))
                 return true;
         }
 
@@ -501,12 +498,6 @@ public sealed partial class HotkeysEditorControl : UserControl
         {
             StatusText.Text = "Save failed: " + ex.Message;
         }
-    }
-
-    private void CloseButton_Click(object sender, RoutedEventArgs e)
-    {
-        DisarmCapture(restoreFocusToSource: false);
-        RequestDismissPreferences?.Invoke();
     }
 
     private async void CancelButton_Click(object sender, RoutedEventArgs e)

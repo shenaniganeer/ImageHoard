@@ -58,8 +58,7 @@ public sealed partial class MainWindow
 
     private void KickFavoriteFilesystemMapBackgroundReconcileForIndexRoots()
     {
-        if (!_layoutState.CalculateFolderSizesInBackground
-            || (!_layoutState.ShowBrowserFolderSize && !_layoutState.ShowBrowserFolderImageCount))
+        if (!_layoutState.ShowBrowserFolderSize && !_layoutState.ShowBrowserFolderImageCount)
         {
             return;
         }

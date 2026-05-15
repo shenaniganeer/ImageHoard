@@ -17,7 +17,6 @@ public sealed partial class MainWindow
         DeleteArchiveWizardPanelElement.Connect(this);
         DeleteArchiveWizardPanelElement.RequestClose += (_, _) => HideDeleteArchiveWizardOverlay();
         PreferencesPanelElement.SetHost(this);
-        PreferencesPanelElement.RequestDismiss += (_, _) => HidePreferencesOverlay();
         BrowserFindPanelElement.Connect(this);
     }
 

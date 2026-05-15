@@ -210,8 +210,7 @@ public sealed partial class MainWindow
             PersistLayout();
             ApplyBrowserFolderDetailsChrome();
             RefreshAllFolderEntrySizingDisplays();
-            if (_layoutState.CalculateFolderSizesInBackground
-                && (_layoutState.ShowBrowserFolderSize || _layoutState.ShowBrowserFolderImageCount))
+            if (_layoutState.ShowBrowserFolderSize || _layoutState.ShowBrowserFolderImageCount)
                 EnqueueFolderMetricsForAllVisibleFolderPaths();
         }
     }
@@ -224,8 +223,7 @@ public sealed partial class MainWindow
             PersistLayout();
             ApplyBrowserFolderDetailsChrome();
             RefreshAllFolderEntrySizingDisplays();
-            if (_layoutState.CalculateFolderSizesInBackground
-                && (_layoutState.ShowBrowserFolderSize || _layoutState.ShowBrowserFolderImageCount))
+            if (_layoutState.ShowBrowserFolderSize || _layoutState.ShowBrowserFolderImageCount)
                 EnqueueFolderMetricsForAllVisibleFolderPaths();
         }
     }
@@ -699,11 +697,6 @@ public sealed partial class MainWindow
     {
         if (!_slideshowUiActive || _slideshow == null || string.IsNullOrEmpty(_currentImageFullPath))
             return;
-        if (!_session.SlideshowAllowDelete)
-        {
-            SetTransientStatus("Enable “Allow delete in slideshow” in Settings → Library to use this command.");
-            return;
-        }
 
         var target = _currentImageFullPath;
         var warn = new ContentDialog
@@ -723,26 +716,46 @@ public sealed partial class MainWindow
         if (await ShowWizardContentDialogAsync(warn) != ContentDialogResult.Primary)
             return;
 
+        var hadSiblingOverlay = _slideshow.IsSiblingOverlayActive;
+        var treeAnchorPath = _slideshow.Tree.CurrentPath;
+
         var dir = Path.GetDirectoryName(target);
         var ok = await WizardExecuteImageRecycleOrPermanentBatchAsync(
                 new[] { target },
                 recordUndoForRecycledPaths: false,
                 operationNameForLog: "SlideshowDelete",
                 workingFolderOverride: string.IsNullOrEmpty(dir) ? null : dir,
-                deferBrowserPaneRefresh: false)
+                deferBrowserPaneRefresh: false,
+                assumePermanentFallbackForRecycleFailures: true)
             .ConfigureAwait(true);
         if (!ok)
             return;
 
+        var navigated = false;
         _slideshow.ClearSiblingOverlay();
-        if (_slideshow.TryMoveNextTree(out var next) && next != null)
+
+        if (hadSiblingOverlay
+            && !string.IsNullOrEmpty(treeAnchorPath)
+            && !string.Equals(treeAnchorPath, target, StringComparison.OrdinalIgnoreCase)
+            && File.Exists(treeAnchorPath))
+        {
+            await CommitPreviewImmediatelyAsync(treeAnchorPath).ConfigureAwait(true);
+            navigated = true;
+        }
+
+        if (!navigated
+            && _slideshow.TryMoveNextTree(out var next) && next != null)
+        {
             await CommitPreviewImmediatelyAsync(next).ConfigureAwait(true);
-        else
+            navigated = true;
+        }
+
+        if (!navigated)
         {
             SetTransientStatus("No more images in slideshow.");
-            DiscardSlideshowSession();
             if (_isFullscreen)
                 ExitFullscreenChrome();
+            DiscardSlideshowSession();
         }
 
         UpdateSlideshowScopeBadge();

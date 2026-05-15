@@ -19,9 +19,6 @@ public sealed partial class PreferencesPanel : UserControl
 
     internal void SetHost(IPreferencesSession host) => _host = host;
 
-    /// <summary>Raised when the user dismisses preferences (e.g. Close on hotkeys tab).</summary>
-    public event EventHandler? RequestDismiss;
-
     internal void OnOverlayShown()
     {
         RefreshFromHost();
@@ -32,14 +29,13 @@ public sealed partial class PreferencesPanel : UserControl
 
     internal void OnOverlayHidden()
     {
-        HotkeysEditor.RequestDismissPreferences = null;
         _host.SetHotkeyChordRecordingActive(false);
     }
 
     private void RootNav_Loaded(object sender, RoutedEventArgs e)
     {
-        RootNav.SelectedItem = NavItemGeneral;
-        ShowPage("general");
+        RootNav.SelectedItem = NavItemHotkeys;
+        ShowPage("hotkeys");
         RefreshFromHost();
 
         _ = DispatcherQueue.GetForCurrentThread().TryEnqueue(
@@ -88,9 +84,8 @@ public sealed partial class PreferencesPanel : UserControl
 
     private void ShowPage(string tag)
     {
-        PageGeneral.Visibility = tag == "general" ? Visibility.Visible : Visibility.Collapsed;
+        PageAdvanced.Visibility = tag == "advanced" ? Visibility.Visible : Visibility.Collapsed;
         PageHotkeys.Visibility = tag == "hotkeys" ? Visibility.Visible : Visibility.Collapsed;
-        PageLibrary.Visibility = tag == "library" ? Visibility.Visible : Visibility.Collapsed;
         if (tag == "hotkeys")
             _ = EnsureHotkeysEditorLoadedAsync();
     }
@@ -100,31 +95,7 @@ public sealed partial class PreferencesPanel : UserControl
         _suppressEvents = true;
         try
         {
-            LogOperationsToggle.IsOn = _host.LogDestructiveOperations;
-            ShowBrowserPaneToggle.IsOn = _host.ShowBrowserPane;
-            ShowPathOnOverlayWindowedToggle.IsOn = _host.ShowPathOnOverlayWindowed;
-            ShowPathOnOverlayFullscreenToggle.IsOn = _host.ShowPathOnOverlayFullscreen;
-            ShowOverlayListPositionToggle.IsOn = _host.ShowOverlayListPosition;
-            IncludeSubfoldersToggle.IsOn = _host.IncludeSubfoldersInList;
-            CollectFolderStatisticsInBackgroundToggle.IsOn = _host.CalculateFolderSizesInBackground;
-            SlideshowAllowDeleteToggle.IsOn = _host.SlideshowAllowDelete;
             PreviewNavCatchUpLagNumberBox.Value = _host.PreviewNavCatchUpLagSeconds;
-
-            switch (_host.ListSort)
-            {
-                case ListSortKind.NameNatural:
-                    SortNameNaturalRadio.IsChecked = true;
-                    break;
-                case ListSortKind.Name:
-                    SortNameRadio.IsChecked = true;
-                    break;
-                case ListSortKind.DateModified:
-                    SortDateRadio.IsChecked = true;
-                    break;
-                case ListSortKind.Size:
-                    SortSizeRadio.IsChecked = true;
-                    break;
-            }
 
             ArchiveRootDisplay.Text = string.IsNullOrEmpty(_host.ArchiveRoot)
                 ? "(not set)"
@@ -153,66 +124,21 @@ public sealed partial class PreferencesPanel : UserControl
         HotkeysEditor.Visibility = Visibility.Visible;
         HotkeysEditor.LoadEditDocumentsAsync = () => _host.LoadHotkeysEditDocumentsAsync();
         HotkeysEditor.BindingsPersisted = () => _host.ReloadInputBindingsAfterHotkeysPersist();
-        HotkeysEditor.RequestDismissPreferences = () => RequestDismiss?.Invoke(this, EventArgs.Empty);
         HotkeysEditor.ChordCaptureActiveChanged = active => _host.SetHotkeyChordRecordingActive(active);
         HotkeysEditor.Reset(docs.Value.Builtin, docs.Value.Merged);
         _hotkeysTabPrimed = true;
+        _ = DispatcherQueue.GetForCurrentThread().TryEnqueue(
+            DispatcherQueuePriority.Low,
+            BumpPagesHostMinHeightFromLayout);
     }
 
-    private void LogOperationsToggle_Toggled(object sender, RoutedEventArgs e)
+    /// <summary>After Hotkeys rows materialize, grow <see cref="PagesHost"/> min height once so the shell does not jump.</summary>
+    private void BumpPagesHostMinHeightFromLayout()
     {
-        if (_suppressEvents)
-            return;
-        _host.ApplyLogDestructiveOperations(LogOperationsToggle.IsOn);
-    }
-
-    private void ShowBrowserPaneToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_suppressEvents)
-            return;
-        _host.ApplyShowBrowserPane(ShowBrowserPaneToggle.IsOn);
-    }
-
-    private void ShowPathOnOverlayWindowedToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_suppressEvents)
-            return;
-        _host.ApplyShowPathOnOverlayWindowed(ShowPathOnOverlayWindowedToggle.IsOn);
-    }
-
-    private void ShowPathOnOverlayFullscreenToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_suppressEvents)
-            return;
-        _host.ApplyShowPathOnOverlayFullscreen(ShowPathOnOverlayFullscreenToggle.IsOn);
-    }
-
-    private void ShowOverlayListPositionToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_suppressEvents)
-            return;
-        _host.ApplyShowOverlayListPosition(ShowOverlayListPositionToggle.IsOn);
-    }
-
-    private void IncludeSubfoldersToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_suppressEvents)
-            return;
-        _host.ApplyIncludeSubfolders(IncludeSubfoldersToggle.IsOn);
-    }
-
-    private void CollectFolderStatisticsInBackgroundToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_suppressEvents)
-            return;
-        _host.ApplyCalculateFolderSizesInBackground(CollectFolderStatisticsInBackgroundToggle.IsOn);
-    }
-
-    private void SlideshowAllowDeleteToggle_Toggled(object sender, RoutedEventArgs e)
-    {
-        if (_suppressEvents)
-            return;
-        _host.ApplySlideshowAllowDelete(SlideshowAllowDeleteToggle.IsOn);
+        PagesHost.UpdateLayout();
+        var h = PagesHost.ActualHeight;
+        if (!double.IsNaN(h) && !double.IsInfinity(h) && h > PagesHost.MinHeight)
+            PagesHost.MinHeight = h;
     }
 
     private void PreviewNavCatchUpLagNumberBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
@@ -223,20 +149,6 @@ public sealed partial class PreferencesPanel : UserControl
         if (double.IsNaN(v) || double.IsInfinity(v))
             return;
         _host.ApplyPreviewNavCatchUpLagSeconds(v);
-    }
-
-    private void SortRadio_Checked(object sender, RoutedEventArgs e)
-    {
-        if (_suppressEvents)
-            return;
-        if (SortNameNaturalRadio.IsChecked == true)
-            _host.ApplyListSort(ListSortKind.NameNatural);
-        else if (SortNameRadio.IsChecked == true)
-            _host.ApplyListSort(ListSortKind.Name);
-        else if (SortDateRadio.IsChecked == true)
-            _host.ApplyListSort(ListSortKind.DateModified);
-        else if (SortSizeRadio.IsChecked == true)
-            _host.ApplyListSort(ListSortKind.Size);
     }
 
     private async void SetArchiveRoot_Click(object sender, RoutedEventArgs e)

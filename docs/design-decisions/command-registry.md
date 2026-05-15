@@ -25,7 +25,7 @@ This document extends the **minimum** command set in [input-default-profiles.md]
 | `slideshow.switchToBrowseAtCurrentLocation` | Leave fullscreen slideshow UI, keep tree session for resume, open parent folder of current slide in browse | FR-SL-06 / FR-SL-07 | Yes (KeyboardOnly default `Tab`; MouseOnly wheel tilt left / `X3` when exposed) |
 | `slideshow.siblingNextImage` | In slideshow: next image among siblings in the current file’s directory (does not advance tree slideshow history) | FR-SL-06 | Yes (MouseOnly default **Right**+wheel **Down**; KeyboardOnly `Control+Alt+ArrowRight`) |
 | `slideshow.siblingPrevImage` | In slideshow: previous sibling image in that directory | FR-SL-06 | Yes (MouseOnly **Right**+wheel **Up**; KeyboardOnly `Control+Alt+ArrowLeft`) |
-| `slideshow.deleteCurrent` | Delete current slideshow image (**ContentDialog**); requires **Settings → Library → Allow delete in slideshow** | FR-SL-05 | **Off** by default (no shipped chord); bind in Preferences when enabled |
+| `slideshow.deleteCurrent` | Delete current slideshow image: **ContentDialog** before delete; if the Recycle Bin is unavailable, permanent delete runs **without** the extra permanent-delete prompts used elsewhere for batch/tree delete. Requires **Settings → Library → Allow delete in slideshow**; bind under **Preferences → Hotkeys** | FR-SL-05 | **Off** by default (no shipped chord); user may assign a chord in Hotkeys |
 | `browse.toggleSubfolderInclusion` | Toggle “include subfolders” for **list** | FR-BR-02 | View menu **P0**; bind P1 |
 | `browse.openGoToPath` | Open “go to path” dialog | FR-BR-04 | Chrome P0; bind P1 |
 | `browse.openBookmarks` | Open bookmarks / favorites manager | FR-BR-04 | File → Favorites **P0**; bind P1 |

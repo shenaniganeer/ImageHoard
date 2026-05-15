@@ -466,17 +466,13 @@ public sealed partial class MainWindow
     {
         if (!_layoutState.ShowBrowserFolderSize)
             entry.ClearAggregateSizeUnavailable();
-        else if (_layoutState.CalculateFolderSizesInBackground)
-            entry.ClearAggregateSizePending();
         else
-            entry.ClearAggregateSizeUnavailable();
+            entry.ClearAggregateSizePending();
 
         if (!_layoutState.ShowBrowserFolderImageCount)
             entry.ClearImageCountUnavailable();
-        else if (_layoutState.CalculateFolderSizesInBackground)
-            entry.ClearImageCountPending();
         else
-            entry.ClearImageCountUnavailable();
+            entry.ClearImageCountPending();
     }
 
     private void RegisterFolderTreeIndex(FolderTreeEntry entry, TreeViewNode? hostNode = null)
@@ -603,16 +599,14 @@ public sealed partial class MainWindow
 
     private void EnqueueFolderMetricsDiscovery(string path, FolderMetricsScanScope scope)
     {
-        if (!_layoutState.CalculateFolderSizesInBackground
-            || (!_layoutState.ShowBrowserFolderSize && !_layoutState.ShowBrowserFolderImageCount))
+        if (!_layoutState.ShowBrowserFolderSize && !_layoutState.ShowBrowserFolderImageCount)
             return;
         _folderMetricsDiscoveryQueue.Enqueue((path, scope));
         ScheduleProcessFolderMetricsDiscoveryQueue();
     }
 
     private bool WillQueueImmediateFolderMetricsOnPopulate() =>
-        _layoutState.CalculateFolderSizesInBackground
-        && (_layoutState.ShowBrowserFolderSize || _layoutState.ShowBrowserFolderImageCount);
+        _layoutState.ShowBrowserFolderSize || _layoutState.ShowBrowserFolderImageCount;
 
     private void AppendBrowserFolderAndImageNodes(
         IList<TreeViewNode> target,
@@ -1143,16 +1137,14 @@ public sealed partial class MainWindow
 
     private void EnqueueFolderMetricsScanIfNeeded(string path, FolderMetricsScanScope scope)
     {
-        if (!_layoutState.CalculateFolderSizesInBackground
-            || (!_layoutState.ShowBrowserFolderSize && !_layoutState.ShowBrowserFolderImageCount))
+        if (!_layoutState.ShowBrowserFolderSize && !_layoutState.ShowBrowserFolderImageCount)
             return;
         _ = StartFolderMetricsWorkAsync(path, scope, ignoreCache: false);
     }
 
     private void EnqueueFolderMetricsRescan(string path, FolderMetricsScanScope scope)
     {
-        if (!_layoutState.CalculateFolderSizesInBackground
-            || (!_layoutState.ShowBrowserFolderSize && !_layoutState.ShowBrowserFolderImageCount))
+        if (!_layoutState.ShowBrowserFolderSize && !_layoutState.ShowBrowserFolderImageCount)
             return;
         var flightKey = FolderMetricsFlightKey(path, scope);
         _folderMetricsInFlight.TryRemove(flightKey, out _);
@@ -1161,8 +1153,7 @@ public sealed partial class MainWindow
 
     private async Task StartFolderMetricsWorkAsync(string path, FolderMetricsScanScope scope, bool ignoreCache = false)
     {
-        if (!_layoutState.CalculateFolderSizesInBackground
-            || (!_layoutState.ShowBrowserFolderSize && !_layoutState.ShowBrowserFolderImageCount))
+        if (!_layoutState.ShowBrowserFolderSize && !_layoutState.ShowBrowserFolderImageCount)
             return;
         var flightKey = FolderMetricsFlightKey(path, scope);
         if (!_folderMetricsInFlight.TryAdd(flightKey, 0))

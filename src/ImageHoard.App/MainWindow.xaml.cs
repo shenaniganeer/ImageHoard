@@ -147,6 +147,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         ApplyLayoutFromState();
         ShowPathOnOverlayWindowedToggle.IsChecked = _layoutState.ShowPathOnOverlayWindowed;
         ShowPathOnOverlayFullscreenToggle.IsChecked = _layoutState.ShowPathOnOverlayFullscreen;
+        ShowOverlayListPositionMenuToggle.IsChecked = _layoutState.ShowOverlayListPosition;
         ShowBrowserPaneToggle.IsChecked = _layoutState.ShowBrowserPane;
         UpdatePathOverlays();
         UpdateFullscreenMenuEnabled();
@@ -460,6 +461,16 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         if (sender is ToggleMenuFlyoutItem t)
         {
             _layoutState.ShowPathOnOverlayFullscreen = t.IsChecked == true;
+            UpdatePathOverlays();
+            PersistLayout();
+        }
+    }
+
+    private void ShowOverlayListPositionMenuToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleMenuFlyoutItem t)
+        {
+            _layoutState.ShowOverlayListPosition = t.IsChecked == true;
             UpdatePathOverlays();
             PersistLayout();
         }

@@ -120,9 +120,6 @@ internal static class AppSettingsStore
         if (ui?.ShowBrowserFolderImageCount is { } sfic)
             state.ShowBrowserFolderImageCount = sfic;
 
-        if (ui?.CalculateFolderSizesInBackground is { } cfs)
-            state.CalculateFolderSizesInBackground = cfs;
-
         if (!string.IsNullOrEmpty(ui?.FolderListSort) && Enum.TryParse<FolderListSortKind>(ui.FolderListSort, out var fk))
             state.FolderListSort = fk;
 
@@ -148,10 +145,6 @@ internal static class AppSettingsStore
             s.LastSelectedImage = ls;
         if (file?.Favorites is { Count: > 0 } fav)
             s.Favorites = fav.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        if (file?.LogDestructiveOperations is { } log)
-            s.LogDestructiveOperations = log;
-        if (file?.SlideshowAllowDelete is { } sad)
-            s.SlideshowAllowDelete = sad;
         if (file?.InverseKeepDeleteBeforeArchiveMove is bool ik)
             s.InverseKeepDeleteBeforeArchiveMove = ik;
         return s;
@@ -201,7 +194,6 @@ internal static class AppSettingsStore
             file.Ui.ShowBrowserFolderDate = layout.ShowBrowserFolderDate;
             file.Ui.ShowBrowserFolderSize = layout.ShowBrowserFolderSize;
             file.Ui.ShowBrowserFolderImageCount = layout.ShowBrowserFolderImageCount;
-            file.Ui.CalculateFolderSizesInBackground = layout.CalculateFolderSizesInBackground;
             file.Ui.FolderListSort = layout.FolderListSort.ToString();
             file.Ui.PreviewNavCatchUpLagSeconds = layout.PreviewNavCatchUpLagSeconds;
 
@@ -211,8 +203,6 @@ internal static class AppSettingsStore
             file.Paths.LastBrowseFolder = session.LastBrowseFolder;
             file.Paths.LastSelectedImage = session.LastSelectedImage;
             file.Favorites = session.Favorites.Count > 0 ? session.Favorites : null;
-            file.LogDestructiveOperations = session.LogDestructiveOperations;
-            file.SlideshowAllowDelete = session.SlideshowAllowDelete;
             file.InverseKeepDeleteBeforeArchiveMove = session.InverseKeepDeleteBeforeArchiveMove;
 
             File.WriteAllText(path, JsonSerializer.Serialize(file, JsonOptions));

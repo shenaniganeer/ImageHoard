@@ -413,6 +413,7 @@ public sealed partial class MainWindow
         _session.Favorites.Add(folderPath);
         PersistLayout();
         RebuildBrowseFavoritesMenu();
+        KickFavoriteFilesystemMapBackgroundReconcileForIndexRoots();
         SetTransientStatus("Added to favorites.");
     }
 
@@ -432,6 +433,7 @@ public sealed partial class MainWindow
         _session.Favorites.Remove(match);
         PersistLayout();
         RebuildBrowseFavoritesMenu();
+        KickFavoriteFilesystemMapBackgroundReconcileForIndexRoots();
         SetTransientStatus("Removed from favorites.");
     }
 

@@ -236,6 +236,8 @@ internal static class AppSettingsStore
             // ignored
         }
 
+        FavoriteFilesystemMapStore.TryDeleteAllMaps(AppDataPaths.FavoriteFilesystemMapsDirectory);
+
         if (!deleteOperationLog)
             return;
 

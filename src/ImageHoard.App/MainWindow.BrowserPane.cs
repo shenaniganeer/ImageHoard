@@ -640,6 +640,7 @@ public sealed partial class MainWindow
         {
             var entry = FolderTreeEntry.FromDirectoryEntry(d);
             PrepareFolderEntrySizingState(entry);
+            TrySeedFolderEntryFromFavoriteFilesystemMap(entry);
             ApplyLayoutFolderDetailsToFolderEntry(entry);
             var node = new TreeViewNode
             {
@@ -712,6 +713,7 @@ public sealed partial class MainWindow
                 var d = sortedDirs[offset + i];
                 var entry = FolderTreeEntry.FromDirectoryEntry(d);
                 PrepareFolderEntrySizingState(entry);
+                TrySeedFolderEntryFromFavoriteFilesystemMap(entry);
                 ApplyLayoutFolderDetailsToFolderEntry(entry);
                 var treeNode = new TreeViewNode
                 {
@@ -1044,7 +1046,7 @@ public sealed partial class MainWindow
             ResortAllFolderGroups();
         else
             ApplyPendingCoalescedFolderResortSiblingListsCore();
-        ScheduleBrowserTreeViewportAfterMutation();
+        ScheduleBrowserTreeViewportAfterMutation(GetBrowserTreeViewportPinPathAfterBrowseCommit());
     }
 
     private void OnFolderResortCoalesceTick(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object args)
@@ -1169,6 +1171,9 @@ public sealed partial class MainWindow
         await _folderMetricsConcurrency.WaitAsync().ConfigureAwait(false);
         try
         {
+            if (!Directory.Exists(path))
+                return;
+
             var gen = Volatile.Read(ref _populateBrowserGeneration);
             FolderMetricsSnapshot? cached = null;
             try
@@ -1218,6 +1223,7 @@ public sealed partial class MainWindow
 
                 if (trustImmediateCacheOnly && trustSubtree)
                 {
+                    _ = TryPersistFavoriteFilesystemMapSnapshotAsync(cachedSubtree!);
                     EnqueueFolderMetricsSnapshotForUiApply(path, cachedSubtree!, gen);
                     EnqueueFolderMetricsSnapshotForUiApply(path, cached!, gen, FolderMetricsSnapshotApplyKind.ExpandStateOnly);
                     return;
@@ -1262,6 +1268,7 @@ public sealed partial class MainWindow
 
                 if (trustSubtree)
                 {
+                    _ = TryPersistFavoriteFilesystemMapSnapshotAsync(cachedSubtree!);
                     EnqueueFolderMetricsSnapshotForUiApply(path, cachedSubtree!, gen);
                     EnqueueFolderMetricsSnapshotForUiApply(path, immediateSnap, gen, FolderMetricsSnapshotApplyKind.ExpandStateOnly);
                     return;
@@ -1278,6 +1285,7 @@ public sealed partial class MainWindow
 
             if (trustCacheOnly)
             {
+                _ = TryPersistFavoriteFilesystemMapSnapshotAsync(cached!);
                 EnqueueFolderMetricsSnapshotForUiApply(path, cached!, gen);
                 return;
             }
@@ -1310,6 +1318,7 @@ public sealed partial class MainWindow
                 // ignored
             }
 
+            _ = TryPersistFavoriteFilesystemMapSnapshotAsync(snap);
             EnqueueFolderMetricsSnapshotForUiApply(path, snap, gen);
         }
         finally
@@ -1922,6 +1931,15 @@ public sealed partial class MainWindow
                     }
                 }
 
+                var mapPurge = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var s in succeeded)
+                {
+                    foreach (var a in CollectAncestorDirectoryPrefixesForFavoriteMapPurge(s.FullPath))
+                        mapPurge.Add(a);
+                }
+
+                await PurgeFavoriteFilesystemMapsForPrefixesAsync(mapPurge).ConfigureAwait(true);
+
                 RequestCoalescedFolderResortForTouchedFolderPaths(resortPaths);
 
                 foreach (var d in affectedParentDirs)
@@ -2006,6 +2024,15 @@ public sealed partial class MainWindow
                         }
                     }
                 }
+
+                var mapPurgeUndo = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var s in stats)
+                {
+                    foreach (var a in CollectAncestorDirectoryPrefixesForFavoriteMapPurge(s.FullPath))
+                        mapPurgeUndo.Add(a);
+                }
+
+                await PurgeFavoriteFilesystemMapsForPrefixesAsync(mapPurgeUndo).ConfigureAwait(true);
 
                 RequestCoalescedFolderResortForTouchedFolderPaths(resortPaths);
 
@@ -2659,6 +2686,8 @@ public sealed partial class MainWindow
                 EnqueueFolderMetricsScanIfNeeded(parentPath, FolderMetricsScanScope.ImmediateChildren);
         }
 
+        _ = PurgeFavoriteFilesystemMapsForPrefixesAsync(new[] { folderFullPath });
+
         return true;
     }
 
@@ -2799,7 +2828,13 @@ public sealed partial class MainWindow
     private void DeferredBrowserChromeAfterStartupStep3()
     {
         SyncPinnedBrowserColumnHeaders();
+        _ = DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            DeferredBrowserChromeAfterStartupStep4FavoriteFilesystemMap);
     }
+
+    private void DeferredBrowserChromeAfterStartupStep4FavoriteFilesystemMap() =>
+        KickFavoriteFilesystemMapBackgroundReconcileForIndexRoots();
 
     internal void RefreshAllFolderEntrySizingDisplays()
     {
@@ -2916,6 +2951,24 @@ public sealed partial class MainWindow
 
     private async Task PopulateBrowserRootsCoreAsync(string path, int gen, bool suppressViewportAfterRootPopulate = false)
     {
+        if (gen != Volatile.Read(ref _populateBrowserGeneration))
+            return;
+        if (!Directory.Exists(path))
+        {
+            await RunOnUiAsync(() =>
+            {
+                if (gen != Volatile.Read(ref _populateBrowserGeneration))
+                    return Task.CompletedTask;
+                SetTransientStatus("Folder was removed or is unavailable.");
+                return Task.CompletedTask;
+            }).ConfigureAwait(true);
+            return;
+        }
+
+        await SeedFavoriteFilesystemMapsIntoAggregateCachesAsync(gen).ConfigureAwait(false);
+        if (gen != Volatile.Read(ref _populateBrowserGeneration))
+            return;
+
         IReadOnlyList<FileSystemEntry> entries;
         try
         {

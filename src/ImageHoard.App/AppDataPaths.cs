@@ -27,5 +27,8 @@ internal static class AppDataPaths
 
     public static string FolderMetricsCachePath => Path.Combine(CacheDirectory, "folder-metrics.jsonl");
 
+    /// <summary>Persisted per-index-root subtree metrics map (deduped nested favorites share one file).</summary>
+    public static string FavoriteFilesystemMapsDirectory => Path.Combine(CacheDirectory, "favorite-fs-maps");
+
     public static string UserInputOverridesPath => Path.Combine(GetDataRoot(), "user-input-overrides.v1.json");
 }

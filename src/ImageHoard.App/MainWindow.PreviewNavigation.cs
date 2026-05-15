@@ -83,6 +83,16 @@ public sealed partial class MainWindow
                 try
                 {
                     await DecodeAndCommitPreviewAsync(path).ConfigureAwait(true);
+
+                    var minDwell = _layoutState.PreviewMinimumDisplaySeconds;
+                    if (minDwell > 0)
+                    {
+                        bool hasMore;
+                        lock (_previewNavLock)
+                            hasMore = _previewNavQueue.Count > 0;
+                        if (hasMore)
+                            await Task.Delay(TimeSpan.FromSeconds(minDwell)).ConfigureAwait(true);
+                    }
                 }
                 catch (Exception ex)
                 {

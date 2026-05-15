@@ -11,6 +11,8 @@ public sealed partial class MainWindow
 {
     double IPreferencesSession.PreviewNavCatchUpLagSeconds => _layoutState.PreviewNavCatchUpLagSeconds;
 
+    double IPreferencesSession.PreviewMinimumDisplaySeconds => _layoutState.PreviewMinimumDisplaySeconds;
+
     string? IPreferencesSession.ArchiveRoot => _session.ArchiveRoot;
 
     void IPreferencesSession.ApplyPreviewNavCatchUpLagSeconds(double value)
@@ -18,6 +20,14 @@ public sealed partial class MainWindow
         if (double.IsNaN(value) || double.IsInfinity(value))
             return;
         _layoutState.PreviewNavCatchUpLagSeconds = Math.Clamp(value, 0, 5);
+        PersistLayout();
+    }
+
+    void IPreferencesSession.ApplyPreviewMinimumDisplaySeconds(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            return;
+        _layoutState.PreviewMinimumDisplaySeconds = Math.Clamp(value, 0, 5);
         PersistLayout();
     }
 

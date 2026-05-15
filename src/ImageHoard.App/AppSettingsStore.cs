@@ -129,6 +129,12 @@ internal static class AppSettingsStore
             && lag >= 0)
             state.PreviewNavCatchUpLagSeconds = lag;
 
+        if (ui?.PreviewMinimumDisplaySeconds is { } minDisp
+            && !double.IsNaN(minDisp)
+            && !double.IsInfinity(minDisp)
+            && minDisp >= 0)
+            state.PreviewMinimumDisplaySeconds = minDisp;
+
         return state;
     }
 
@@ -196,6 +202,7 @@ internal static class AppSettingsStore
             file.Ui.ShowBrowserFolderImageCount = layout.ShowBrowserFolderImageCount;
             file.Ui.FolderListSort = layout.FolderListSort.ToString();
             file.Ui.PreviewNavCatchUpLagSeconds = layout.PreviewNavCatchUpLagSeconds;
+            file.Ui.PreviewMinimumDisplaySeconds = layout.PreviewMinimumDisplaySeconds;
 
             file.Paths ??= new PathsSettingsSection();
             file.Paths.ArchiveRoot = session.ArchiveRoot;

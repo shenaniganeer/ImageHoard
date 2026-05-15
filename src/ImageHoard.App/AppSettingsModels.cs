@@ -106,6 +106,10 @@ internal sealed class UiSettingsSection
     /// <summary>Seconds of backlog before coalescing rapid preview navigation (0 or less = never coalesce; show every queued step).</summary>
     [JsonPropertyName("previewNavCatchUpLagSeconds")]
     public double? PreviewNavCatchUpLagSeconds { get; set; }
+
+    /// <summary>Minimum seconds each preview stays on screen when more navigations are queued; 0 disables.</summary>
+    [JsonPropertyName("previewMinimumDisplaySeconds")]
+    public double? PreviewMinimumDisplaySeconds { get; set; }
 }
 
 internal sealed class UiLayoutState
@@ -150,6 +154,9 @@ internal sealed class UiLayoutState
 
     /// <summary>When the oldest queued preview request exceeds this age (seconds) and more than one is queued, drop to the latest path. Values &lt;= 0 disable this coalescing.</summary>
     public double PreviewNavCatchUpLagSeconds { get; set; } = 0.5;
+
+    /// <summary>After each preview commit, wait at least this many seconds before decoding the next queued path when the queue is non-empty. 0 disables.</summary>
+    public double PreviewMinimumDisplaySeconds { get; set; } = 0.25;
 }
 
 public enum ListSortKind

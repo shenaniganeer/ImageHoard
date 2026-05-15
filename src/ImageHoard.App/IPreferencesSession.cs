@@ -8,9 +8,13 @@ public interface IPreferencesSession
 {
     double PreviewNavCatchUpLagSeconds { get; }
 
+    double PreviewMinimumDisplaySeconds { get; }
+
     string? ArchiveRoot { get; }
 
     void ApplyPreviewNavCatchUpLagSeconds(double value);
+
+    void ApplyPreviewMinimumDisplaySeconds(double value);
 
     Task PromptEditArchiveRootAsync(XamlRoot xamlRoot);
 

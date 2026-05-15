@@ -82,6 +82,20 @@
                         LargeChange="0.5"
                         SpinButtonPlacementMode="Inline"
                         ValueChanged="PreviewNavCatchUpLagNumberBox_ValueChanged" />
+                    <TextBlock
+                        Margin="0,16,0,8"
+                        TextWrapping="Wrap"
+                        Opacity="0.7"
+                        Text="When more images are queued, each stays on screen at least this long before the next decode. Set to 0 to show the next image as soon as it is ready." />
+                    <NumberBox
+                        x:Name="PreviewMinimumDisplayNumberBox"
+                        Header="Minimum image display time (seconds)"
+                        Minimum="0"
+                        Maximum="5"
+                        SmallChange="0.05"
+                        LargeChange="0.25"
+                        SpinButtonPlacementMode="Inline"
+                        ValueChanged="PreviewMinimumDisplayNumberBox_ValueChanged" />
                 </StackPanel>
             </ScrollViewer>
             <Grid

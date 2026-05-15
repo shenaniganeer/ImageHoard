@@ -59,4 +59,20 @@ public sealed class SlideshowCoordinator
         _scope == SlideshowScopeKind.Folder && _folderNav != null
             ? _folderNav.CurrentPath
             : _tree.CurrentPath;
+
+    /// <summary>
+    /// List position for the path overlay: tree scope uses session history index and discovered count;
+    /// folder scope uses ordered sibling index in the image's directory.
+    /// </summary>
+    public bool TryGetSlideshowOverlayListPosition(out int index1Based, out int total, out bool enumerationComplete)
+    {
+        if (_scope == SlideshowScopeKind.Folder && _folderNav != null)
+        {
+            enumerationComplete = true;
+            return _folderNav.TryGetFolderPosition(out index1Based, out total);
+        }
+
+        enumerationComplete = _tree.IsEnumerationComplete;
+        return _tree.TryGetTreeOverlayPosition(out index1Based, out total);
+    }
 }

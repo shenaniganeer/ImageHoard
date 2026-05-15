@@ -34,6 +34,27 @@ public sealed partial class MainWindow
     private PointerEventHandler? _pointerReleasedCaptureHandler;
     private PointerEventHandler? _pointerCaptureLostCaptureHandler;
 
+    private enum ZoomScrollHostKind
+    {
+        Preview,
+        Fullscreen,
+    }
+
+    private struct PendingZoomScrollAnchor
+    {
+        public ZoomScrollHostKind Host;
+        public double ViewportPx;
+        public double ViewportPy;
+        public double U;
+        public double V;
+    }
+
+    private PendingZoomScrollAnchor? _pendingZoomScrollAnchor;
+    private bool _suppressNextZoomAnchorCenterCapture;
+    private ScrollViewer? _previewPanCaptureScrollViewer;
+
+    private void ClearPendingZoomScrollAnchor() => _pendingZoomScrollAnchor = null;
+
     private void RememberPreviewBitmapPixelSize(int pixelWidth, int pixelHeight)
     {
         _previewDecodedPixelWidth = Math.Max(0, pixelWidth);
@@ -104,6 +125,7 @@ public sealed partial class MainWindow
         {
             ResetPreviewUserZoom();
             _previewZoomCommittedImagePath = null;
+            ClearPendingZoomScrollAnchor();
             return;
         }
 
@@ -111,6 +133,7 @@ public sealed partial class MainWindow
         {
             ResetPreviewUserZoom();
             _previewZoomCommittedImagePath = path;
+            ClearPendingZoomScrollAnchor();
         }
     }
 
@@ -124,6 +147,7 @@ public sealed partial class MainWindow
         var path = _currentImageFullPath;
         if (string.IsNullOrEmpty(path))
             return false;
+        BeginZoomCommandScrollAnchorCapture();
         _previewUserZoomFactor = Math.Clamp(_previewUserZoomFactor * PreviewZoomStepRatio, PreviewZoomMinFactor, PreviewZoomMaxFactor);
         _ = ReloadPreviewAfterZoomChangeAsync(path);
         return true;
@@ -136,6 +160,7 @@ public sealed partial class MainWindow
         var path = _currentImageFullPath;
         if (string.IsNullOrEmpty(path))
             return false;
+        BeginZoomCommandScrollAnchorCapture();
         _previewUserZoomFactor = Math.Clamp(_previewUserZoomFactor / PreviewZoomStepRatio, PreviewZoomMinFactor, PreviewZoomMaxFactor);
         _ = ReloadPreviewAfterZoomChangeAsync(path);
         return true;
@@ -148,6 +173,7 @@ public sealed partial class MainWindow
         var path = _currentImageFullPath;
         if (string.IsNullOrEmpty(path))
             return false;
+        BeginZoomCommandScrollAnchorCapture();
         ResetPreviewUserZoom();
         _ = ReloadPreviewAfterZoomChangeAsync(path);
         return true;
@@ -165,6 +191,7 @@ public sealed partial class MainWindow
         ComputeImageDisplayBaselineDipsWindowed(vw, vh, imgDipW, imgDipH, out var baseW, out var baseH);
         if (baseW < 1e-6 || baseH < 1e-6)
             return false;
+        BeginZoomCommandScrollAnchorCapture();
         _previewUserZoomFactor = Math.Clamp(imgDipW / baseW, PreviewZoomMinFactor, PreviewZoomMaxFactor);
         UpdatePreviewScrollMetrics();
         return true;
@@ -323,6 +350,159 @@ public sealed partial class MainWindow
         }
     }
 
+    private void BeginZoomCommandScrollAnchorCapture()
+    {
+        if (!_suppressNextZoomAnchorCenterCapture)
+            CaptureZoomAnchorViewportCenterForActiveHost();
+        _suppressNextZoomAnchorCenterCapture = false;
+    }
+
+    /// <summary>Returns true when a wheel-driven pointer anchor was stored (suppresses viewport-center anchor).</summary>
+    private bool TryPrepareZoomAnchorFromWheelIfNeeded(PointerRoutedEventArgs e, string commandId)
+    {
+        if (commandId is not (ViewZoomInCommandId or ViewZoomOutCommandId or ViewZoomResetFitCommandId))
+            return false;
+        var origin = e.OriginalSource as DependencyObject;
+        if (!IsPointerChordAllowedForCommand(commandId, origin))
+            return false;
+        if (!_isFullscreen && IsDescendantOf(origin, PreviewHostGrid))
+        {
+            var pt = e.GetCurrentPoint(PreviewScrollViewer).Position;
+            TryCaptureZoomAnchorFromViewportPoint(ZoomScrollHostKind.Preview, PreviewScrollViewer, pt.X, pt.Y);
+            return true;
+        }
+
+        if (_isFullscreen && origin != null && IsDescendantOf(origin, FullscreenScrollContentGrid))
+        {
+            var pt = e.GetCurrentPoint(FullscreenScrollViewer).Position;
+            TryCaptureZoomAnchorFromViewportPoint(ZoomScrollHostKind.Fullscreen, FullscreenScrollViewer, pt.X, pt.Y);
+            return true;
+        }
+
+        return false;
+    }
+
+    private void CaptureZoomAnchorViewportCenterForActiveHost()
+    {
+        if (!HasDecodedPreviewForZoom())
+            return;
+        if (_isFullscreen)
+        {
+            if (FullscreenScrollViewer.ViewportWidth > 1 && FullscreenScrollViewer.ViewportHeight > 1)
+            {
+                TryCaptureZoomAnchorFromViewportPoint(
+                    ZoomScrollHostKind.Fullscreen,
+                    FullscreenScrollViewer,
+                    FullscreenScrollViewer.ViewportWidth * 0.5,
+                    FullscreenScrollViewer.ViewportHeight * 0.5);
+            }
+        }
+        else if (PreviewScrollViewer.ViewportWidth > 1 && PreviewScrollViewer.ViewportHeight > 1)
+        {
+            TryCaptureZoomAnchorFromViewportPoint(
+                ZoomScrollHostKind.Preview,
+                PreviewScrollViewer,
+                PreviewScrollViewer.ViewportWidth * 0.5,
+                PreviewScrollViewer.ViewportHeight * 0.5);
+        }
+    }
+
+    private void TryCaptureZoomAnchorFromViewportPoint(ZoomScrollHostKind host, ScrollViewer sv, double viewportPx, double viewportPy)
+    {
+        if (!HasDecodedPreviewForZoom())
+            return;
+        var z = Math.Clamp(_previewUserZoomFactor, PreviewZoomMinFactor, PreviewZoomMaxFactor);
+        if (!TryComputeZoomScrollLayout(host, sv, z, out _, out _, out var dispW, out var dispH, out _, out _, out var imgLeft, out var imgTop))
+            return;
+        if (dispW < 1e-6 || dispH < 1e-6)
+            return;
+        var cx = sv.HorizontalOffset + viewportPx;
+        var cy = sv.VerticalOffset + viewportPy;
+        var u = (cx - imgLeft) / dispW;
+        var v = (cy - imgTop) / dispH;
+        _pendingZoomScrollAnchor = new PendingZoomScrollAnchor
+        {
+            Host = host,
+            ViewportPx = viewportPx,
+            ViewportPy = viewportPy,
+            U = Math.Clamp(u, 0, 1),
+            V = Math.Clamp(v, 0, 1),
+        };
+    }
+
+    private bool TryComputeZoomScrollLayout(
+        ZoomScrollHostKind host,
+        ScrollViewer sv,
+        double zoomZ,
+        out double vw,
+        out double vh,
+        out double dispW,
+        out double dispH,
+        out double contentW,
+        out double contentH,
+        out double imgLeft,
+        out double imgTop)
+    {
+        vw = sv.ViewportWidth;
+        vh = sv.ViewportHeight;
+        dispW = dispH = contentW = contentH = imgLeft = imgTop = 0;
+        if (vw <= 1 || vh <= 1)
+            return false;
+        var scale = (double)(RootGrid.XamlRoot?.RasterizationScale ?? 1.0);
+        if (!TryGetPreviewImageIntrinsicDips(scale, out var imgDipW, out var imgDipH))
+            return false;
+        zoomZ = Math.Clamp(zoomZ, PreviewZoomMinFactor, PreviewZoomMaxFactor);
+        double baseW, baseH;
+        if (host == ZoomScrollHostKind.Preview)
+            ComputeImageDisplayBaselineDipsWindowed(vw, vh, imgDipW, imgDipH, out baseW, out baseH);
+        else
+            ComputeImageDisplayBaselineDipsFullscreen(vw, vh, imgDipW, imgDipH, out baseW, out baseH);
+        if (baseW < 1e-6 || baseH < 1e-6)
+            return false;
+        dispW = baseW * zoomZ;
+        dispH = baseH * zoomZ;
+        contentW = Math.Max(vw, dispW);
+        contentH = Math.Max(vh, dispH);
+        imgLeft = (contentW - dispW) * 0.5;
+        imgTop = (contentH - dispH) * 0.5;
+        return true;
+    }
+
+    private void TryApplyPendingZoomScrollAnchorForHost(ZoomScrollHostKind host, ScrollViewer sv)
+    {
+        if (_pendingZoomScrollAnchor is not { } a || a.Host != host)
+            return;
+        var z = Math.Clamp(_previewUserZoomFactor, PreviewZoomMinFactor, PreviewZoomMaxFactor);
+        if (!TryComputeZoomScrollLayout(host, sv, z, out var vw, out var vh, out var dispW, out var dispH, out var contentW, out var contentH, out var imgLeft, out var imgTop))
+        {
+            ClearPendingZoomScrollAnchor();
+            return;
+        }
+
+        var newH = imgLeft + a.U * dispW - a.ViewportPx;
+        var newV = imgTop + a.V * dispH - a.ViewportPy;
+        var maxH = Math.Max(0, contentW - vw);
+        var maxV = Math.Max(0, contentH - vh);
+        newH = Math.Clamp(newH, 0, maxH);
+        newV = Math.Clamp(newV, 0, maxV);
+        sv.ChangeView(newH, newV, null);
+        ClearPendingZoomScrollAnchor();
+    }
+
+    internal void PrepareFullscreenEnterNavigation()
+    {
+        FullscreenScrollViewer.ChangeView(0, 0, null);
+        ClearPendingZoomScrollAnchor();
+    }
+
+    internal void PrepareFullscreenExitNavigation()
+    {
+        FullscreenScrollViewer.ChangeView(0, 0, null);
+        FullscreenScrollContentGrid.Width = double.NaN;
+        FullscreenScrollContentGrid.Height = double.NaN;
+        ClearPendingZoomScrollAnchor();
+    }
+
     /// <summary>Viewport in DIPs for WIC decode target (avoids using <see cref="PreviewImage"/> measure inside <see cref="ScrollViewer"/>).</summary>
     private bool TryGetPreviewViewportDips(out double width, out double height)
     {
@@ -337,6 +517,15 @@ public sealed partial class MainWindow
 
     private bool TryGetFullscreenViewportDips(out double width, out double height)
     {
+        var w = FullscreenScrollViewer.ViewportWidth;
+        var h = FullscreenScrollViewer.ViewportHeight;
+        if (w > 1 && h > 1)
+        {
+            width = w;
+            height = h;
+            return true;
+        }
+
         width = FullscreenLayout.ActualWidth;
         height = FullscreenLayout.ActualHeight;
         return width > 1 && height > 1;
@@ -354,6 +543,9 @@ public sealed partial class MainWindow
             FullscreenImage.ClearValue(FrameworkElement.WidthProperty);
             FullscreenImage.ClearValue(FrameworkElement.HeightProperty);
             FullscreenImage.Stretch = Stretch.Uniform;
+            FullscreenScrollContentGrid.Width = double.NaN;
+            FullscreenScrollContentGrid.Height = double.NaN;
+            FullscreenScrollViewer.ChangeView(0, 0, null);
             return;
         }
 
@@ -363,6 +555,9 @@ public sealed partial class MainWindow
             FullscreenImage.ClearValue(FrameworkElement.WidthProperty);
             FullscreenImage.ClearValue(FrameworkElement.HeightProperty);
             FullscreenImage.Stretch = Stretch.Uniform;
+            FullscreenScrollContentGrid.Width = double.NaN;
+            FullscreenScrollContentGrid.Height = double.NaN;
+            FullscreenScrollViewer.ChangeView(0, 0, null);
             return;
         }
 
@@ -384,6 +579,13 @@ public sealed partial class MainWindow
         FullscreenImage.Height = dispH;
         FullscreenImage.HorizontalAlignment = HorizontalAlignment.Center;
         FullscreenImage.VerticalAlignment = VerticalAlignment.Center;
+
+        var contentW = Math.Max(vw, dispW);
+        var contentH = Math.Max(vh, dispH);
+        FullscreenScrollContentGrid.Width = contentW;
+        FullscreenScrollContentGrid.Height = contentH;
+
+        TryApplyPendingZoomScrollAnchorForHost(ZoomScrollHostKind.Fullscreen, FullscreenScrollViewer);
     }
 
     private void UpdatePreviewScrollMetrics()
@@ -397,6 +599,7 @@ public sealed partial class MainWindow
             PreviewImage.Stretch = Stretch.Uniform;
             PreviewScrollViewer.ChangeView(0, 0, null);
             ResetPreviewUserZoom();
+            ClearPendingZoomScrollAnchor();
             ApplyFullscreenImageForFitMode();
             return;
         }
@@ -429,6 +632,7 @@ public sealed partial class MainWindow
         PreviewImage.Stretch = Stretch.Uniform;
         PreviewImage.HorizontalAlignment = HorizontalAlignment.Center;
         PreviewImage.VerticalAlignment = VerticalAlignment.Center;
+        TryApplyPendingZoomScrollAnchorForHost(ZoomScrollHostKind.Preview, PreviewScrollViewer);
         ApplyFullscreenImageForFitMode();
     }
 
@@ -454,7 +658,14 @@ public sealed partial class MainWindow
     {
         if (_splitDrag != SplitDragKind.None)
             return false;
-        if (origin is null || !IsDescendantOf(origin, PreviewHostGrid))
+        if (origin is null)
+            return false;
+        ScrollViewer? panScroll = null;
+        if (!_isFullscreen && IsDescendantOf(origin, PreviewHostGrid))
+            panScroll = PreviewScrollViewer;
+        else if (_isFullscreen && IsDescendantOf(origin, FullscreenScrollContentGrid))
+            panScroll = FullscreenScrollViewer;
+        if (panScroll is null)
             return false;
         if (merged.Bindings is null
             || !merged.Bindings.TryGetValue(ViewPanPreviewCommandId, out var chords))
@@ -469,7 +680,8 @@ public sealed partial class MainWindow
             _previewPanActive = true;
             _previewPanPointerId = e.Pointer.PointerId;
             _previewPanLastRoot = e.GetCurrentPoint(null).Position;
-            PreviewScrollViewer.CapturePointer(e.Pointer);
+            _previewPanCaptureScrollViewer = panScroll;
+            panScroll.CapturePointer(e.Pointer);
             e.Handled = true;
             return true;
         }
@@ -485,9 +697,10 @@ public sealed partial class MainWindow
         var dx = pos.X - _previewPanLastRoot.X;
         var dy = pos.Y - _previewPanLastRoot.Y;
         _previewPanLastRoot = pos;
-        PreviewScrollViewer.ChangeView(
-            PreviewScrollViewer.HorizontalOffset - dx,
-            PreviewScrollViewer.VerticalOffset - dy,
+        var sv = _previewPanCaptureScrollViewer ?? PreviewScrollViewer;
+        sv.ChangeView(
+            sv.HorizontalOffset - dx,
+            sv.VerticalOffset - dy,
             null);
         e.Handled = true;
     }
@@ -496,7 +709,7 @@ public sealed partial class MainWindow
     {
         if (!_previewPanActive || e.Pointer.PointerId != _previewPanPointerId)
             return;
-        PreviewScrollViewer.ReleasePointerCapture(e.Pointer);
+        (_previewPanCaptureScrollViewer ?? PreviewScrollViewer).ReleasePointerCapture(e.Pointer);
         EndPreviewPan();
         e.Handled = true;
     }
@@ -511,5 +724,6 @@ public sealed partial class MainWindow
     private void EndPreviewPan()
     {
         _previewPanActive = false;
+        _previewPanCaptureScrollViewer = null;
     }
 }

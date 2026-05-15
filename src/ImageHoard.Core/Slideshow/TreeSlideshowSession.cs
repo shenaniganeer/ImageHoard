@@ -1,16 +1,22 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using ImageHoard.Core.Services;
 
 namespace ImageHoard.Core.Slideshow;
 
 /// <summary>
-/// Algorithm A — streaming random reservoir (FR-SL-01–03). Next uses random pick; Previous walks session history.
+/// Algorithm A — streaming random reservoir (FR-SL-01–03). Next uses random pick from the working reservoir;
+/// <see cref="RefillReservoir"/> drains inbound and, at cap, evicts LRU entries so discoveries are not stranded in the queue.
+/// Previous walks session history. Enumeration uses shuffled DFS so early discovery is not alphabetically clustered.
 /// </summary>
 public sealed class TreeSlideshowSession
 {
     private readonly IFileSystem _fileSystem;
     private readonly Random _random;
     private readonly List<string> _reservoir = new();
+    private readonly List<int> _reservoirEnqueueSeq = new();
+    private int _enqueueSeq;
+    private int _discoveredTotal;
     private readonly ConcurrentQueue<string> _inbound = new();
     private readonly Stack<string> _back = new();
     private readonly object _gate = new();
@@ -35,6 +41,29 @@ public sealed class TreeSlideshowSession
         }
     }
 
+    /// <summary>Total image paths produced by the enumerator for this session (monotonic until <see cref="Start"/> / <see cref="Reshuffle"/>).</summary>
+    public int DiscoveredImageCount => Volatile.Read(ref _discoveredTotal);
+
+    /// <summary>Whether background enumeration has finished (success or cancel).</summary>
+    public bool IsEnumerationComplete => Volatile.Read(ref _enumerationComplete);
+
+    /// <summary>1-based position in forward/back history when <see cref="CurrentPath"/> is non-null; otherwise 0.</summary>
+    public bool TryGetTreeOverlayPosition(out int index1Based, out int totalDiscovered)
+    {
+        lock (_gate)
+        {
+            totalDiscovered = Volatile.Read(ref _discoveredTotal);
+            if (_current == null)
+            {
+                index1Based = 0;
+                return false;
+            }
+
+            index1Based = _back.Count + 1;
+            return true;
+        }
+    }
+
     public void Start(string rootDirectory)
     {
         _rootDirectory = rootDirectory;
@@ -42,13 +71,15 @@ public sealed class TreeSlideshowSession
         lock (_gate)
         {
             _reservoir.Clear();
+            _reservoirEnqueueSeq.Clear();
+            _enqueueSeq = 0;
             _back.Clear();
             _current = null;
             _enumerationComplete = false;
+            Interlocked.Exchange(ref _discoveredTotal, 0);
             while (_inbound.TryDequeue(out _))
             {
             }
-
         }
 
         _enumCts = new CancellationTokenSource();
@@ -58,9 +89,10 @@ public sealed class TreeSlideshowSession
             {
                 try
                 {
-                    await foreach (var path in RecursiveImageEnumerator.EnumerateAsync(_fileSystem, rootDirectory, ct)
+                    await foreach (var path in RecursiveImageEnumerator.EnumerateAsync(_fileSystem, rootDirectory, _random, ct)
                                        .ConfigureAwait(false))
                     {
+                        Interlocked.Increment(ref _discoveredTotal);
                         _inbound.Enqueue(path);
                     }
                 }
@@ -92,14 +124,44 @@ public sealed class TreeSlideshowSession
         _enumTask = null;
     }
 
-    /// <summary>Drain inbound into reservoir up to <see cref="SlideshowAlgorithmDefaults.ReservoirMax"/>.</summary>
+    /// <summary>Drain inbound into reservoir; at cap, evict LRU slots so new paths enter the draw pool (slideshow-algorithm-p0.md).</summary>
     private void RefillReservoir()
     {
         lock (_gate)
         {
-            while (_reservoir.Count < SlideshowAlgorithmDefaults.ReservoirMax && _inbound.TryDequeue(out var p))
-                _reservoir.Add(p);
+            while (_inbound.TryDequeue(out var p))
+            {
+                if (_reservoir.Count < SlideshowAlgorithmDefaults.ReservoirMax)
+                {
+                    _reservoir.Add(p);
+                    _reservoirEnqueueSeq.Add(++_enqueueSeq);
+                    continue;
+                }
+
+                var victim = FindLruVictimIndex();
+                _reservoir[victim] = p;
+                _reservoirEnqueueSeq[victim] = ++_enqueueSeq;
+            }
         }
+    }
+
+    private int FindLruVictimIndex()
+    {
+        Debug.Assert(_reservoir.Count == _reservoirEnqueueSeq.Count);
+        Debug.Assert(_reservoir.Count > 0);
+        var minSeq = _reservoirEnqueueSeq[0];
+        var minI = 0;
+        for (var i = 1; i < _reservoirEnqueueSeq.Count; i++)
+        {
+            var s = _reservoirEnqueueSeq[i];
+            if (s < minSeq)
+            {
+                minSeq = s;
+                minI = i;
+            }
+        }
+
+        return minI;
     }
 
     /// <summary>Waits until min pool or discovery finished (FR-SL-02).</summary>
@@ -131,6 +193,8 @@ public sealed class TreeSlideshowSession
         lock (_gate)
         {
             _reservoir.Clear();
+            _reservoirEnqueueSeq.Clear();
+            _enqueueSeq = 0;
             _back.Clear();
             _current = null;
         }
@@ -167,6 +231,9 @@ public sealed class TreeSlideshowSession
             var last = _reservoir[^1];
             _reservoir[idx] = last;
             _reservoir.RemoveAt(_reservoir.Count - 1);
+            var lastSeq = _reservoirEnqueueSeq[^1];
+            _reservoirEnqueueSeq[idx] = lastSeq;
+            _reservoirEnqueueSeq.RemoveAt(_reservoirEnqueueSeq.Count - 1);
             _current = pick;
         }
 

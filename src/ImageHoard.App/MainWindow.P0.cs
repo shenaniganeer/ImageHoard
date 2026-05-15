@@ -648,7 +648,7 @@ public sealed partial class MainWindow
                 TextWrapping = TextWrapping.WrapWholeWords,
                 MaxWidth = 420,
                 Text =
-                    "Random slideshow picks images from a running sample of files discovered so far under your chosen folder. Until enough files have been discovered, order is approximately random; over time it evens out. Reshuffle starts a new random session.",
+                    "Tree slideshow walks your folder in the background (no full scan before the first slide). Each Next picks at random from images discovered so far. Discovery order is shuffled so slides are not stuck in alphabetically first folders. If more than 2000 paths are seen, older pool entries rotate out (LRU) so new files can appear while memory stays capped. After the whole tree is found, Next is uniform over all images (still within that cap). Reshuffle starts a new session. For a future persistent index option, see the product roadmap.",
             },
             CloseButtonText = "OK",
             XamlRoot = RootGrid.XamlRoot,

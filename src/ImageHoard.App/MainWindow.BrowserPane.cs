@@ -3782,6 +3782,24 @@ public sealed partial class MainWindow
             return;
         }
 
+        if (_slideshowUiActive && _slideshow != null)
+        {
+            if (!_slideshow.TryGetSlideshowOverlayListPosition(out var index1Based, out var total, out _)
+                || index1Based <= 0
+                || total <= 0)
+            {
+                hideBoth();
+                return;
+            }
+
+            var slideshowText = $"{index1Based}/{total}";
+            NormalPathPositionText.Text = slideshowText;
+            FullscreenPathPositionText.Text = slideshowText;
+            NormalPathPositionText.Visibility = Visibility.Visible;
+            FullscreenPathPositionText.Visibility = Visibility.Visible;
+            return;
+        }
+
         var sel = TryGetBrowserTreePrimaryNavNode();
         var selPath = sel?.Content is ImageRow sr ? sr.FullPath : null;
         var contextDir = BrowseContextDirectory.Resolve(

@@ -56,6 +56,20 @@ public sealed class SiblingImageNavigator
 
     public int Count => _paths.Count;
 
+    public bool TryGetFolderPosition(out int index1Based, out int total)
+    {
+        if (_paths.Count == 0)
+        {
+            index1Based = 0;
+            total = 0;
+            return false;
+        }
+
+        index1Based = _index + 1;
+        total = _paths.Count;
+        return true;
+    }
+
     public bool TryMoveNext(out string? path)
     {
         path = null;

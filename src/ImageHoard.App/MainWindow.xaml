@@ -693,11 +693,24 @@
             Background="Black"
             KeyDown="FullscreenLayout_KeyDown"
             IsTabStop="True">
-            <Image
-                x:Name="FullscreenImage"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Stretch="Uniform" />
+            <ScrollViewer
+                x:Name="FullscreenScrollViewer"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                HorizontalScrollBarVisibility="Auto"
+                VerticalScrollBarVisibility="Auto"
+                ZoomMode="Disabled">
+                <Grid
+                    x:Name="FullscreenScrollContentGrid"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Top">
+                    <Image
+                        x:Name="FullscreenImage"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Stretch="Uniform" />
+                </Grid>
+            </ScrollViewer>
             <Border
                 x:Name="FullscreenPathOverlay"
                 Margin="12"

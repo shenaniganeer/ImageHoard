@@ -71,6 +71,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     private int _contentDialogModalDepth;
     private PointerEventHandler? _pointerWheelCaptureHandler;
     private PointerEventHandler? _previewScrollContentWheelHandler;
+    private PointerEventHandler? _fullscreenScrollContentWheelHandler;
     private PointerEventHandler? _pointerPressedCaptureHandler;
     private PointerEventHandler? _pointerMovedMouseBindingsHandler;
 
@@ -189,6 +190,15 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         PreviewScrollContentGrid.AddHandler(
             UIElement.PointerWheelChangedEvent,
             _previewScrollContentWheelHandler,
+            handledEventsToo: false);
+        _fullscreenScrollContentWheelHandler ??= (_, e) =>
+        {
+            if (TryDispatchPointerWheelBindings(e))
+                e.Handled = true;
+        };
+        FullscreenScrollContentGrid.AddHandler(
+            UIElement.PointerWheelChangedEvent,
+            _fullscreenScrollContentWheelHandler,
             handledEventsToo: false);
         _pointerPressedCaptureHandler ??= (_, e) => RootGrid_PointerPressed(_, e);
         RootGrid.AddHandler(UIElement.PointerPressedEvent, _pointerPressedCaptureHandler, handledEventsToo: true);
@@ -605,7 +615,11 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
         if (commandId == ViewPanPreviewCommandId)
         {
-            return source != null && IsDescendantOf(source, PreviewHostGrid);
+            if (source == null)
+                return false;
+            if (IsDescendantOf(source, PreviewHostGrid))
+                return true;
+            return _isFullscreen && IsDescendantOf(source, FullscreenScrollContentGrid);
         }
 
         if (commandId is ViewZoomInCommandId or ViewZoomOutCommandId)
@@ -614,7 +628,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
                 return false;
             if (IsDescendantOf(source, PreviewHostGrid))
                 return true;
-            return _isFullscreen && IsDescendantOf(source, FullscreenImage);
+            return _isFullscreen && IsDescendantOf(source, FullscreenScrollContentGrid);
         }
 
         return true;
@@ -624,6 +638,8 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     {
         var origin = e.OriginalSource as DependencyObject;
         if (IsDescendantOf(origin, PreviewScrollContentGrid))
+            return;
+        if (IsDescendantOf(origin, FullscreenScrollContentGrid))
             return;
 
         if (TryDispatchPointerWheelBindings(e))
@@ -664,8 +680,16 @@ public sealed partial class MainWindow : Window, IPreferencesSession
                     continue;
                 if (suppressNav && (commandId == "nav.nextImage" || commandId == "nav.prevImage"))
                     continue;
+                var wheelZoomAnchor = TryPrepareZoomAnchorFromWheelIfNeeded(e, commandId);
+                if (wheelZoomAnchor)
+                    _suppressNextZoomAnchorCenterCapture = true;
                 if (TryExecuteInputCommand(commandId))
                     return true;
+                if (wheelZoomAnchor)
+                {
+                    ClearPendingZoomScrollAnchor();
+                    _suppressNextZoomAnchorCenterCapture = false;
+                }
             }
         }
 
@@ -1020,6 +1044,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             _isFullscreen = true;
             NormalLayout.Visibility = Visibility.Collapsed;
             FullscreenLayout.Visibility = Visibility.Visible;
+            PrepareFullscreenEnterNavigation();
             UpdatePathOverlays();
             FullscreenLayout.Focus(FocusState.Programmatic);
             if (!string.IsNullOrEmpty(_currentImageFullPath) && _fitMode != ImageFitMode.OneToOne)
@@ -1034,6 +1059,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             _isFullscreen = false;
             FullscreenLayout.Visibility = Visibility.Collapsed;
             NormalLayout.Visibility = Visibility.Visible;
+            PrepareFullscreenExitNavigation();
             StopSlideshowSession();
             UpdatePathOverlays();
             RootGrid.Focus(FocusState.Programmatic);

@@ -118,7 +118,7 @@
                     HorizontalAlignment="Left"
                     TextWrapping="Wrap"
                     Opacity="0.7"
-                    Text="Edit shortcuts below. Only your differences from shipped defaults are saved to disk." />
+                    Text="Edit shortcuts below; changes save immediately. Only your differences from shipped defaults are written to disk. Use Reset to Defaults on the Hotkeys page to restore all shipped shortcuts." />
                 <TextBlock
                     x:Name="HotkeysLoadError"
                     Grid.Row="2"

@@ -74,6 +74,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     private PointerEventHandler? _fullscreenScrollContentWheelHandler;
     private PointerEventHandler? _pointerPressedCaptureHandler;
     private PointerEventHandler? _pointerMovedMouseBindingsHandler;
+    private readonly MouseButtonClickChainTracker _mouseButtonClickChainTracker = new(() => Environment.TickCount64);
 
     /// <summary>Non-zero while browser tree / preview context is being reconciled after destructive wizard work (or related paths). Blocks browse-style navigation.</summary>
     private int _browserPaneMutationDepth;
@@ -173,7 +174,9 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         }
 
         _pendingSelectImagePath = _session.LastSelectedImage;
-        await NavigateToFolderAsync(path).ConfigureAwait(true);
+        await NavigateToFolderAsync(path, suppressViewportAfterRootPopulate: true, coldBootSessionRestore: true)
+            .ConfigureAwait(true);
+        await ApplyColdBootBrowserTreeRestoreAsync().ConfigureAwait(true);
     }
 
     private void RegisterGlobalPointerHandlers()
@@ -242,6 +245,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     private void PersistLayout()
     {
         SyncSharesFromGridDefinitions();
+        CaptureBrowserTreeSnapshotIntoSessionIfBrowsing();
         AppSettingsStore.SaveAll(_layoutState, _session);
     }
 
@@ -261,6 +265,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     {
         sender.Tick -= OnPersistLayoutDebounceTick;
         SyncSharesFromGridDefinitions();
+        CaptureBrowserTreeSnapshotIntoSessionIfBrowsing();
         AppSettingsStore.SaveAll(_layoutState, _session);
     }
 
@@ -754,7 +759,21 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
         var origin = e.OriginalSource as DependencyObject;
         var (shift, ctrl, alt, win) = WinUiKeyboardInterop.GetModifierStates();
-        if (allowPreviewPanBegin && buttonName != null && TryBeginPreviewPan(e, merged, buttonName, shift, ctrl, alt, win, origin))
+
+        var chainPoint = e.GetCurrentPoint(null);
+        var mouseClickIndex = 1;
+        if (buttonName != null && chainPoint.PointerDeviceType == Microsoft.UI.Input.PointerDeviceType.Mouse)
+        {
+            var scale = RootGrid.XamlRoot?.RasterizationScale ?? 1.0;
+            var metrics = Win32MouseMetrics.GetClickMetrics(scale);
+            mouseClickIndex = _mouseButtonClickChainTracker.OnMouseButtonDown(
+                buttonName,
+                chainPoint.Position.X,
+                chainPoint.Position.Y,
+                metrics);
+        }
+
+        if (allowPreviewPanBegin && buttonName != null && TryBeginPreviewPan(e, merged, buttonName, shift, ctrl, alt, win, origin, mouseClickIndex))
             return;
 
         foreach (var (commandId, chord) in InputPointerChordMatch.EnumerateMouseChordBindings(merged))
@@ -781,7 +800,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         {
             if (commandId == ViewPanPreviewCommandId)
                 continue;
-            if (!InputPointerChordMatch.IsMouseButtonMatch(chord, buttonName, 1, shift, ctrl, alt, win))
+            if (!InputPointerChordMatch.IsMouseButtonMatch(chord, buttonName, mouseClickIndex, shift, ctrl, alt, win))
                 continue;
             if (!ChordActivationAppliesToCurrentUi(commandId, chord))
                 continue;

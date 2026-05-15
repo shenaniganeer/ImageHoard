@@ -18,7 +18,7 @@
             Margin="0,0,0,8"
             TextWrapping="Wrap"
             Opacity="0.85"
-            Text="Bindings merge with shipped keyboard and mouse defaults. Save writes only overrides that differ from those defaults. Enter adds another shortcut variant; Shift+Enter replaces all variants for that row with the next capture. Backspace or Delete removes the selected shortcut variant (or all variants touched by the selection). Escape cancels recording. Mouse: you can hold one or more buttons and scroll the wheel to capture combinations (for example X1 and wheel up)." />
+            Text="Bindings merge with shipped keyboard and mouse defaults; changes save immediately (only your differences from defaults are written to disk). Enter adds another shortcut variant; Shift+Enter replaces all variants for that row with the next capture. Backspace or Delete removes the selected shortcut variant (or all variants touched by the selection). Right-click a shortcut row for Reset to default. Escape cancels recording. Mouse: you can hold one or more buttons and scroll the wheel to capture combinations (for example X1 and wheel up)." />
         <Grid Grid.Row="1">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel x:Name="RowHost" Margin="0,0,8,0" />
@@ -39,22 +39,12 @@
             Grid.Row="2"
             Margin="0,8,0,4"
             TextWrapping="Wrap" />
-        <StackPanel
+        <Button
+            x:Name="ResetToDefaultsButton"
             Grid.Row="3"
-            Orientation="Horizontal"
-            HorizontalAlignment="Right"
-            Padding="0,8,0,0">
-            <Button
-                x:Name="SaveButton"
-                Content="Save"
-                MinWidth="100"
-                Margin="0,0,8,0"
-                Click="SaveButton_Click" />
-            <Button
-                x:Name="CancelButton"
-                Content="Cancel"
-                MinWidth="100"
-                Click="CancelButton_Click" />
-        </StackPanel>
+            HorizontalAlignment="Left"
+            Padding="0,8,0,0"
+            Content="Reset to Defaults"
+            Click="ResetToDefaultsButton_Click" />
     </Grid>
 </UserControl>

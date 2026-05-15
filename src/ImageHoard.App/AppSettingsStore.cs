@@ -149,6 +149,26 @@ internal static class AppSettingsStore
             s.LastBrowseFolder = lb;
         if (file?.Paths?.LastSelectedImage is { Length: > 0 } ls)
             s.LastSelectedImage = ls;
+
+        if (file?.Paths?.BrowserTree is { } bt
+            && file.Paths is { LastBrowseFolder: { Length: > 0 } lbf }
+            && BrowserTreeSnapshot.IsRestoreRootMatching(bt.SnapshotBrowseRoot, lbf))
+        {
+            var snap = new BrowserTreeSessionSnapshot
+            {
+                SnapshotBrowseRoot = bt.SnapshotBrowseRoot,
+                ScrollH = BrowserTreeSnapshot.SanitizeStoredScroll(bt.ScrollH) ?? 0,
+                ScrollV = BrowserTreeSnapshot.SanitizeStoredScroll(bt.ScrollV) ?? 0,
+            };
+            var raw = bt.ExpandedFolderPaths ?? new List<string>();
+            snap.ExpandedFolderPaths = BrowserTreeSnapshot.MergePriorityThenCapDedupeUnderRoot(
+                lbf,
+                Array.Empty<string>(),
+                raw,
+                BrowserTreeSnapshot.MaxExpandedFolderPaths);
+            s.BrowserTree = snap;
+        }
+
         if (file?.Favorites is { Count: > 0 } fav)
             s.Favorites = fav.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (file?.InverseKeepDeleteBeforeArchiveMove is bool ik)
@@ -209,6 +229,23 @@ internal static class AppSettingsStore
             file.Paths.StagingRoot = session.StagingRoot;
             file.Paths.LastBrowseFolder = session.LastBrowseFolder;
             file.Paths.LastSelectedImage = session.LastSelectedImage;
+
+            file.Paths.BrowserTree = null;
+            if (session.BrowserTree is { SnapshotBrowseRoot: { Length: > 0 } sRoot }
+                && !string.IsNullOrEmpty(session.LastBrowseFolder)
+                && BrowserTreeSnapshot.IsRestoreRootMatching(sRoot, session.LastBrowseFolder))
+            {
+                file.Paths.BrowserTree = new BrowserTreeSettingsDto
+                {
+                    SnapshotBrowseRoot = session.BrowserTree.SnapshotBrowseRoot,
+                    ScrollH = session.BrowserTree.ScrollH,
+                    ScrollV = session.BrowserTree.ScrollV,
+                    ExpandedFolderPaths = session.BrowserTree.ExpandedFolderPaths.Count > 0
+                        ? session.BrowserTree.ExpandedFolderPaths
+                        : null,
+                };
+            }
+
             file.Favorites = session.Favorites.Count > 0 ? session.Favorites : null;
             file.InverseKeepDeleteBeforeArchiveMove = session.InverseKeepDeleteBeforeArchiveMove;
 

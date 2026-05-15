@@ -669,7 +669,8 @@ public sealed partial class MainWindow
         bool ctrl,
         bool alt,
         bool win,
-        DependencyObject? origin)
+        DependencyObject? origin,
+        int mouseClickIndex)
     {
         if (_splitDrag != SplitDragKind.None)
             return false;
@@ -688,7 +689,7 @@ public sealed partial class MainWindow
 
         foreach (var chord in chords)
         {
-            if (!InputPointerChordMatch.IsMouseButtonMatch(chord, buttonName, 1, shift, ctrl, alt, win))
+            if (!InputPointerChordMatch.IsMouseButtonMatch(chord, buttonName, mouseClickIndex, shift, ctrl, alt, win))
                 continue;
             if (!IsPointerChordAllowedForCommand(ViewPanPreviewCommandId, origin))
                 continue;

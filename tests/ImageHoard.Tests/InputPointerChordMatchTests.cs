@@ -71,6 +71,18 @@ public sealed class InputPointerChordMatchTests
     }
 
     [Fact]
+    public void IsMouseButtonMatch_respects_click_count_two_and_three()
+    {
+        var dbl = JsonSerializer.Deserialize<JsonElement>("""{"kind":"mouseButton","button":"Left","clickCount":2}""");
+        var tpl = JsonSerializer.Deserialize<JsonElement>("""{"kind":"mouseButton","button":"Right","clickCount":3}""");
+        Assert.True(InputPointerChordMatch.IsMouseButtonMatch(dbl, "Left", 2, false, false, false, false));
+        Assert.False(InputPointerChordMatch.IsMouseButtonMatch(dbl, "Left", 1, false, false, false, false));
+        Assert.False(InputPointerChordMatch.IsMouseButtonMatch(dbl, "Left", 3, false, false, false, false));
+        Assert.True(InputPointerChordMatch.IsMouseButtonMatch(tpl, "Right", 3, false, false, false, false));
+        Assert.False(InputPointerChordMatch.IsMouseButtonMatch(tpl, "Right", 2, false, false, false, false));
+    }
+
+    [Fact]
     public void IsMouseButtonMatch_shift_left_matches_view_pan_preview_shipped_chord()
     {
         var json = """{"kind":"mouseButton","button":"Left","clickCount":1,"modifiers":["Shift"]}""";
@@ -78,6 +90,15 @@ public sealed class InputPointerChordMatchTests
         Assert.True(InputPointerChordMatch.IsMouseButtonMatch(chord, "Left", 1, true, false, false, false));
         Assert.False(InputPointerChordMatch.IsMouseButtonMatch(chord, "Left", 1, false, false, false, false));
         Assert.False(InputPointerChordMatch.IsMouseButtonMatch(chord, "Left", 1, true, true, false, false));
+    }
+
+    [Fact]
+    public void IsMouseButtonMatch_default_click_count_is_one_when_omitted()
+    {
+        var json = """{"kind":"mouseButton","button":"Left"}""";
+        var chord = JsonSerializer.Deserialize<JsonElement>(json);
+        Assert.True(InputPointerChordMatch.IsMouseButtonMatch(chord, "Left", 1, false, false, false, false));
+        Assert.False(InputPointerChordMatch.IsMouseButtonMatch(chord, "Left", 2, false, false, false, false));
     }
 
     [Fact]

@@ -35,6 +35,37 @@ internal sealed class PathsSettingsSection
 
     [JsonPropertyName("lastSelectedImage")]
     public string? LastSelectedImage { get; set; }
+
+    /// <summary>Folder tree expansion + scroll snapshot; valid only when <see cref="BrowserTreeSettingsDto.SnapshotBrowseRoot"/> matches <see cref="LastBrowseFolder"/>.</summary>
+    [JsonPropertyName("browserTree")]
+    public BrowserTreeSettingsDto? BrowserTree { get; set; }
+}
+
+internal sealed class BrowserTreeSettingsDto
+{
+    [JsonPropertyName("snapshotBrowseRoot")]
+    public string? SnapshotBrowseRoot { get; set; }
+
+    [JsonPropertyName("scrollH")]
+    public double? ScrollH { get; set; }
+
+    [JsonPropertyName("scrollV")]
+    public double? ScrollV { get; set; }
+
+    [JsonPropertyName("expandedFolderPaths")]
+    public List<string>? ExpandedFolderPaths { get; set; }
+}
+
+/// <summary>Runtime session mirror of persisted <c>paths.browserTree</c>.</summary>
+internal sealed class BrowserTreeSessionSnapshot
+{
+    public string? SnapshotBrowseRoot { get; set; }
+
+    public double ScrollH { get; set; }
+
+    public double ScrollV { get; set; }
+
+    public List<string> ExpandedFolderPaths { get; set; } = new();
 }
 
 /// <summary>ui.* keys persisted to settings.json (FR-ST-01).</summary>
@@ -178,6 +209,8 @@ internal sealed class AppSessionSettings
     public string? LastBrowseFolder { get; set; }
 
     public string? LastSelectedImage { get; set; }
+
+    public BrowserTreeSessionSnapshot? BrowserTree { get; set; }
 
     /// <summary>Wizard default: delete non-keepers before moving the parent folder to archive.</summary>
     public bool InverseKeepDeleteBeforeArchiveMove { get; set; }

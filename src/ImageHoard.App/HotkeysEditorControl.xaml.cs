@@ -27,6 +27,9 @@ public sealed partial class HotkeysEditorControl : UserControl
     private PointerEventHandler? _pointerReleasedCaptureHandler;
     /// <summary>While recording, single-button press is deferred until <see cref="UIElement.PointerReleasedEvent"/>.</summary>
     private string[]? _mouseRecordPendingSorted;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _mouseDeferCommitTimer;
+    private string? _mouseDeferButton;
+    private int _mouseDeferReleaseCount;
 
     public HotkeysEditorControl()
     {
@@ -111,11 +114,20 @@ public sealed partial class HotkeysEditorControl : UserControl
             IsTabStop = true,
             IsEnabled = entry.AllowUserBinding,
             VerticalAlignment = VerticalAlignment.Center,
-            PlaceholderText = entry.AllowUserBinding ? "Enter add · Shift+Enter replace all · Backspace/Delete removes selected shortcut" : "(fixed)",
+            PlaceholderText = entry.AllowUserBinding
+                ? "Enter add · Shift+Enter replace all · Backspace/Delete removes selected shortcut · Right-click: reset to default"
+                : "(fixed)",
         };
         Grid.SetColumn(box, 1);
         if (entry.AllowUserBinding)
+        {
             box.KeyDown += ChordBox_KeyDown;
+            var flyout = new MenuFlyout();
+            var resetItem = new MenuFlyoutItem { Text = "Reset to default" };
+            resetItem.Click += (_, _) => _ = ResetCommandToBuiltinAndPersistAsync(entry.CommandId);
+            flyout.Items.Add(resetItem);
+            box.ContextFlyout = flyout;
+        }
 
         row.Children.Add(label);
         row.Children.Add(box);
@@ -133,7 +145,7 @@ public sealed partial class HotkeysEditorControl : UserControl
 
         if (e.Key is VirtualKey.Delete or VirtualKey.Back)
         {
-            TryRemoveChordVariantsFromSelection(id, tb, e.Key);
+            _ = RemoveChordVariantsAndPersistAsync(id, tb, e.Key);
             e.Handled = true;
             return;
         }
@@ -146,7 +158,7 @@ public sealed partial class HotkeysEditorControl : UserControl
         }
     }
 
-    private void TryRemoveChordVariantsFromSelection(string commandId, TextBox tb, VirtualKey key)
+    private async Task RemoveChordVariantsAndPersistAsync(string commandId, TextBox tb, VirtualKey key)
     {
         if (!_editable.TryGetValue(commandId, out var list) || list.Count == 0)
             return;
@@ -162,6 +174,7 @@ public sealed partial class HotkeysEditorControl : UserControl
         if (indices.Count == 0)
             return;
 
+        var snapshot = SnapshotCommand(commandId);
         var anchor = ranges[indices[^1]].Start;
         foreach (var idx in indices)
             list.RemoveAt(idx);
@@ -173,6 +186,8 @@ public sealed partial class HotkeysEditorControl : UserControl
         RefreshChordDisplay(commandId);
         tb.SelectionStart = Math.Clamp(anchor, 0, tb.Text.Length);
         tb.SelectionLength = 0;
+
+        await TryPersistOrRevertSingleCommandAsync(commandId, snapshot).ConfigureAwait(true);
     }
 
     private void ArmCapture(string commandId, TextBox sourceTextBox, bool replaceAllOnCommit)
@@ -181,10 +196,10 @@ public sealed partial class HotkeysEditorControl : UserControl
         _armedCommandId = commandId;
         _armedReplaceAllOnCommit = replaceAllOnCommit;
         _armedSourceTextBox = sourceTextBox;
-        SaveButton.IsEnabled = false;
+        ResetToDefaultsButton.IsEnabled = false;
         StatusText.Text = replaceAllOnCommit
-            ? "Recording (replace all): key chord; or hold one mouse button and press another for a chord; or single click (release to finish); or hold button(s) and scroll the wheel. Escape cancels."
-            : "Recording (add variant): key chord; or hold one mouse button and press another for a chord; or single click (release to finish); or hold button(s) and scroll the wheel. Escape cancels.";
+            ? "Recording (replace all): key chord; or hold one mouse button and press another for a chord; or mouse click(s) — pause after release to finish (double/triple click within Windows timing); or hold button(s) and scroll the wheel. Escape cancels."
+            : "Recording (add variant): key chord; or hold one mouse button and press another for a chord; or mouse click(s) — pause after release to finish (double/triple click within Windows timing); or hold button(s) and scroll the wheel. Escape cancels.";
         AttachCapturePointerHandlers();
         _ = CaptureFocusSink.Focus(FocusState.Programmatic);
         ChordCaptureActiveChanged?.Invoke(true);
@@ -194,10 +209,10 @@ public sealed partial class HotkeysEditorControl : UserControl
     {
         var wasArmed = _armedCommandId != null;
         DetachCapturePointerHandlers();
-        ClearMouseRecordPending();
+        ResetMousePointerCaptureState();
         _armedCommandId = null;
         _armedReplaceAllOnCommit = false;
-        SaveButton.IsEnabled = true;
+        ResetToDefaultsButton.IsEnabled = true;
         var returnTb = _armedSourceTextBox;
         _armedSourceTextBox = null;
         if (wasArmed)
@@ -230,7 +245,69 @@ public sealed partial class HotkeysEditorControl : UserControl
             RootLayout.RemoveHandler(UIElement.PointerReleasedEvent, _pointerReleasedCaptureHandler);
     }
 
-    private void ClearMouseRecordPending() => _mouseRecordPendingSorted = null;
+    private void ResetMousePointerCaptureState()
+    {
+        StopMouseDeferCommitTimer();
+        _mouseRecordPendingSorted = null;
+        _mouseDeferButton = null;
+        _mouseDeferReleaseCount = 0;
+    }
+
+    private void StopMouseDeferCommitTimer()
+    {
+        if (_mouseDeferCommitTimer == null)
+            return;
+        _mouseDeferCommitTimer.Tick -= MouseDeferCommitTimer_Tick;
+        _mouseDeferCommitTimer.Stop();
+        _mouseDeferCommitTimer = null;
+    }
+
+    private void ResetMouseDeferChainOnly()
+    {
+        StopMouseDeferCommitTimer();
+        _mouseDeferReleaseCount = 0;
+        _mouseDeferButton = null;
+    }
+
+    private void ScheduleDeferredMouseButtonCommit()
+    {
+        StopMouseDeferCommitTimer();
+        var dq = RootLayout.DispatcherQueue ?? Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        if (dq == null)
+            return;
+        _mouseDeferCommitTimer = dq.CreateTimer();
+        _mouseDeferCommitTimer.Interval = TimeSpan.FromMilliseconds(Win32MouseMetrics.GetDoubleClickTimeMs());
+        _mouseDeferCommitTimer.IsRepeating = false;
+        _mouseDeferCommitTimer.Tick += MouseDeferCommitTimer_Tick;
+        _mouseDeferCommitTimer.Start();
+    }
+
+    private void MouseDeferCommitTimer_Tick(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object args)
+    {
+        if (_mouseDeferCommitTimer != null)
+        {
+            _mouseDeferCommitTimer.Tick -= MouseDeferCommitTimer_Tick;
+            _mouseDeferCommitTimer.Stop();
+            _mouseDeferCommitTimer = null;
+        }
+
+        if (_armedCommandId == null || string.IsNullOrEmpty(_mouseDeferButton))
+            return;
+        var btn = _mouseDeferButton;
+        var n = Math.Clamp(_mouseDeferReleaseCount, 1, MouseButtonClickChainTracker.MaxSchemaClickCount);
+        ResetMousePointerCaptureState();
+        CommitChord(BuildMouseButtonChord(btn, n));
+    }
+
+    private void OnSingleButtonPressedDuringCapture(string pressedButton)
+    {
+        if (_mouseDeferReleaseCount == 0)
+            return;
+        if (_mouseDeferButton != null && string.Equals(pressedButton, _mouseDeferButton, StringComparison.Ordinal))
+            StopMouseDeferCommitTimer();
+        else
+            ResetMouseDeferChainOnly();
+    }
 
     private void RootLayout_OnPointerWheelCapture(object sender, PointerRoutedEventArgs e)
     {
@@ -241,7 +318,7 @@ public sealed partial class HotkeysEditorControl : UserControl
         if (delta == 0)
             return;
 
-        ClearMouseRecordPending();
+        ResetMousePointerCaptureState();
         var up = delta > 0;
         var heldSorted = PointerInputMouseHeldButtons.GetPressedSorted(e.GetCurrentPoint(null).Properties);
         var el = BuildMouseWheelChord(up, heldSorted);
@@ -261,12 +338,13 @@ public sealed partial class HotkeysEditorControl : UserControl
 
         if (held.Length >= 2)
         {
-            ClearMouseRecordPending();
+            ResetMousePointerCaptureState();
             CommitChord(BuildMouseChordChord(held));
             e.Handled = true;
             return;
         }
 
+        OnSingleButtonPressedDuringCapture(held[0]);
         _mouseRecordPendingSorted = (string[])held.Clone();
         e.Handled = true;
     }
@@ -281,7 +359,7 @@ public sealed partial class HotkeysEditorControl : UserControl
         if (held.Length < 2)
             return;
 
-        ClearMouseRecordPending();
+        ResetMousePointerCaptureState();
         CommitChord(BuildMouseChordChord(held));
         e.Handled = true;
     }
@@ -300,8 +378,24 @@ public sealed partial class HotkeysEditorControl : UserControl
         if (Array.IndexOf(held, pendingBtn) >= 0)
             return;
 
-        ClearMouseRecordPending();
-        CommitChord(BuildMouseButtonChord(pendingBtn));
+        if (e.Pointer.PointerDeviceType != Microsoft.UI.Input.PointerDeviceType.Mouse)
+        {
+            ResetMousePointerCaptureState();
+            CommitChord(BuildMouseButtonChord(pendingBtn, 1));
+            e.Handled = true;
+            return;
+        }
+
+        if (_mouseDeferReleaseCount > 0 && string.Equals(_mouseDeferButton, pendingBtn, StringComparison.Ordinal))
+            _mouseDeferReleaseCount = Math.Min(_mouseDeferReleaseCount + 1, MouseButtonClickChainTracker.MaxSchemaClickCount);
+        else
+        {
+            _mouseDeferButton = pendingBtn;
+            _mouseDeferReleaseCount = 1;
+        }
+
+        _mouseRecordPendingSorted = null;
+        ScheduleDeferredMouseButtonCommit();
         e.Handled = true;
     }
 
@@ -309,7 +403,7 @@ public sealed partial class HotkeysEditorControl : UserControl
     {
         for (var o = originalSource as DependencyObject; o != null; o = VisualTreeHelper.GetParent(o))
         {
-            if (ReferenceEquals(o, SaveButton) || ReferenceEquals(o, CancelButton))
+            if (ReferenceEquals(o, ResetToDefaultsButton))
                 return true;
         }
 
@@ -324,12 +418,7 @@ public sealed partial class HotkeysEditorControl : UserControl
         var incoming = el.Clone();
         var replaceAll = _armedReplaceAllOnCommit;
 
-        if (replaceAll)
-        {
-            _editable[id] = new List<JsonElement> { incoming };
-            StatusText.Text = "Shortcuts replaced.";
-        }
-        else
+        if (!replaceAll)
         {
             var list = _editable[id];
             if (list.Any(c => string.Equals(c.GetRawText(), incoming.GetRawText(), StringComparison.Ordinal)))
@@ -339,13 +428,23 @@ public sealed partial class HotkeysEditorControl : UserControl
                 RefreshChordDisplay(id);
                 return;
             }
+        }
 
-            list.Add(incoming);
+        var snapshot = SnapshotCommand(id);
+        if (replaceAll)
+        {
+            _editable[id] = new List<JsonElement> { incoming };
+            StatusText.Text = "Shortcuts replaced.";
+        }
+        else
+        {
+            _editable[id].Add(incoming);
             StatusText.Text = "Shortcut variant added.";
         }
 
         DisarmCapture(restoreFocusToSource: true);
         RefreshChordDisplay(id);
+        _ = TryPersistOrRevertSingleCommandAsync(id, snapshot);
     }
 
     private void CaptureFocusSink_KeyDown(object sender, KeyRoutedEventArgs e)
@@ -399,14 +498,15 @@ public sealed partial class HotkeysEditorControl : UserControl
         return JsonSerializer.Deserialize<JsonElement>(json)!;
     }
 
-    private static JsonElement BuildMouseButtonChord(string buttonName)
+    private static JsonElement BuildMouseButtonChord(string buttonName, int clickCount = 1)
     {
         var (c, s, a, w) = WinUiKeyboardInterop.GetModifierStates();
+        var n = Math.Clamp(clickCount, 1, MouseButtonClickChainTracker.MaxSchemaClickCount);
         var chordObj = new Dictionary<string, object>
         {
             ["kind"] = "mouseButton",
             ["button"] = buttonName,
-            ["clickCount"] = 1,
+            ["clickCount"] = n,
         };
         AppendModifiersIfAny(chordObj, c, s, a, w);
         var json = JsonSerializer.Serialize(chordObj);
@@ -457,22 +557,32 @@ public sealed partial class HotkeysEditorControl : UserControl
             RefreshChordDisplay(id);
     }
 
-    private void SaveButton_Click(object sender, RoutedEventArgs e)
+    private List<JsonElement> SnapshotCommand(string commandId) =>
+        CloneChordList(_editable, commandId);
+
+    private void RestoreCommand(string commandId, List<JsonElement> snapshot) =>
+        _editable[commandId] = snapshot.Select(c => c.Clone()).ToList();
+
+    private Dictionary<string, List<JsonElement>> SnapshotAllEditable()
     {
-        if (_armedCommandId != null)
-            return;
-        _ = TrySaveAsync();
+        var d = new Dictionary<string, List<JsonElement>>(StringComparer.Ordinal);
+        foreach (var kv in _editable)
+            d[kv.Key] = kv.Value.Select(c => c.Clone()).ToList();
+        return d;
     }
 
-    private async Task TrySaveAsync()
+    private void RestoreAllEditable(Dictionary<string, List<JsonElement>> snapshot)
+    {
+        foreach (var kv in snapshot)
+            _editable[kv.Key] = kv.Value.Select(c => c.Clone()).ToList();
+    }
+
+    private async Task<(bool Ok, string? Error)> TryPersistEditableAsync()
     {
         var merged = BuildMergedDocument();
         var issues = InputBindingConflictChecker.FindChordKeyConflicts(merged);
         if (issues.Count > 0)
-        {
-            StatusText.Text = "Cannot save: " + issues[0];
-            return;
-        }
+            return (false, issues[0]);
 
         var diff = BuildOverrideMap();
         try
@@ -488,41 +598,81 @@ public sealed partial class HotkeysEditorControl : UserControl
                 var dir = Path.GetDirectoryName(AppDataPaths.UserInputOverridesPath);
                 if (!string.IsNullOrEmpty(dir))
                     Directory.CreateDirectory(dir);
-                await File.WriteAllTextAsync(AppDataPaths.UserInputOverridesPath, json);
+                await File.WriteAllTextAsync(AppDataPaths.UserInputOverridesPath, json).ConfigureAwait(true);
             }
 
             BindingsPersisted?.Invoke();
-            StatusText.Text = "Saved.";
+            return (true, null);
         }
         catch (Exception ex)
         {
-            StatusText.Text = "Save failed: " + ex.Message;
+            return (false, ex.Message);
         }
     }
 
-    private async void CancelButton_Click(object sender, RoutedEventArgs e)
+    private async Task TryPersistOrRevertSingleCommandAsync(string commandId, List<JsonElement> snapshot)
     {
-        DisarmCapture(restoreFocusToSource: false);
-        await RevertFromSavedAsync();
+        var (ok, err) = await TryPersistEditableAsync().ConfigureAwait(true);
+        if (ok)
+            return;
+
+        RestoreCommand(commandId, snapshot);
+        RefreshChordDisplay(commandId);
+        StatusText.Text = string.IsNullOrEmpty(err)
+            ? "Change reverted."
+            : err.StartsWith("Chord '", StringComparison.Ordinal)
+                ? $"Change reverted: cannot save: {err}"
+                : $"Change reverted: save failed: {err}";
     }
 
-    private async Task RevertFromSavedAsync()
+    private async Task ResetCommandToBuiltinAndPersistAsync(string commandId)
     {
-        if (LoadEditDocumentsAsync == null)
+        if (_armedCommandId != null || !_editable.ContainsKey(commandId))
+            return;
+
+        var snapshot = SnapshotCommand(commandId);
+        _editable[commandId] = CloneChordList(_builtinBase.Bindings, commandId);
+        RefreshChordDisplay(commandId);
+        StatusText.Text = "Reset row to default shortcuts.";
+        await TryPersistOrRevertSingleCommandAsync(commandId, snapshot).ConfigureAwait(true);
+    }
+
+    private async void ResetToDefaultsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_armedCommandId != null || XamlRoot == null)
+            return;
+
+        var dlg = new ContentDialog
         {
-            StatusText.Text = "Cannot revert (not connected).";
+            Title = "Reset all hotkeys?",
+            Content = "All commands will use the shipped default shortcuts. This cannot be undone except by rebinding.",
+            PrimaryButtonText = "Reset all",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot,
+        };
+        if (await dlg.ShowAsync() != ContentDialogResult.Primary)
+            return;
+
+        var snapshot = SnapshotAllEditable();
+        foreach (var entry in CommandCatalog.All)
+            _editable[entry.CommandId] = CloneChordList(_builtinBase.Bindings, entry.CommandId);
+
+        RefreshAllChordDisplays();
+        var (ok, err) = await TryPersistEditableAsync().ConfigureAwait(true);
+        if (ok)
+        {
+            StatusText.Text = "All shortcuts reset to defaults.";
             return;
         }
 
-        var docs = await LoadEditDocumentsAsync();
-        if (docs == null)
-        {
-            StatusText.Text = "Could not reload bindings from disk.";
-            return;
-        }
-
-        Reset(docs.Value.Builtin, docs.Value.Merged);
-        StatusText.Text = "Reverted to saved bindings.";
+        RestoreAllEditable(snapshot);
+        RefreshAllChordDisplays();
+        StatusText.Text = string.IsNullOrEmpty(err)
+            ? "Reset reverted."
+            : err.StartsWith("Chord '", StringComparison.Ordinal)
+                ? $"Reset reverted: cannot save: {err}"
+                : $"Reset reverted: save failed: {err}";
     }
 
     private InputProfileDocument BuildMergedDocument()

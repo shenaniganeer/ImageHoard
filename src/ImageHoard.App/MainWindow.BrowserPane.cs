@@ -4207,12 +4207,14 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// Keyboard/command browse step: resolve target from scoped folder paths (tree or disk), enqueue preview, then sync tree.
+    /// Resets <see cref="MouseButtonClickChainTracker"/> so the next click after navigation is not counted as a continuation of a prior double-click chain.
     /// </summary>
     private void BrowseNavigateByStep(BrowseNavStepKind step)
     {
         if (IsBrowserPaneMutationInProgress)
             return;
         IncrementNavCommandCounter();
+        _mouseButtonClickChainTracker.Reset();
         _ = BrowseNavigateByStepAsync(step);
     }
 

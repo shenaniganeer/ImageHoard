@@ -53,6 +53,18 @@ public sealed class MouseButtonClickChainTrackerTests
     }
 
     [Fact]
+    public void Reset_between_two_presses_same_spot_within_double_click_window_starts_new_chain()
+    {
+        long t = 0;
+        var metrics = new MouseButtonClickMetrics(500, 100, 100);
+        var tr = new MouseButtonClickChainTracker(() => t);
+        Assert.Equal(1, tr.OnMouseButtonDown("Left", 10, 20, metrics));
+        t = 100;
+        tr.Reset();
+        Assert.Equal(1, tr.OnMouseButtonDown("Left", 10, 20, metrics));
+    }
+
+    [Fact]
     public void Reset_clears_state()
     {
         long t = 0;

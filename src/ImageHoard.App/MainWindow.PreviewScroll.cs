@@ -220,7 +220,7 @@ public sealed partial class MainWindow
         _previewUserZoomFactor = 1.0;
     }
 
-    /// <summary>Resets zoom when the committed preview path changes or preview is cleared; call before updating metrics.</summary>
+    /// <summary>Resets zoom and mouse multi-click chain when the committed preview path changes or preview is cleared; call before updating metrics.</summary>
     private void OnPreviewImagePathCommitted(string? path)
     {
         if (string.IsNullOrEmpty(path))
@@ -228,6 +228,7 @@ public sealed partial class MainWindow
             ResetPreviewUserZoom();
             _previewZoomCommittedImagePath = null;
             ClearPendingZoomScrollAnchor();
+            _mouseButtonClickChainTracker.Reset();
             return;
         }
 
@@ -236,6 +237,7 @@ public sealed partial class MainWindow
             ResetPreviewUserZoom();
             _previewZoomCommittedImagePath = path;
             ClearPendingZoomScrollAnchor();
+            _mouseButtonClickChainTracker.Reset();
         }
     }
 

@@ -173,10 +173,18 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             return;
         }
 
-        _pendingSelectImagePath = _session.LastSelectedImage;
-        await NavigateToFolderAsync(path, suppressViewportAfterRootPopulate: true, coldBootSessionRestore: true)
-            .ConfigureAwait(true);
-        await ApplyColdBootBrowserTreeRestoreAsync().ConfigureAwait(true);
+        _suppressBrowserTreeViewportMutationForColdBoot = true;
+        try
+        {
+            _pendingSelectImagePath = _session.LastSelectedImage;
+            await NavigateToFolderAsync(path, suppressViewportAfterRootPopulate: true, coldBootSessionRestore: true)
+                .ConfigureAwait(true);
+            await ApplyColdBootBrowserTreeRestoreAsync().ConfigureAwait(true);
+        }
+        finally
+        {
+            ReleaseColdBootBrowserTreeViewportSuppressDeferred();
+        }
     }
 
     private void RegisterGlobalPointerHandlers()

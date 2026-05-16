@@ -92,6 +92,9 @@ public sealed partial class MainWindow
     private bool _browserTreeViewportCoalescedPreferSelectionBeforeBrowsed;
     private readonly List<TaskCompletionSource> _browserTreeViewportCoalesceWaiters = new();
 
+    /// <summary>While true, <see cref="ScheduleBrowserTreeViewportAfterMutationAsync"/> is a no-op (startup cold-boot restore owns scroll/selection).</summary>
+    private bool _suppressBrowserTreeViewportMutationForColdBoot;
+
     private TreeViewNode? _browserContextMenuTargetNode;
     private MenuFlyout? _browserTreeContextMenu;
     private bool _browserContextMenuIsToolbarCurrentFolder;
@@ -691,7 +694,8 @@ public sealed partial class MainWindow
         int browserProbeGen,
         int flatEntryCount,
         bool rootBrowsePopulate,
-        bool suppressViewportAfterRootPopulate = false)
+        bool suppressViewportAfterRootPopulate = false,
+        bool deferRootSelectionForColdBootRestore = false)
     {
         var skipExpandProbeForMetrics = WillQueueImmediateFolderMetricsOnPopulate();
         List<(string Path, TreeViewNode Node)>? expandProbeTargets = skipExpandProbeForMetrics
@@ -742,7 +746,7 @@ public sealed partial class MainWindow
         }
 
         if (rootBrowsePopulate)
-            FinalizeBrowserRootPopulateSelectionAndChrome(populateGen, rows);
+            FinalizeBrowserRootPopulateSelectionAndChrome(populateGen, rows, deferRootSelectionForColdBootRestore);
 
         if (expandProbeTargets is { Count: > 0 })
             ScheduleBrowseExpandabilityProbeBatch(expandProbeTargets, browserProbeGen);
@@ -756,22 +760,30 @@ public sealed partial class MainWindow
             ScheduleBrowserTreeViewportAfterMutation();
     }
 
-    private void FinalizeBrowserRootPopulateSelectionAndChrome(int populateGen, IReadOnlyList<ImageRow> rows)
+    private void FinalizeBrowserRootPopulateSelectionAndChrome(
+        int populateGen,
+        IReadOnlyList<ImageRow> rows,
+        bool deferRootSelectionForColdBootRestore = false)
     {
         if (populateGen != Volatile.Read(ref _populateBrowserGeneration))
             return;
 
-        var selectPath = _pendingSelectImagePath;
-        _pendingSelectImagePath = null;
+        if (!deferRootSelectionForColdBootRestore)
+        {
+            var selectPath = _pendingSelectImagePath;
+            _pendingSelectImagePath = null;
 
-        TreeViewNode? selectNode = null;
-        if (!string.IsNullOrEmpty(selectPath))
-            selectNode = FindImageNodeByPath(FolderTree.RootNodes, selectPath);
-        if (selectNode == null && rows.Count > 0)
-            selectNode = FirstImageNodePreorder(FolderTree.RootNodes);
+            TreeViewNode? selectNode = null;
+            if (!string.IsNullOrEmpty(selectPath))
+                selectNode = FindImageNodeByPath(FolderTree.RootNodes, selectPath);
+            if (selectNode == null && rows.Count > 0)
+                selectNode = FirstImageNodePreorder(FolderTree.RootNodes);
 
-        if (selectNode != null)
-            SyncBrowseTreeSelection(selectNode);
+            if (selectNode != null)
+                SyncBrowseTreeSelection(selectNode);
+            else if (rows.Count == 0)
+                ClearImageSelectionAndPreviewCore();
+        }
         else if (rows.Count == 0)
             ClearImageSelectionAndPreviewCore();
 
@@ -797,7 +809,8 @@ public sealed partial class MainWindow
         int flatEntryCount,
         int dirCount,
         IReadOnlyList<ImageRow> rows,
-        bool scheduleViewportAfterPopulate = true)
+        bool scheduleViewportAfterPopulate = true,
+        bool deferRootSelectionForColdBootRestore = false)
     {
         if (gen != Volatile.Read(ref _populateBrowserGeneration))
             return;
@@ -807,17 +820,22 @@ public sealed partial class MainWindow
             : $"{rows.Count} image(s) · {dirCount} folder(s)";
         SetTransientStatus(status);
 
-        var selectPath = _pendingSelectImagePath;
-        _pendingSelectImagePath = null;
+        if (!deferRootSelectionForColdBootRestore)
+        {
+            var selectPath = _pendingSelectImagePath;
+            _pendingSelectImagePath = null;
 
-        TreeViewNode? selectNode = null;
-        if (!string.IsNullOrEmpty(selectPath))
-            selectNode = FindImageNodeByPath(FolderTree.RootNodes, selectPath);
-        if (selectNode == null && rows.Count > 0)
-            selectNode = FirstImageNodePreorder(FolderTree.RootNodes);
+            TreeViewNode? selectNode = null;
+            if (!string.IsNullOrEmpty(selectPath))
+                selectNode = FindImageNodeByPath(FolderTree.RootNodes, selectPath);
+            if (selectNode == null && rows.Count > 0)
+                selectNode = FirstImageNodePreorder(FolderTree.RootNodes);
 
-        if (selectNode != null)
-            SyncBrowseTreeSelection(selectNode);
+            if (selectNode != null)
+                SyncBrowseTreeSelection(selectNode);
+            else if (rows.Count == 0)
+                ClearImageSelectionAndPreviewCore();
+        }
         else if (rows.Count == 0)
             ClearImageSelectionAndPreviewCore();
 
@@ -1555,6 +1573,9 @@ public sealed partial class MainWindow
         string? pinFolderRowPath = null,
         bool preferTreeSelectionBeforeBrowsedFolder = false)
     {
+        if (_suppressBrowserTreeViewportMutationForColdBoot)
+            return Task.CompletedTask;
+
         var dq = FolderTree.DispatcherQueue;
         if (dq == null)
             return Task.CompletedTask;
@@ -1591,6 +1612,29 @@ public sealed partial class MainWindow
         }
 
         return waiter.Task;
+    }
+
+    /// <summary>
+    /// Clears <see cref="_suppressBrowserTreeViewportMutationForColdBoot"/> after two low-priority ticks so
+    /// coalesced metrics resort work enqueued during startup cannot immediately override cold-boot scroll restore.
+    /// </summary>
+    internal void ReleaseColdBootBrowserTreeViewportSuppressDeferred()
+    {
+        var dq = FolderTree.DispatcherQueue;
+        if (dq == null)
+        {
+            _suppressBrowserTreeViewportMutationForColdBoot = false;
+            return;
+        }
+
+        _ = dq.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () =>
+            {
+                _ = dq.TryEnqueue(
+                    Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                    () => { _suppressBrowserTreeViewportMutationForColdBoot = false; });
+            });
     }
 
     private void StartDrainBrowserTreeViewportCoalescedBatches() =>
@@ -2933,7 +2977,19 @@ public sealed partial class MainWindow
         bool suppressViewportAfterRootPopulate = false,
         bool coldBootSessionRestore = false)
     {
-        if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
+        if (string.IsNullOrEmpty(path))
+            return;
+
+        try
+        {
+            path = Path.GetFullPath(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        }
+        catch
+        {
+            return;
+        }
+
+        if (!Directory.Exists(path))
             return;
 
         if (coldBootSessionRestore)
@@ -2961,7 +3017,12 @@ public sealed partial class MainWindow
 
         try
         {
-            await PopulateBrowserRootsCoreAsync(path, gen, suppressViewportAfterRootPopulate).ConfigureAwait(true);
+            await PopulateBrowserRootsCoreAsync(
+                    path,
+                    gen,
+                    suppressViewportAfterRootPopulate,
+                    deferRootSelectionForColdBootRestore: coldBootSessionRestore)
+                .ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -2971,7 +3032,11 @@ public sealed partial class MainWindow
         }
     }
 
-    private async Task PopulateBrowserRootsCoreAsync(string path, int gen, bool suppressViewportAfterRootPopulate = false)
+    private async Task PopulateBrowserRootsCoreAsync(
+        string path,
+        int gen,
+        bool suppressViewportAfterRootPopulate = false,
+        bool deferRootSelectionForColdBootRestore = false)
     {
         if (gen != Volatile.Read(ref _populateBrowserGeneration))
             return;
@@ -3045,7 +3110,8 @@ public sealed partial class MainWindow
                     gen,
                     flatEntryCount,
                     rootBrowsePopulate: true,
-                    suppressViewportAfterRootPopulate).ConfigureAwait(true);
+                    suppressViewportAfterRootPopulate,
+                    deferRootSelectionForColdBootRestore).ConfigureAwait(true);
             }
             else
             {
@@ -3061,7 +3127,8 @@ public sealed partial class MainWindow
                     flatEntryCount,
                     dirsList.Count,
                     rows,
-                    scheduleViewportAfterPopulate: !suppressViewportAfterRootPopulate);
+                    scheduleViewportAfterPopulate: !suppressViewportAfterRootPopulate,
+                    deferRootSelectionForColdBootRestore);
             }
         }).ConfigureAwait(true);
     }
@@ -5236,6 +5303,45 @@ public sealed partial class MainWindow
             CollectExpandedFolderFullPathsDfs(c, target);
     }
 
+    private async Task FinalizeColdBootTreeSelectionAndOptionalScrollResyncAsync(int gen, BrowserTreeSessionSnapshot? snap)
+    {
+        if (gen != Volatile.Read(ref _populateBrowserGeneration))
+            return;
+
+        var imagePick = _pendingSelectImagePath ?? _session.LastSelectedImage;
+        if (!string.IsNullOrEmpty(imagePick) && File.Exists(imagePick))
+            await TrySyncBrowseTreeSelectionToImagePathAsync(imagePick).ConfigureAwait(true);
+
+        if (gen != Volatile.Read(ref _populateBrowserGeneration))
+            return;
+
+        await ApplyBrowserTreeLeadPreviewAsync().ConfigureAwait(true);
+
+        if (gen != Volatile.Read(ref _populateBrowserGeneration))
+            return;
+
+        _pendingSelectImagePath = null;
+
+        if (snap == null)
+            return;
+
+        await RunOnUiAsync(() =>
+        {
+            if (gen != Volatile.Read(ref _populateBrowserGeneration))
+                return Task.CompletedTask;
+            FolderTree.UpdateLayout();
+            if (!TryGetFolderTreeScrollViewer(out var treeSv) || treeSv is null)
+                return Task.CompletedTask;
+            treeSv.UpdateLayout();
+            var maxH = Math.Max(0, treeSv.ScrollableWidth);
+            var maxV = Math.Max(0, treeSv.ScrollableHeight);
+            var h = BrowserTreeSnapshot.ClampScrollOffset(snap.ScrollH, maxH);
+            var v = BrowserTreeSnapshot.ClampScrollOffset(snap.ScrollV, maxV);
+            treeSv.ChangeView(h, v, null);
+            return Task.CompletedTask;
+        }).ConfigureAwait(true);
+    }
+
     internal async Task ApplyColdBootBrowserTreeRestoreAsync()
     {
         var gen = Volatile.Read(ref _populateBrowserGeneration);
@@ -5266,6 +5372,7 @@ public sealed partial class MainWindow
                 _ = TryResetFolderTreeScrollToOrigin();
                 return Task.CompletedTask;
             }).ConfigureAwait(true);
+            await FinalizeColdBootTreeSelectionAndOptionalScrollResyncAsync(gen, snap: null).ConfigureAwait(true);
             return;
         }
 
@@ -5312,11 +5419,13 @@ public sealed partial class MainWindow
             treeSv.UpdateLayout();
             var maxH = Math.Max(0, treeSv.ScrollableWidth);
             var maxV = Math.Max(0, treeSv.ScrollableHeight);
-            var h = BrowserTreeSnapshot.ClampScrollOffset(snap.ScrollH, maxH);
+            var h = BrowserTreeSnapshot.ClampScrollOffset(snap!.ScrollH, maxH);
             var v = BrowserTreeSnapshot.ClampScrollOffset(snap.ScrollV, maxV);
             treeSv.ChangeView(h, v, null);
             return Task.CompletedTask;
         }).ConfigureAwait(true);
+
+        await FinalizeColdBootTreeSelectionAndOptionalScrollResyncAsync(gen, snap).ConfigureAwait(true);
     }
 
     private async Task EnsureFolderTreePathExpandedForRestoreAsync(string folderFullPath, int gen)

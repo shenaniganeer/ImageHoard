@@ -244,6 +244,7 @@ public sealed class BrowserTreeViewportIntentResolverTests
             Assert.Equal(Path.GetFullPath(img), Path.GetFullPath(intent.PrimaryPath!));
             Assert.Equal(Path.GetFullPath(sub), Path.GetFullPath(intent.SecondaryPath!));
             Assert.True(intent.PreferSelectionFirst);
+            Assert.Equal(BrowserTreeViewportVisibility.PageWhenOutsideViewport, intent.Visibility);
         }
         finally
         {
@@ -449,6 +450,7 @@ public sealed class BrowserTreeViewportIntentResolverTests
             var state = new BrowserPaneState(root, null, null, null, null, null);
             var intent = BrowserTreeViewportIntentResolver.ForFolderNavigation(state);
             Assert.Equal(BrowserTreeViewportReason.FolderNavigation, intent.Reason);
+            Assert.Equal(BrowserTreeViewportVisibility.BringIntoView, intent.Visibility);
             Assert.Equal(
                 BrowserTreeViewportIntentResolver.GetPinPathAfterBrowseCommit(state),
                 intent.PrimaryPath);

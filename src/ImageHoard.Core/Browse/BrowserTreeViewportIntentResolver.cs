@@ -90,7 +90,8 @@ public static class BrowserTreeViewportIntentResolver
             primary,
             secondary,
             0.0,
-            PreferSelectionFirst: true);
+            PreferSelectionFirst: true,
+            BrowserTreeViewportVisibility.PageWhenOutsideViewport);
     }
 
     public static BrowserTreeViewportIntent ForRootPopulate(BrowserPaneState state) =>

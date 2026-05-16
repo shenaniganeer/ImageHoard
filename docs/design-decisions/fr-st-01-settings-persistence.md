@@ -39,7 +39,7 @@ Subfolders mirror standard mode: `settings.json`, `profiles\`, `cache\folder-met
 
 ## FR-ST-02 persistence keys
 
-Minimum keys: recent roots, last window geometry, last archive target, **last input profile id**, portable flag.
+Minimum keys: recent roots, last window geometry, last archive target, **last input profile id**, portable flag. Session **`paths.lastActedFsObject`** (cold-boot browser tree anchor) and **`paths.browserTree.expandedFolderPaths`** (no scroll offsets) are persisted with browse state; see [`browser-navigation-wizard-tree-coordination.md`](../tech-design/browser-navigation-wizard-tree-coordination.md).
 
 ## FR-ST-03 Clear cache
 

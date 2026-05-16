@@ -597,6 +597,7 @@ public sealed partial class MainWindow
                     UpdateBrowserToolbar();
                     _session.LastBrowseFolder = null;
                     _session.LastSelectedImage = null;
+                    _session.LastActedFsObject = null;
                     _session.BrowserTree = null;
                     ClearImageSelectionAndPreviewCore();
                     PersistLayout();
@@ -738,6 +739,7 @@ public sealed partial class MainWindow
                     UpdateBrowserToolbar();
                     _session.LastBrowseFolder = null;
                     _session.LastSelectedImage = null;
+                    _session.LastActedFsObject = null;
                     _session.BrowserTree = null;
                     ClearImageSelectionAndPreviewCore();
                     PersistLayout();

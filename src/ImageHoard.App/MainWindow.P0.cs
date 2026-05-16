@@ -234,7 +234,7 @@ public sealed partial class MainWindow
         _layoutState.FolderListSort = kind;
         PersistLayout();
         ResortAllFolderGroups();
-        ScheduleBrowserTreeViewportAfterMutation();
+        ScheduleViewport(BrowserTreeViewportIntentResolver.ForRootPopulate(BuildBrowserPaneState()));
         ApplyBrowserFolderDetailsChrome();
         UpdateSortMenuChecks();
     }
@@ -662,6 +662,7 @@ public sealed partial class MainWindow
         await TrySyncBrowseTreeSelectionToImagePathAsync(imagePath).ConfigureAwait(true);
         await CommitPreviewImmediatelyAsync(imagePath).ConfigureAwait(true);
         _session.LastSelectedImage = imagePath;
+        SetLastActedFsObject(imagePath);
         UpdateSlideshowScopeBadge();
     }
 

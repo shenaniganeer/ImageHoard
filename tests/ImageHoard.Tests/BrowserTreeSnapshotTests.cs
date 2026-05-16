@@ -101,4 +101,23 @@ public sealed class BrowserTreeSnapshotTests
         var chain = BrowserTreeSnapshot.EnumerateAncestorFolderChain(file, root);
         Assert.Equal(new[] { @"C:\Share\Album\2024", @"C:\Share\Album\2024\03" }, chain);
     }
+
+    [Fact]
+    public void EnumerateAncestorFolderChain_three_levels_under_gallery_style_root()
+    {
+        var root = @"C:\gallery";
+        var file = @"C:\gallery\child\grandchild\file.jpg";
+        var chain = BrowserTreeSnapshot.EnumerateAncestorFolderChain(file, root);
+        Assert.Equal(new[] { @"C:\gallery\child", @"C:\gallery\child\grandchild" }, chain);
+    }
+
+    [Fact]
+    public void EnumerateAncestorFolderChain_when_browse_root_equals_immediate_parent_of_file_is_empty()
+    {
+        // Strict-descendant semantics: first walk folder equals browse root, so nothing is emitted.
+        var root = @"C:\gallery\child\grandchild";
+        var file = @"C:\gallery\child\grandchild\file.jpg";
+        var chain = BrowserTreeSnapshot.EnumerateAncestorFolderChain(file, root);
+        Assert.Empty(chain);
+    }
 }

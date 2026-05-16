@@ -36,7 +36,11 @@ internal sealed class PathsSettingsSection
     [JsonPropertyName("lastSelectedImage")]
     public string? LastSelectedImage { get; set; }
 
-    /// <summary>Folder tree expansion + scroll snapshot; valid only when <see cref="BrowserTreeSettingsDto.SnapshotBrowseRoot"/> matches <see cref="LastBrowseFolder"/>.</summary>
+    /// <summary>Last filesystem path the user acted on in the browser tree (find, expand, selection, nav); drives cold-boot viewport (FR-BR-01).</summary>
+    [JsonPropertyName("lastActedFsObject")]
+    public string? LastActedFsObject { get; set; }
+
+    /// <summary>Folder tree expansion snapshot; valid only when <see cref="BrowserTreeSettingsDto.SnapshotBrowseRoot"/> matches <see cref="LastBrowseFolder"/>.</summary>
     [JsonPropertyName("browserTree")]
     public BrowserTreeSettingsDto? BrowserTree { get; set; }
 }
@@ -46,12 +50,6 @@ internal sealed class BrowserTreeSettingsDto
     [JsonPropertyName("snapshotBrowseRoot")]
     public string? SnapshotBrowseRoot { get; set; }
 
-    [JsonPropertyName("scrollH")]
-    public double? ScrollH { get; set; }
-
-    [JsonPropertyName("scrollV")]
-    public double? ScrollV { get; set; }
-
     [JsonPropertyName("expandedFolderPaths")]
     public List<string>? ExpandedFolderPaths { get; set; }
 }
@@ -60,10 +58,6 @@ internal sealed class BrowserTreeSettingsDto
 internal sealed class BrowserTreeSessionSnapshot
 {
     public string? SnapshotBrowseRoot { get; set; }
-
-    public double ScrollH { get; set; }
-
-    public double ScrollV { get; set; }
 
     public List<string> ExpandedFolderPaths { get; set; } = new();
 }
@@ -223,6 +217,9 @@ internal sealed class AppSessionSettings
     public string? LastBrowseFolder { get; set; }
 
     public string? LastSelectedImage { get; set; }
+
+    /// <summary>Last filesystem object acted on in the browser tree; cold-boot scroll anchor.</summary>
+    public string? LastActedFsObject { get; set; }
 
     public BrowserTreeSessionSnapshot? BrowserTree { get; set; }
 

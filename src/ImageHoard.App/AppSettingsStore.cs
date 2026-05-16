@@ -159,6 +159,10 @@ internal static class AppSettingsStore
             s.LastBrowseFolder = lb;
         if (file?.Paths?.LastSelectedImage is { Length: > 0 } ls)
             s.LastSelectedImage = ls;
+        if (file?.Paths?.LastActedFsObject is { Length: > 0 } la)
+            s.LastActedFsObject = la;
+        else if (!string.IsNullOrEmpty(s.LastSelectedImage))
+            s.LastActedFsObject = s.LastSelectedImage;
 
         if (file?.Paths?.BrowserTree is { } bt
             && file.Paths is { LastBrowseFolder: { Length: > 0 } lbf }
@@ -167,8 +171,6 @@ internal static class AppSettingsStore
             var snap = new BrowserTreeSessionSnapshot
             {
                 SnapshotBrowseRoot = bt.SnapshotBrowseRoot,
-                ScrollH = BrowserTreeSnapshot.SanitizeStoredScroll(bt.ScrollH) ?? 0,
-                ScrollV = BrowserTreeSnapshot.SanitizeStoredScroll(bt.ScrollV) ?? 0,
             };
             var raw = bt.ExpandedFolderPaths ?? new List<string>();
             snap.ExpandedFolderPaths = BrowserTreeSnapshot.MergePriorityThenCapDedupeUnderRoot(
@@ -241,6 +243,7 @@ internal static class AppSettingsStore
             file.Paths.StagingRoot = session.StagingRoot;
             file.Paths.LastBrowseFolder = session.LastBrowseFolder;
             file.Paths.LastSelectedImage = session.LastSelectedImage;
+            file.Paths.LastActedFsObject = session.LastActedFsObject;
 
             file.Paths.BrowserTree = null;
             if (session.BrowserTree is { SnapshotBrowseRoot: { Length: > 0 } sRoot }
@@ -250,8 +253,6 @@ internal static class AppSettingsStore
                 file.Paths.BrowserTree = new BrowserTreeSettingsDto
                 {
                     SnapshotBrowseRoot = session.BrowserTree.SnapshotBrowseRoot,
-                    ScrollH = session.BrowserTree.ScrollH,
-                    ScrollV = session.BrowserTree.ScrollV,
                     ExpandedFolderPaths = session.BrowserTree.ExpandedFolderPaths.Count > 0
                         ? session.BrowserTree.ExpandedFolderPaths
                         : null,

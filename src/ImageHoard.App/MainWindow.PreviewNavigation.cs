@@ -278,6 +278,7 @@ public sealed partial class MainWindow
         if (!HasSuspendedSlideshowSession)
             DiscardSlideshowSession();
         _session.LastSelectedImage = row.FullPath;
+        SetLastActedFsObject(row.FullPath);
         UpdateFullscreenMenuEnabled();
         if (PreviewImage.Source != null
             && !string.IsNullOrEmpty(_currentImageFullPath)

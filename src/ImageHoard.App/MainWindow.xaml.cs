@@ -173,17 +173,16 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             return;
         }
 
-        _suppressBrowserTreeViewportMutationForColdBoot = true;
+        SuppressViewportForColdBoot(true);
         try
         {
-            _pendingSelectImagePath = _session.LastSelectedImage;
             await NavigateToFolderAsync(path, suppressViewportAfterRootPopulate: true, coldBootSessionRestore: true)
                 .ConfigureAwait(true);
-            await ApplyColdBootBrowserTreeRestoreAsync().ConfigureAwait(true);
+            await RestoreColdBootBrowseAfterNavigateAsync().ConfigureAwait(true);
         }
         finally
         {
-            ReleaseColdBootBrowserTreeViewportSuppressDeferred();
+            SuppressViewportForColdBoot(false);
         }
     }
 

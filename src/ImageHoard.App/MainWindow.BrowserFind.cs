@@ -159,13 +159,15 @@ public sealed partial class MainWindow
             if (node == null)
                 return;
             SyncBrowseTreeSelection(node);
-            FolderTree.UpdateLayout();
-            var sel = TryGetBrowserTreePrimaryNavNode() ?? node;
-            TryBringFolderTreeNodeToTop(sel);
-            await ScheduleBrowserTreeViewportAfterMutationAsync(
-                    m.Path,
-                    preferTreeSelectionBeforeBrowsedFolder: true)
+            await ScheduleViewportAsync(
+                    BrowserTreeViewportIntentResolver.ForFindHit(
+                        BuildBrowserPaneState(),
+                        new ImageHoard.Core.Browse.BrowserFindMatch(
+                            m.Path,
+                            m.DisplayName,
+                            (ImageHoard.Core.Browse.BrowserFindMatchKind)m.Kind)))
                 .ConfigureAwait(true);
+            SetLastActedFsObject(m.Path);
             return;
         }
 
@@ -174,16 +176,15 @@ public sealed partial class MainWindow
 
         EnqueuePreviewNavigation(m.Path, false);
         await TrySyncBrowseTreeSelectionToImagePathAsync(m.Path).ConfigureAwait(true);
-        var parentDir = Path.GetDirectoryName(m.Path);
-        var viewportPinDir = string.IsNullOrEmpty(parentDir) ? _currentFolderPath : parentDir;
-        FolderTree.UpdateLayout();
-        var imageSel = TryGetBrowserTreePrimaryNavNode() ?? FindImageNodeByPath(FolderTree.RootNodes, m.Path);
-        if (imageSel != null)
-            TryBringFolderTreeNodeToTop(imageSel);
-        await ScheduleBrowserTreeViewportAfterMutationAsync(
-                viewportPinDir,
-                preferTreeSelectionBeforeBrowsedFolder: true)
+        await ScheduleViewportAsync(
+                BrowserTreeViewportIntentResolver.ForFindHit(
+                    BuildBrowserPaneState(),
+                    new ImageHoard.Core.Browse.BrowserFindMatch(
+                        m.Path,
+                        m.DisplayName,
+                        (ImageHoard.Core.Browse.BrowserFindMatchKind)m.Kind)))
             .ConfigureAwait(true);
+        SetLastActedFsObject(m.Path);
     }
 
     internal async Task RunBrowserFindSearchFromPanelAsync(

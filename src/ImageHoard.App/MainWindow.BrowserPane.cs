@@ -1496,17 +1496,18 @@ public sealed partial class MainWindow
         return true;
     }
 
+    /// <summary>
+    /// Scrolls a tree row to the leading edge of the viewport. Returns <c>true</c> only when a <see cref="TreeViewItem"/>
+    /// container is realized so <see cref="UIElement.StartBringIntoView"/> ran; otherwise <c>false</c> so viewport
+    /// retry logic can wait for virtualization after <see cref="TreeViewList.ScrollIntoView"/>.
+    /// </summary>
     private bool TryBringFolderTreeNodeToTop(TreeViewNode node)
     {
-        var progressed = false;
         if (TryFindDescendantTreeViewList(FolderTree) is { } flatList)
-        {
             flatList.ScrollIntoView(node, ScrollIntoViewAlignment.Leading);
-            progressed = true;
-        }
 
         if (FolderTree.ContainerFromNode(node) is not TreeViewItem item)
-            return progressed;
+            return false;
 
         item.StartBringIntoView(
             new BringIntoViewOptions
@@ -1597,9 +1598,13 @@ public sealed partial class MainWindow
             startDrain = true;
         }
 
+        var drainPriority = !string.IsNullOrEmpty(pinFolderRowPath)
+            ? Microsoft.UI.Dispatching.DispatcherQueuePriority.Normal
+            : Microsoft.UI.Dispatching.DispatcherQueuePriority.Low;
+
         if (startDrain
             && !dq.TryEnqueue(
-                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                drainPriority,
                 StartDrainBrowserTreeViewportCoalescedBatches))
         {
             lock (_browserTreeViewportCoalesceLock)
@@ -1696,6 +1701,9 @@ public sealed partial class MainWindow
 
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var pinSet = !string.IsNullOrEmpty(pinFolderRowPath);
+        var stepRetryPriority = pinSet
+            ? Microsoft.UI.Dispatching.DispatcherQueuePriority.Normal
+            : Microsoft.UI.Dispatching.DispatcherQueuePriority.Low;
 
         void TryComplete() => tcs.TrySetResult();
 
@@ -1907,7 +1915,7 @@ public sealed partial class MainWindow
             }
 
             if (!dq.TryEnqueue(
-                    Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                    stepRetryPriority,
                     () => TryStep(attempt + 1)))
             {
                 TryComplete();
@@ -1915,7 +1923,7 @@ public sealed partial class MainWindow
         }
 
         if (!dq.TryEnqueue(
-                Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                stepRetryPriority,
                 () => TryStep(0)))
         {
             TryComplete();
@@ -4325,6 +4333,9 @@ public sealed partial class MainWindow
                         ClearImageSelectionAndPreviewCore();
                     }
 
+                    FolderTree.UpdateLayout();
+                    await ScheduleBrowserTreeViewportAfterMutationAsync(targetFolderPath).ConfigureAwait(true);
+
                     _suppressFolderTreeCollapsedClear = true;
                     try
                     {
@@ -4338,10 +4349,7 @@ public sealed partial class MainWindow
                     }
 
                     FolderTree.UpdateLayout();
-                    if (siblingNode.Content is FolderTreeEntry)
-                        TryBringFolderTreeNodeToTop(siblingNode);
-
-                    ScheduleBrowserTreeViewportAfterMutation(targetFolderPath);
+                    await ScheduleBrowserTreeViewportAfterMutationAsync(targetFolderPath).ConfigureAwait(true);
                     return;
                 }
 
@@ -4364,10 +4372,7 @@ public sealed partial class MainWindow
                     && await TryFocusBrowserOnFolderWithFirstImageAsync(targetFolderPath).ConfigureAwait(true))
                 {
                     FolderTree.UpdateLayout();
-                    if (TryResolveFolderTreeNodeForPath(targetFolderPath) is { Content: FolderTreeEntry } pinFolder)
-                        TryBringFolderTreeNodeToTop(pinFolder);
-
-                    ScheduleBrowserTreeViewportAfterMutation(targetFolderPath);
+                    await ScheduleBrowserTreeViewportAfterMutationAsync(targetFolderPath).ConfigureAwait(true);
                     return;
                 }
             }

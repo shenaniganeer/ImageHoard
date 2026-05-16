@@ -32,6 +32,8 @@ This document extends the **minimum** command set in [input-default-profiles.md]
 | `browse.addBookmark` | Bookmark current root/folder | FR-BR-04 | Chrome P0; bind P1 |
 | `browse.revealInExplorer` | Reveal current file in Explorer | FR-BR-05 | Chrome P0; bind P1 |
 | `browse.findInTree` | Find in browser folder tree (partial name match, shallow or deep under browse root) | FR-BR-02 | Yes (KeyboardOnly default `Control+F`) |
+| `browse2.refreshTree` | Browse2: re-list index root, current folder, and expanded paths from disk (merge into `FsMap`, emit diffs) | FR-BR-01 / NFR-PF-05 | Yes (KeyboardOnly default `F5`) |
+| `browse2.toggleImagePaneSubtreeRecursion` | Browse2: toggle recursive image list (include subfolders in **image pane** only) | FR-BR-02 | **Off** by default (no shipped chord); see [browse2-image-pane-recursion-default.md](./browse2-image-pane-recursion-default.md) |
 | `browse.treeNext` | Browser tree: move selection to next visible row (folder or image) while tree has focus | FR-BR-02 | Yes (KeyboardOnly default `ArrowDown`; overlaps `nav.nextImage`, disambiguated by focus) |
 | `browse.treePrevious` | Browser tree: move selection to previous visible row | FR-BR-02 | Yes (KeyboardOnly default `ArrowUp`; overlaps `nav.prevImage`) |
 | `browse.treeExpand` | Browser tree: expand current folder row (or parent folder when an image row is selected) | FR-BR-02 | Yes (KeyboardOnly default `ArrowRight`; overlaps `nav.nextImage`) |

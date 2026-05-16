@@ -17,7 +17,6 @@ public sealed partial class MainWindow
     private long _previewInvalidateGeneration;
     private int _previewNavigationDrainGate;
     private readonly SemaphoreSlim _previewDecodeSerializer = new(1, 1);
-    private bool _suppressTreeSelectionPreviewEnqueue;
     private long _navCommandsIssued;
 
     private void IncrementNavCommandCounter() => Interlocked.Increment(ref _navCommandsIssued);
@@ -115,10 +114,7 @@ public sealed partial class MainWindow
     {
         if (string.IsNullOrEmpty(fullPath))
             return;
-        var node = FindImageNodeByPath(FolderTree.RootNodes, fullPath);
-        if (node == null)
-            return;
-        SyncBrowseTreeSelection(node);
+        _ = TrySyncBrowseTreeSelectionToImagePathAsync(fullPath);
     }
 
     private async Task RunPreviewUiCommitHighAsync(Func<Task> work)

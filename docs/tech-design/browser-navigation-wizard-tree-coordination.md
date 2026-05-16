@@ -2,11 +2,49 @@
 
 Agents and contributors: follow repository-wide guidance in [`AGENTS.md`](../../AGENTS.md) (source-of-truth order, PRD traceability, and closing `ImageHoard.App` before `dotnet build` / `dotnet test`).
 
-This note describes how **image navigation**, **delete/move (wizard) processing**, and the **browser `TreeView`** interact. The subsystem spans several `MainWindow` partials; behavior is sensitive to **concurrent async** work.
+This note describes how **image navigation**, **delete/move (wizard) processing**, and the **browser** UI interact. The shipped browser column is **Browse2** (`BrowserV2Host`); sections below that reference the legacy mixed **`TreeView`** host remain for historical coordination context where method names still appear in traces.
 
 ## Maintenance rule
 
 Any pull request that changes **keyboard/pointer dispatch for browse navigation**, **delete/archive wizard destructive flows**, **browser tree Find overlay**, **browser tree population, selection, or viewport scrolling** (`BrowserTreeViewportIntent`, `BrowserTreeViewportVisibility`, `BrowserTreeViewportPageScrollPlan`, `BrowserTreeViewportIntentResolver`, `BrowserPaneState`, `MainWindow.BrowserViewport.cs` / `BrowserTreeViewportPump`, `ScheduleViewport`, `ScheduleViewportAsync`, `RunColdBootViewportAsync`, `SuppressViewportForColdBoot`, `BuildBrowserPaneState`, `PrepareBrowserTreeViewportAfterWizardMutation`, `TryBringFolderTreeNodeIntoView`, **`paths.lastActedFsObject` / `SetLastActedFsObject` / `ForColdBootAnchor`**), **folder metrics queueing or UI apply for browser folder rows** (`StartFolderMetricsWorkAsync`, `ApplyFolderMetricsSnapshotCore`, `FolderMetricsSnapshotApplyKind`, trusted subtree cache vs immediate expand state, `FolderMetricsTrust`), **tree slideshow discovery or path-store behavior** (`TreeSlideshowSession`, `SlideshowDiscoveredPathStore`, `RecursiveImageEnumerator` slideshow enumeration, `SlideshowCoordinator`, `SlideshowAlgorithmDefaults`), **path overlay list position during slideshow** (`ApplyOverlayListPositionFromTreeAsync`, `SlideshowCoordinator.TryGetSlideshowOverlayListPosition`), **preview zoom / scroll metrics (`UpdatePreviewScrollMetrics`, `ApplyFullscreenImageForFitMode`, `TryGetPreviewImageIntrinsicDips`, `RequestViewZoomActualPixelsAsync` / `TryExecuteViewZoomActualPixels`, `ReloadPreviewAfterZoomChangeAsync`, cursor-relative zoom anchors: `TryPrepareZoomAnchorFromWheelIfNeeded`, `TryApplyPendingZoomScrollAnchorForHost`, `BeginZoomCommandScrollAnchorCapture`, `FullscreenScrollViewer` / `FullscreenScrollContentGrid`)**, or **preview enqueue/drain** in this area **must update this document** in the same PR (diagrams, flags, method names, or new entry points). Prefer linking to API symbols over pasting large code blocks.
+
+**Traceability:** This coordination surface implements product requirements **FR-BR-01** through **FR-BR-07** (browser tree, image list, sorts, favorites, folder metrics cache) and performance expectations **NFR-PF-05** (folder aggregate sorts never block the UI indefinitely) and **NFR-PF-06** (UNC/SMB paths — timeouts, cancel, feedback). When behavior changes, cite the relevant **FR-BR-*** / **NFR-PF-*** IDs in the PR.
+
+## Browse2 (shipped browser path)
+
+The browser column ships as **Browse2** (`ImageHoard.App.BrowserV2`, `ImageHoard.Core.Browse2`) with no host swap flag. It satisfies the same **FR-BR-*** / **NFR-PF-*** obligations as the retired mixed **`TreeView`** host, using:
+
+- **Single writer:** `FsMap` is updated by `FsBackgroundScanner`, `FsTargetedRefresher`, and `FsChangeApplier` (wizard-driven mutations after IO succeeds). **No** constant `FileSystemWatcher`.
+- **Fan-out:** `FsDiffStream` emits typed folder/aggregate events; **`TreeController`** and **`ImagePaneController`** subscribe and apply **one** batched UI update per dispatcher tick.
+- **Viewport:** **`FolderTreeView`** uses **scroll anchoring** (capture top realized folder row + offset → apply `FlatModelDelta` → `ChangeView` after layout) instead of `BrowserTreeViewportPump` + `LayoutUpdated` retries for tree scroll stability.
+- **Cold boot:** Restores expansion, **selected folder**, and **persisted viewport anchor** (`AnchorFolderPath` + `OffsetWithinRowPx`); **`paths.lastActedFsObject`** stays the separate “last acted filesystem object” anchor for find/wizard/refocus semantics. See [browser-tree-viewport-anchor-persistence.md](../design-decisions/browser-tree-viewport-anchor-persistence.md).
+- **Cross-cutting glue:** `CrossPaneCoordinator` replaces legacy `MainWindow.BrowserPane.cs` responsibilities (image-step → tree reveal, wizard reconciliation, slideshow overlay position, etc.).
+
+Architecture: [browser-tree-rewrite-architecture.md](../design-decisions/browser-tree-rewrite-architecture.md). Virtualized presenter: [browser-folder-tree-virtualization-itemsrepeater.md](../design-decisions/browser-folder-tree-virtualization-itemsrepeater.md). Legacy path→`TreeViewNode` index (superseded for Browse2): [browser-folder-tree-path-to-node-index.md](../design-decisions/browser-folder-tree-path-to-node-index.md).
+
+**Maintenance:** Any PR that changes **`BrowserV2Host`**, **`TreeController`**, **`FolderTreeFlatModel`**, **`FsDiffStream`** contracts, **`FsChangeApplier`**, **`FolderTreeView`** anchoring, **`ImagePaneController`**, **`CrossPaneCoordinator`**, **`MainWindow.Browse2Session`** (coordinator lifetime / refresh wiring), **`MainWindow_Activated`** Browse2 refresh, or **browser tree settings** for Browse2 must update this section **and** the linked ADRs when user-visible coordination changes.
+
+### Browse2 targeted refresh triggers (`FsTargetedRefresher.RefreshAsync`)
+
+| Trigger | Location / notes |
+|---------|-------------------|
+| Cold boot | `CrossPaneCoordinator.ColdBoot` → `RefreshAsync(IndexRoot)` after rebuild; starts **`FsBackgroundScanner`** after first frame. |
+| Re-navigate same index root | `Browse2EnsureCoordinatorForCurrentBrowseAsync` reuse branch → `Browse2RefreshVisibleFoldersAsync`. |
+| Window activation | `MainWindow_Activated`: **Deactivated** → **CodeActivated** / **PointerActivated** → refresh index root, current folder, and all persisted expanded paths (deduped, bounded by cap). |
+| User expand in folder tree | `CrossPaneCoordinator.OnFolderTreeToggleExpand`: after expand, when map row is unverified or `HasSubfolders` with zero child rows in map. |
+| Find folder / file hit | `CrossPaneCoordinator.ApplyFindFolderHit` / `ApplyFindFileHit` → refresh hit folder or parent of file. |
+| Explicit command | `browse2.refreshTree` (KeyboardOnly default **F5**) → `Browse2RefreshVisibleFoldersAsync`. |
+| Wizard / app IO | `FsChangeApplier` (existing); no live `FileSystemWatcher`. |
+
+### Legacy vs V2 reference map
+
+| Legacy (`TreeView` host) | Browser V2 |
+|--------------------------|------------|
+| `ScheduleViewport` / `ScheduleViewportAsync` / `BrowserTreeViewportPump` | Scroll anchoring + targeted `ChangeView` for explicit reveal |
+| `_populateBrowserGeneration` | Sequential `FsMap` + UI batching (no generation token for superseded tree append on the V2 path) |
+| `EnterBrowserPaneMutation` / `IsBrowserPaneMutationInProgress` blocking `nav.*` | Wizard patches `FsMap` via `FsChangeApplier`; UI applies coalesced diffs with anchoring; input policy may still gate during modal wizard (unchanged product rule) |
+| Cold boot: `RunColdBootViewportAsync` + `ForColdBootAnchor` + `lastActedFsObject` | Cold boot: viewport **anchor DTO** + selection + expansion + `FsMap` build; `lastActedFsObject` still updated for action semantics |
+| `_folderTreeNodeByPath` hot index | `FolderTreeFlatModel` path→row / index (flat projection) |
 
 ## Input routing
 
@@ -146,5 +184,7 @@ After changing cold-boot restore, verify on a full app restart (process exit, no
 ## Related design docs
 
 - [`docs/design-decisions/slideshow-algorithm-p0.md`](../design-decisions/slideshow-algorithm-p0.md) — tree slideshow discovery, uniform sampling over full discovered set, RAM + spill path store, shuffle.
-- [`docs/design-decisions/browser-folder-tree-path-to-node-index.md`](../design-decisions/browser-folder-tree-path-to-node-index.md) — path ↔ node indexing.
-- [`docs/design-decisions/browser-folder-tree-virtualization-itemsrepeater.md`](../design-decisions/browser-folder-tree-virtualization-itemsrepeater.md) — virtualization direction.
+- [`docs/design-decisions/browser-folder-tree-path-to-node-index.md`](../design-decisions/browser-folder-tree-path-to-node-index.md) — **legacy** path ↔ `TreeViewNode` indexing (superseded for Browser V2).
+- [`docs/design-decisions/browser-folder-tree-virtualization-itemsrepeater.md`](../design-decisions/browser-folder-tree-virtualization-itemsrepeater.md) — virtualization direction (`ItemsRepeater`).
+- [`docs/design-decisions/browser-tree-rewrite-architecture.md`](../design-decisions/browser-tree-rewrite-architecture.md) — Browser V2 three-layer model and `FsDiffStream`.
+- [`docs/design-decisions/browser-tree-viewport-anchor-persistence.md`](../design-decisions/browser-tree-viewport-anchor-persistence.md) — persisted viewport anchor vs `lastActedFsObject`.

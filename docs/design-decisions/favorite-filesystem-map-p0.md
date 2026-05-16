@@ -1,11 +1,13 @@
 # Favorite filesystem map (P0)
 
 **Status:** Implemented (ImageHoard.Core + WinUI host)  
-**Related:** [folder-aggregate-metrics-model.md](./folder-aggregate-metrics-model.md) (FR-BR-06/07), [fr-st-01-settings-persistence.md](./fr-st-01-settings-persistence.md) (cache paths), [browser-folder-tree-path-to-node-index.md](./browser-folder-tree-path-to-node-index.md)
+**Related:** [folder-aggregate-metrics-model.md](./folder-aggregate-metrics-model.md) (FR-BR-06/07), [fr-st-01-settings-persistence.md](./fr-st-01-settings-persistence.md) (cache paths), [browser-tree-rewrite-architecture.md](./browser-tree-rewrite-architecture.md) (`FsMap` alignment), [browser-folder-tree-path-to-node-index.md](./browser-folder-tree-path-to-node-index.md) (legacy `TreeView` metrics merge)
 
 ## Purpose
 
 Persist **per-directory subtree metrics** for **favorited index roots** (deduped nested favorites share one JSON file) so large sibling folder lists can **sort by aggregate size or image count** using **warm values** immediately after navigation, then converge as live scans complete. This complements the append-only **global** `folder-metrics.jsonl` cache by scoping durable rows to **favorite subtrees** in `cache/favorite-fs-maps/`.
+
+**Browse2 (`FsMap` under `cache/browse2-fs-maps/`):** Favorites are **preload hints** plus dedupe-minimal **on-disk** map roots; any other browsed folder still runs the full Browse2 tree + image pipeline with a **transient in-memory** workspace (no second-class UI — restart rescans until the path is favorited).
 
 ## Index roots (no duplicate maps)
 

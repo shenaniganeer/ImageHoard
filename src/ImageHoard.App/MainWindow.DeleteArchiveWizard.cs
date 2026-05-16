@@ -565,6 +565,7 @@ public sealed partial class MainWindow
         try
         {
             await AppServices.FileSystem.MergeMoveDirectoryAsync(work, dest).ConfigureAwait(true);
+            await Browse2NotifyWizardDirectoryMovedAsync(work, dest).ConfigureAwait(true);
             ClearDeferredWizardBatchBrowserRefreshCapture();
             var rec = new OperationLogBatchRecord
             {
@@ -591,7 +592,7 @@ public sealed partial class MainWindow
                 }
                 else
                 {
-                    FolderTree.RootNodes.Clear();
+                    Browse2NavigateClearRootSnapshot();
                     _browseNavAnchorPath = null;
                     _currentFolderPath = null;
                     UpdateBrowserToolbar();
@@ -704,6 +705,7 @@ public sealed partial class MainWindow
         {
             EnterBrowserPaneMutation();
             ShellRecycle.SendDirectoryToRecycleBin(work);
+            await Browse2NotifyWizardFolderRecycledAsync(work).ConfigureAwait(true);
             var rec = new OperationLogBatchRecord
             {
                 Operation = "DeleteFolderRecycle",
@@ -733,7 +735,7 @@ public sealed partial class MainWindow
                 }
                 else
                 {
-                    FolderTree.RootNodes.Clear();
+                    Browse2NavigateClearRootSnapshot();
                     _browseNavAnchorPath = null;
                     _currentFolderPath = null;
                     UpdateBrowserToolbar();

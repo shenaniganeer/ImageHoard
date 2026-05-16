@@ -41,7 +41,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
 
     internal InputKeyboardDispatchTable? KeyboardDispatchTable { get; private set; }
 
-    /// <summary>Keyboard chords for <see cref="BrowserTreeKeyboardCommandIds"/>; matched only while focus is inside <c>FolderTree</c>.</summary>
+    /// <summary>Keyboard chords for <see cref="BrowserTreeKeyboardCommandIds"/>; matched while focus is in Browse2 folder tree or image list.</summary>
     internal InputKeyboardDispatchTable? BrowserTreeKeyboardDispatchTable { get; private set; }
 
     internal InputProfileDocument? MergedInputProfile { get; private set; }
@@ -65,8 +65,6 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     private BrowserTreeRefocusAfterWizardContext? _deferredWizardBatchRefocusContext;
     private bool _globalPointerHandlersRegistered;
     private bool _previewPanHandlersRegistered;
-    /// <summary>Skips preview clear in <see cref="MainWindow.FolderTree_OnCollapsed"/> during programmatic collapse (e.g. sibling-folder navigation).</summary>
-    private bool _suppressFolderTreeCollapsedClear;
     /// <summary>Non-zero while a <see cref="ContentDialog"/> shown from delete/archive wizard flows is active, to ignore spurious tree collapse during modal focus changes.</summary>
     private int _contentDialogModalDepth;
     private PointerEventHandler? _pointerWheelCaptureHandler;
@@ -125,11 +123,14 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         (_layoutState, _session) = AppSettingsStore.LoadAll();
         InitializeComponent();
         WireModalOverlays();
-        WireBrowserTreeTemplates();
+        WireBrowseShellChrome();
+        ApplyBrowserChromeMode();
+        Activated += MainWindow_Activated;
         PreviewHostGrid.SizeChanged += PreviewHostGrid_SizeChanged;
         RootGrid.Loaded += MainWindow_Loaded;
         Closed += (_, _) =>
         {
+            Browse2DisposeSession();
             if (_persistLayoutDebounceTimer != null)
             {
                 _persistLayoutDebounceTimer.Stop();
@@ -139,9 +140,6 @@ public sealed partial class MainWindow : Window, IPreferencesSession
             PersistLayout();
         };
     }
-
-    private static string? GetFolderPath(TreeViewNode? node) =>
-        (node?.Content as FolderTreeEntry)?.Path;
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
@@ -168,7 +166,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
         {
             _browseNavAnchorPath = null;
-            FolderTree.RootNodes.Clear();
+            Browse2NavigateClearRootSnapshot();
             UpdateBrowserToolbar();
             return;
         }
@@ -225,7 +223,11 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         FullscreenLayout.AddHandler(UIElement.PointerMovedEvent, _pointerMovedMouseBindingsHandler, handledEventsToo: true);
     }
 
-    private void ApplyLayoutFromState() => ApplyPaneVisibility();
+    private void ApplyLayoutFromState()
+    {
+        ApplyPaneVisibility();
+        ApplyBrowserChromeMode();
+    }
 
     private void ApplyPaneVisibility()
     {
@@ -245,6 +247,12 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         BrowserColumnHost.Visibility = showBrowser ? Visibility.Visible : Visibility.Collapsed;
         SplitterBrowserPreview.Visibility = showBrowser ? Visibility.Visible : Visibility.Collapsed;
         UpdatePathOverlays();
+    }
+
+    private void ApplyBrowserChromeMode()
+    {
+        BrowserV2Host.Visibility = Visibility.Visible;
+        SyncBrowse2ColumnHeadersAndMarkers();
     }
 
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _persistLayoutDebounceTimer;
@@ -590,7 +598,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
                 return true;
         }
 
-        return _renameTargetNode != null;
+        return false;
     }
 
     private static bool IsDescendantOf(DependencyObject? node, DependencyObject? ancestor)
@@ -606,8 +614,7 @@ public sealed partial class MainWindow : Window, IPreferencesSession
     }
 
     private bool ShouldSuppressWheelNavForOriginalSource(DependencyObject? source) =>
-        IsDescendantOf(source, FolderTree);
-
+        IsDescendantOf(source, BrowserV2Host);
     private bool ChordActivationAppliesToCurrentUi(string commandId, System.Text.Json.JsonElement chord) =>
         InputBindingActivation.MaskAppliesToUi(InputBindingActivation.ResolveMask(commandId, chord), _slideshowUiActive);
 
@@ -985,6 +992,12 @@ public sealed partial class MainWindow : Window, IPreferencesSession
                 return true;
             case "browse.findInTree":
                 ShowBrowserFindOverlay();
+                return true;
+            case "browse2.refreshTree":
+                _ = Browse2RefreshVisibleFoldersAsync();
+                return true;
+            case "browse2.toggleImagePaneSubtreeRecursion":
+                ToggleBrowse2ImagePaneSubtreeRecursionFromInput();
                 return true;
             case "slideshow.start":
                 SlideshowStart_Click(this, new RoutedEventArgs());

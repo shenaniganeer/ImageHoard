@@ -30,5 +30,8 @@ internal static class AppDataPaths
     /// <summary>Persisted per-index-root subtree metrics map (deduped nested favorites share one file).</summary>
     public static string FavoriteFilesystemMapsDirectory => Path.Combine(CacheDirectory, "favorite-fs-maps");
 
+    /// <summary>Persisted Browse2 FsMap JSON files (separate from legacy favorite-fs-maps).</summary>
+    public static string Browse2FsMapsDirectory => Path.Combine(CacheDirectory, "browse2-fs-maps");
+
     public static string UserInputOverridesPath => Path.Combine(GetDataRoot(), "user-input-overrides.v1.json");
 }

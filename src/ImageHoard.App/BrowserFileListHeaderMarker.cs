@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using ImageHoard.Core.Browse;
 using Microsoft.UI.Xaml;
 
 namespace ImageHoard.App;
@@ -9,6 +10,7 @@ internal sealed class BrowserFileListHeaderMarker : INotifyPropertyChanged
 {
     private Visibility _sizeHeaderVisibility = Visibility.Visible;
     private Visibility _dateHeaderVisibility = Visibility.Visible;
+    private ListSortKind _activeListSort = ListSortKind.NameNatural;
 
     public Visibility SizeHeaderVisibility
     {
@@ -33,6 +35,34 @@ internal sealed class BrowserFileListHeaderMarker : INotifyPropertyChanged
             OnPropertyChanged();
         }
     }
+
+    public ListSortKind ActiveListSort
+    {
+        get => _activeListSort;
+        set
+        {
+            if (_activeListSort == value)
+                return;
+            _activeListSort = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(NameNaturalSortIndicatorVisibility));
+            OnPropertyChanged(nameof(NamePlainSortIndicatorVisibility));
+            OnPropertyChanged(nameof(DateSortIndicatorVisibility));
+            OnPropertyChanged(nameof(SizeSortIndicatorVisibility));
+        }
+    }
+
+    public Visibility NameNaturalSortIndicatorVisibility =>
+        ActiveListSort == ListSortKind.NameNatural ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility NamePlainSortIndicatorVisibility =>
+        ActiveListSort == ListSortKind.Name ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility DateSortIndicatorVisibility =>
+        ActiveListSort == ListSortKind.DateModified ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility SizeSortIndicatorVisibility =>
+        ActiveListSort == ListSortKind.Size ? Visibility.Visible : Visibility.Collapsed;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

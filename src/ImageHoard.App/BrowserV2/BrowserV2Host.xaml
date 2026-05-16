@@ -1,0 +1,263 @@
+<UserControl
+    x:Class="ImageHoard.App.BrowserV2.BrowserV2Host"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:ImageHoard.App.BrowserV2"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    x:Name="HostRoot"
+    mc:Ignorable="d">
+    <UserControl.Resources>
+        <DataTemplate x:Key="BrowserFileListHeaderTemplate">
+            <Grid MinHeight="18" Padding="0,0,0,2" ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="120" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button
+                    Grid.Column="0"
+                    Padding="0,0,4,0"
+                    HorizontalContentAlignment="Left"
+                    VerticalAlignment="Center"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="Browse2FileHeaderSort_NameNatural_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Opacity="0.9"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="Name" />
+                        <TextBlock
+                            Margin="4,0,0,0"
+                            VerticalAlignment="Center"
+                            Opacity="0.75"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="▼"
+                            Visibility="{Binding NameNaturalSortIndicatorVisibility}" />
+                    </StackPanel>
+                </Button>
+                <Button
+                    Grid.Column="1"
+                    Padding="4,0,4,0"
+                    HorizontalContentAlignment="Right"
+                    VerticalAlignment="Center"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="Browse2FileHeaderSort_Size_Click"
+                    Visibility="{Binding SizeHeaderVisibility}">
+                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                        <TextBlock
+                            MinWidth="56"
+                            TextAlignment="Right"
+                            VerticalAlignment="Center"
+                            Opacity="0.9"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="Size" />
+                        <TextBlock
+                            Margin="4,0,0,0"
+                            VerticalAlignment="Center"
+                            Opacity="0.75"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="▼"
+                            Visibility="{Binding SizeSortIndicatorVisibility}" />
+                    </StackPanel>
+                </Button>
+                <Button
+                    Grid.Column="2"
+                    Padding="4,0,0,0"
+                    HorizontalContentAlignment="Left"
+                    VerticalAlignment="Center"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="Browse2FileHeaderSort_Date_Click"
+                    Visibility="{Binding DateHeaderVisibility}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock
+                            MinWidth="120"
+                            VerticalAlignment="Center"
+                            Opacity="0.9"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="Date modified" />
+                        <TextBlock
+                            Margin="4,0,0,0"
+                            VerticalAlignment="Center"
+                            Opacity="0.75"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="▼"
+                            Visibility="{Binding DateSortIndicatorVisibility}" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="BrowserFolderListHeaderTemplate">
+            <Grid MinHeight="18" Padding="0,0,0,2" ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="120" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button
+                    Grid.Column="0"
+                    Padding="0,0,4,0"
+                    HorizontalContentAlignment="Left"
+                    VerticalAlignment="Center"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="Browse2FolderHeaderSort_Name_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Opacity="0.9"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="Name" />
+                        <TextBlock
+                            Margin="4,0,0,0"
+                            VerticalAlignment="Center"
+                            Opacity="0.75"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="▼"
+                            Visibility="{Binding NameSortIndicatorVisibility}" />
+                    </StackPanel>
+                </Button>
+                <Button
+                    Grid.Column="1"
+                    Padding="4,0,4,0"
+                    HorizontalContentAlignment="Right"
+                    VerticalAlignment="Center"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="Browse2FolderHeaderSort_Size_Click"
+                    Visibility="{Binding SizeHeaderVisibility}">
+                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                        <TextBlock
+                            MinWidth="56"
+                            TextAlignment="Right"
+                            VerticalAlignment="Center"
+                            Opacity="0.9"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="Size" />
+                        <TextBlock
+                            Margin="4,0,0,0"
+                            VerticalAlignment="Center"
+                            Opacity="0.75"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="▼"
+                            Visibility="{Binding SizeSortIndicatorVisibility}" />
+                    </StackPanel>
+                </Button>
+                <Button
+                    Grid.Column="2"
+                    Padding="4,0,4,0"
+                    HorizontalContentAlignment="Right"
+                    VerticalAlignment="Center"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="Browse2FolderHeaderSort_ImageCount_Click"
+                    Visibility="{Binding ImageCountHeaderVisibility}">
+                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                        <TextBlock
+                            MinWidth="48"
+                            TextAlignment="Right"
+                            VerticalAlignment="Center"
+                            Opacity="0.9"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="Images" />
+                        <TextBlock
+                            Margin="4,0,0,0"
+                            VerticalAlignment="Center"
+                            Opacity="0.75"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="▼"
+                            Visibility="{Binding ImageCountSortIndicatorVisibility}" />
+                    </StackPanel>
+                </Button>
+                <Button
+                    Grid.Column="3"
+                    Padding="4,0,0,0"
+                    HorizontalContentAlignment="Left"
+                    VerticalAlignment="Center"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="Browse2FolderHeaderSort_Date_Click"
+                    Visibility="{Binding DateHeaderVisibility}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock
+                            MinWidth="120"
+                            VerticalAlignment="Center"
+                            Opacity="0.9"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="Date modified" />
+                        <TextBlock
+                            Margin="4,0,0,0"
+                            VerticalAlignment="Center"
+                            Opacity="0.75"
+                            Style="{ThemeResource CaptionTextBlockStyle}"
+                            Text="▼"
+                            Visibility="{Binding DateSortIndicatorVisibility}" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </DataTemplate>
+    </UserControl.Resources>
+    <Grid MinHeight="80">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition x:Name="Browse2FolderColumn" Width="*" MinWidth="80" />
+            <ColumnDefinition Width="6" />
+            <ColumnDefinition x:Name="Browse2ImageColumn" Width="*" MinWidth="80" />
+        </Grid.ColumnDefinitions>
+        <Grid Grid.Column="0" MinHeight="80">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <ContentControl
+                x:Name="Browse2FolderListHeaderHost"
+                Grid.Row="0"
+                Margin="0,0,0,4"
+                HorizontalContentAlignment="Stretch"
+                ContentTemplate="{StaticResource BrowserFolderListHeaderTemplate}"
+                Visibility="Collapsed" />
+            <local:FolderTreeView
+                x:Name="BrowseFolderTree"
+                Grid.Row="1"
+                MinHeight="40" />
+        </Grid>
+        <local:V2PaneSplitterGrid
+            x:Name="FolderImageSplitter"
+            Grid.Column="1"
+            HorizontalAlignment="Stretch"
+            Background="{ThemeResource DividerStrokeColorDefaultBrush}"
+            PointerPressed="FolderImageSplitter_PointerPressed"
+            PointerMoved="FolderImageSplitter_PointerMoved"
+            PointerReleased="FolderImageSplitter_PointerReleased"
+            PointerCaptureLost="FolderImageSplitter_PointerCaptureLost" />
+        <Grid Grid.Column="2" MinHeight="80">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <ContentControl
+                x:Name="Browse2FileListHeaderHost"
+                Grid.Row="0"
+                Margin="0,0,0,4"
+                HorizontalContentAlignment="Stretch"
+                ContentTemplate="{StaticResource BrowserFileListHeaderTemplate}"
+                Visibility="Collapsed" />
+            <CheckBox
+                x:Name="Browse2ImagePaneSubtreeCheck"
+                Grid.Row="1"
+                Margin="0,0,0,4"
+                Content="Include subfolders in image list"
+                Checked="Browse2ImagePaneSubtreeCheck_IsCheckedChanged"
+                Unchecked="Browse2ImagePaneSubtreeCheck_IsCheckedChanged" />
+            <local:ImagePaneView
+                x:Name="BrowseImagePane"
+                Grid.Row="2"
+                MinHeight="40" />
+        </Grid>
+    </Grid>
+</UserControl>

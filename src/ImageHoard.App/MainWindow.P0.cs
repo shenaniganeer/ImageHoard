@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using ImageHoard.Core.Browse;
+using ImageHoard.Core.Browse2;
 using ImageHoard.Core.Input;
 using ImageHoard.Core.Services;
 using ImageHoard.Core.Slideshow;
@@ -237,6 +239,21 @@ public sealed partial class MainWindow
         ScheduleViewport(BrowserTreeViewportIntentResolver.ForRootPopulate(BuildBrowserPaneState()));
         ApplyBrowserFolderDetailsChrome();
         UpdateSortMenuChecks();
+        if (_browse2Coordinator is not null)
+        {
+            _ = _browse2Coordinator.Tree.SetFolderSortKind(kind);
+            if (kind is FolderListSortKind.AggregateSize or FolderListSortKind.ImageFileCount)
+            {
+                var root = _browse2Coordinator.Workspace.IndexRoot;
+                var sel = _browse2Coordinator.Tree.Model.Selection.SelectedFolderPath;
+                var parent = string.IsNullOrEmpty(sel)
+                    ? root
+                    : FsMapPathHelpers.ParentPathOrEmpty(sel, root);
+                if (string.IsNullOrEmpty(parent))
+                    parent = root;
+                _ = _browse2Coordinator.EnsureAggregatesForVisibleChildrenAsync(parent, CancellationToken.None);
+            }
+        }
     }
 
     private void FolderBrowserHeaderSort_Name_Click(object sender, RoutedEventArgs e) =>
@@ -298,6 +315,7 @@ public sealed partial class MainWindow
         _layoutState.ListSort = ListSortKind.NameNatural;
         PersistLayout();
         UpdateSortMenuChecks();
+        Browse2ApplyImageListSortFromLayout();
         if (!string.IsNullOrEmpty(_currentFolderPath))
             _ = RefreshBrowserTreeFromSettingsAsync();
     }
@@ -307,6 +325,7 @@ public sealed partial class MainWindow
         _layoutState.ListSort = ListSortKind.Name;
         PersistLayout();
         UpdateSortMenuChecks();
+        Browse2ApplyImageListSortFromLayout();
         if (!string.IsNullOrEmpty(_currentFolderPath))
             _ = RefreshBrowserTreeFromSettingsAsync();
     }
@@ -316,6 +335,7 @@ public sealed partial class MainWindow
         _layoutState.ListSort = ListSortKind.DateModified;
         PersistLayout();
         UpdateSortMenuChecks();
+        Browse2ApplyImageListSortFromLayout();
         if (!string.IsNullOrEmpty(_currentFolderPath))
             _ = RefreshBrowserTreeFromSettingsAsync();
     }
@@ -325,6 +345,7 @@ public sealed partial class MainWindow
         _layoutState.ListSort = ListSortKind.Size;
         PersistLayout();
         UpdateSortMenuChecks();
+        Browse2ApplyImageListSortFromLayout();
         if (!string.IsNullOrEmpty(_currentFolderPath))
             _ = RefreshBrowserTreeFromSettingsAsync();
     }

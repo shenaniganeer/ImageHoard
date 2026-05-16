@@ -46,7 +46,9 @@ Repository **agent instructions**: [`../AGENTS.md`](../AGENTS.md).
 
 | [folder-aggregate-metrics-model.md](./design-decisions/folder-aggregate-metrics-model.md) | FR-BR-06, FR-BR-07 |
 
-| [browser-folder-tree-path-to-node-index.md](./design-decisions/browser-folder-tree-path-to-node-index.md) | FR-BR-06, FR-BR-07 (UI merge / `TreeView` index maintenance) |
+| [browser-tree-rewrite-architecture.md](./design-decisions/browser-tree-rewrite-architecture.md) | FR-BR-01–FR-BR-07; NFR-PF-05, NFR-PF-06 (Browser V2 / Browse2) |
+| [browser-tree-viewport-anchor-persistence.md](./design-decisions/browser-tree-viewport-anchor-persistence.md) | FR-BR-01, FR-BR-04; NFR-PF-05 (viewport restore) |
+| [browser-folder-tree-path-to-node-index.md](./design-decisions/browser-folder-tree-path-to-node-index.md) | FR-BR-06, FR-BR-07 — **legacy** `TreeView` index only (superseded for V2) |
 
 | [fr-st-01-settings-persistence.md](./design-decisions/fr-st-01-settings-persistence.md) | FR-ST-01, FR-ST-02, FR-ST-03 |
 

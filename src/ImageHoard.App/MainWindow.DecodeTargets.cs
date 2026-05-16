@@ -139,7 +139,7 @@ public sealed partial class MainWindow
             return new WicDecodeLayout(int.MaxValue, int.MaxValue, BitmapUniformKind.FullResolution, maxEdge);
 
         GetPreviewDecodeTargetBoxPhysicalPx(scale, out var targetW, out var targetH);
-        var z = Math.Clamp(_previewUserZoomFactor, PreviewZoomMinFactor, PreviewZoomMaxFactor);
+        var z = GetPreviewUserZoomFactorClampedForDecodeLayout(scale);
         var zw = Math.Max(1, (int)Math.Round(targetW * z));
         var zh = Math.Max(1, (int)Math.Round(targetH * z));
         return new WicDecodeLayout(zw, zh, BitmapUniformKind.Fit, maxEdge);

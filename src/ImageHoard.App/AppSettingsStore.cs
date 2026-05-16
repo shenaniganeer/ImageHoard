@@ -138,6 +138,13 @@ internal static class AppSettingsStore
         if (ui?.PreviewImagePaneMultiClickThresholdMs is { } mc && mc > 0)
             state.PreviewImagePaneMultiClickThresholdMs = Math.Clamp(mc, 100, 2000);
 
+        if (ui?.PreviewZoomStepRatio is { } zsr
+            && !double.IsNaN(zsr)
+            && !double.IsInfinity(zsr)
+            && zsr >= 1.01
+            && zsr <= 2.0)
+            state.PreviewZoomStepRatio = zsr;
+
         return state;
     }
 
@@ -227,6 +234,7 @@ internal static class AppSettingsStore
             file.Ui.PreviewNavCatchUpLagSeconds = layout.PreviewNavCatchUpLagSeconds;
             file.Ui.PreviewMinimumDisplaySeconds = layout.PreviewMinimumDisplaySeconds;
             file.Ui.PreviewImagePaneMultiClickThresholdMs = layout.PreviewImagePaneMultiClickThresholdMs;
+            file.Ui.PreviewZoomStepRatio = layout.PreviewZoomStepRatio;
 
             file.Paths ??= new PathsSettingsSection();
             file.Paths.ArchiveRoot = session.ArchiveRoot;

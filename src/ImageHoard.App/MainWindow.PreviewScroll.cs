@@ -17,9 +17,17 @@ public sealed partial class MainWindow
     internal const string ViewZoomResetFitCommandId = "view.zoomResetFit";
     internal const string ViewZoomActualPixelsCommandId = "view.zoomActualPixels";
 
+    /// <summary>Absolute minimum for <see cref="_previewUserZoomFactor"/> (multiplier on fit baseline).</summary>
     private const double PreviewZoomMinFactor = 0.1;
+
+    /// <summary>
+    /// Maximum displayed image width/height as a multiple of <b>oriented native</b> logical DIPs (not a fixed cap on <c>z</c> vs fit baseline).
+    /// Effective <c>z</c> max is derived per viewport as <c>PreviewZoomMaxFactor * min(nativeW/baseW, nativeH/baseH)</c>.
+    /// </summary>
     private const double PreviewZoomMaxFactor = 10.0;
-    private const double PreviewZoomStepRatio = 1.1;
+
+    private const double PreviewZoomStepRatioMin = 1.01;
+    private const double PreviewZoomStepRatioMax = 2.0;
 
     private int _previewDecodedPixelWidth;
     private int _previewDecodedPixelHeight;
@@ -113,6 +121,100 @@ public sealed partial class MainWindow
         return false;
     }
 
+    /// <summary>Oriented file pixels to logical DIPs when known; otherwise same as <see cref="TryGetPreviewImageIntrinsicDips"/>.</summary>
+    private bool TryGetPreviewNativeFileIntrinsicDips(double rasterizationScale, out double nativeW, out double nativeH)
+    {
+        if (_previewOrientedPixelWidth > 0 && _previewOrientedPixelHeight > 0)
+        {
+            nativeW = _previewOrientedPixelWidth / rasterizationScale;
+            nativeH = _previewOrientedPixelHeight / rasterizationScale;
+            return nativeW > 1e-12 && nativeH > 1e-12;
+        }
+
+        return TryGetPreviewImageIntrinsicDips(rasterizationScale, out nativeW, out nativeH);
+    }
+
+    /// <summary>
+    /// Upper bound on <see cref="_previewUserZoomFactor"/> so <c>base * z</c> does not exceed <see cref="PreviewZoomMaxFactor"/> times native logical size on each axis.
+    /// </summary>
+    private bool TryComputePreviewZoomNativeMaxZ(
+        ZoomScrollHostKind host,
+        double viewportW,
+        double viewportH,
+        double rasterizationScale,
+        out double zMax)
+    {
+        zMax = PreviewZoomMaxFactor;
+        if (viewportW <= 1 || viewportH <= 1)
+            return false;
+        if (!TryGetPreviewImageIntrinsicDips(rasterizationScale, out var imgW, out var imgH))
+            return false;
+        if (!TryGetPreviewNativeFileIntrinsicDips(rasterizationScale, out var nativeW, out var nativeH))
+            return false;
+
+        double baseW, baseH;
+        if (host == ZoomScrollHostKind.Preview)
+            ComputeImageDisplayBaselineDipsWindowed(viewportW, viewportH, imgW, imgH, out baseW, out baseH);
+        else
+            ComputeImageDisplayBaselineDipsFullscreen(viewportW, viewportH, imgW, imgH, out baseW, out baseH);
+
+        if (baseW < 1e-6 || baseH < 1e-6)
+            return false;
+
+        var zFromW = PreviewZoomMaxFactor * nativeW / baseW;
+        var zFromH = PreviewZoomMaxFactor * nativeH / baseH;
+        zMax = Math.Min(zFromW, zFromH);
+        if (double.IsNaN(zMax) || double.IsInfinity(zMax))
+            return false;
+        zMax = Math.Max(zMax, PreviewZoomMinFactor);
+        return true;
+    }
+
+    /// <summary>
+    /// Combined <c>z</c> clamp for windowed preview and fullscreen: <c>zMax = min(zMaxPreview, zMaxFullscreen)</c> when both viewports resolve.
+    /// Falls back to legacy constant <see cref="PreviewZoomMaxFactor"/> on <c>z</c> when geometry is unavailable.
+    /// </summary>
+    private void TryGetPreviewUserZoomClampRange(double rasterizationScale, out double zMin, out double zMax)
+    {
+        zMin = PreviewZoomMinFactor;
+        zMax = PreviewZoomMaxFactor;
+        double? combined = null;
+        if (TryGetPreviewViewportDips(out var pvw, out var pvh)
+            && TryComputePreviewZoomNativeMaxZ(ZoomScrollHostKind.Preview, pvw, pvh, rasterizationScale, out var zP))
+            combined = zP;
+        if (TryGetFullscreenViewportDips(out var fvw, out var fvh)
+            && TryComputePreviewZoomNativeMaxZ(ZoomScrollHostKind.Fullscreen, fvw, fvh, rasterizationScale, out var zF))
+            combined = combined is null ? zF : Math.Min(combined.Value, zF);
+        if (combined is { } c)
+            zMax = c;
+    }
+
+    private double ClampPreviewUserZoomFactor(double z, double rasterizationScale)
+    {
+        TryGetPreviewUserZoomClampRange(rasterizationScale, out var zMin, out var zMax);
+        return Math.Clamp(z, zMin, zMax);
+    }
+
+    private void ReclampPreviewUserZoomFactorForCurrentLayout()
+    {
+        if (!HasDecodedPreviewForZoom())
+            return;
+        var scale = (double)(RootGrid.XamlRoot?.RasterizationScale ?? 1.0);
+        _previewUserZoomFactor = ClampPreviewUserZoomFactor(_previewUserZoomFactor, scale);
+    }
+
+    private double GetPreviewZoomStepRatio() =>
+        Math.Clamp(_layoutState.PreviewZoomStepRatio, PreviewZoomStepRatioMin, PreviewZoomStepRatioMax);
+
+    /// <summary>For WIC fit decode: clamp <c>z</c> using preview-pane viewport only (matches decode target box).</summary>
+    private double GetPreviewUserZoomFactorClampedForDecodeLayout(double rasterizationScale)
+    {
+        if (!TryGetPreviewViewportDips(out var vw, out var vh)
+            || !TryComputePreviewZoomNativeMaxZ(ZoomScrollHostKind.Preview, vw, vh, rasterizationScale, out var zMax))
+            return Math.Clamp(_previewUserZoomFactor, PreviewZoomMinFactor, PreviewZoomMaxFactor);
+        return Math.Clamp(_previewUserZoomFactor, PreviewZoomMinFactor, zMax);
+    }
+
     private void ResetPreviewUserZoom()
     {
         _previewUserZoomFactor = 1.0;
@@ -148,7 +250,8 @@ public sealed partial class MainWindow
         if (string.IsNullOrEmpty(path))
             return false;
         BeginZoomCommandScrollAnchorCapture();
-        _previewUserZoomFactor = Math.Clamp(_previewUserZoomFactor * PreviewZoomStepRatio, PreviewZoomMinFactor, PreviewZoomMaxFactor);
+        var scale = (double)(RootGrid.XamlRoot?.RasterizationScale ?? 1.0);
+        _previewUserZoomFactor = ClampPreviewUserZoomFactor(_previewUserZoomFactor * GetPreviewZoomStepRatio(), scale);
         _ = ReloadPreviewAfterZoomChangeAsync(path);
         return true;
     }
@@ -161,7 +264,8 @@ public sealed partial class MainWindow
         if (string.IsNullOrEmpty(path))
             return false;
         BeginZoomCommandScrollAnchorCapture();
-        _previewUserZoomFactor = Math.Clamp(_previewUserZoomFactor / PreviewZoomStepRatio, PreviewZoomMinFactor, PreviewZoomMaxFactor);
+        var scale = (double)(RootGrid.XamlRoot?.RasterizationScale ?? 1.0);
+        _previewUserZoomFactor = ClampPreviewUserZoomFactor(_previewUserZoomFactor / GetPreviewZoomStepRatio(), scale);
         _ = ReloadPreviewAfterZoomChangeAsync(path);
         return true;
     }
@@ -192,7 +296,8 @@ public sealed partial class MainWindow
         if (baseW < 1e-6 || baseH < 1e-6)
             return false;
         BeginZoomCommandScrollAnchorCapture();
-        _previewUserZoomFactor = Math.Clamp(imgDipW / baseW, PreviewZoomMinFactor, PreviewZoomMaxFactor);
+        TryGetPreviewUserZoomClampRange(scale, out var zMin, out var zMax);
+        _previewUserZoomFactor = Math.Clamp(imgDipW / baseW, zMin, zMax);
         UpdatePreviewScrollMetrics();
         return true;
     }
@@ -411,7 +516,8 @@ public sealed partial class MainWindow
     {
         if (!HasDecodedPreviewForZoom())
             return;
-        var z = Math.Clamp(_previewUserZoomFactor, PreviewZoomMinFactor, PreviewZoomMaxFactor);
+        var scale = (double)(RootGrid.XamlRoot?.RasterizationScale ?? 1.0);
+        var z = ClampPreviewUserZoomFactor(_previewUserZoomFactor, scale);
         if (!TryComputeZoomScrollLayout(host, sv, z, out _, out _, out var dispW, out var dispH, out _, out _, out var imgLeft, out var imgTop))
             return;
         if (dispW < 1e-6 || dispH < 1e-6)
@@ -451,7 +557,7 @@ public sealed partial class MainWindow
         var scale = (double)(RootGrid.XamlRoot?.RasterizationScale ?? 1.0);
         if (!TryGetPreviewImageIntrinsicDips(scale, out var imgDipW, out var imgDipH))
             return false;
-        zoomZ = Math.Clamp(zoomZ, PreviewZoomMinFactor, PreviewZoomMaxFactor);
+        zoomZ = ClampPreviewUserZoomFactor(zoomZ, scale);
         double baseW, baseH;
         if (host == ZoomScrollHostKind.Preview)
             ComputeImageDisplayBaselineDipsWindowed(vw, vh, imgDipW, imgDipH, out baseW, out baseH);
@@ -473,7 +579,8 @@ public sealed partial class MainWindow
     {
         if (_pendingZoomScrollAnchor is not { } a || a.Host != host)
             return false;
-        var z = Math.Clamp(_previewUserZoomFactor, PreviewZoomMinFactor, PreviewZoomMaxFactor);
+        var scale = (double)(RootGrid.XamlRoot?.RasterizationScale ?? 1.0);
+        var z = ClampPreviewUserZoomFactor(_previewUserZoomFactor, scale);
         if (!TryComputeZoomScrollLayout(host, sv, z, out var vw, out var vh, out var dispW, out var dispH, out var contentW, out var contentH, out var imgLeft, out var imgTop))
         {
             ClearPendingZoomScrollAnchor();
@@ -544,6 +651,7 @@ public sealed partial class MainWindow
     /// Fullscreen image size applies <see cref="_previewUserZoomFactor"/> relative to the fit-mode baseline
     /// (<b>Shrink &amp; stretch</b>: uniform contain in the viewport, including compositor upscale when the intrinsic image is smaller
     /// than the viewport; <b>Shrink only</b>: same contain rule capped at oriented intrinsic logical size (no upscale at zoom 1); <b>1:1</b>: decoded DIP size).
+    /// Zoom factor is clamped so displayed size does not exceed <see cref="PreviewZoomMaxFactor"/> times oriented native logical size (combined with preview when both viewports resolve).
     /// </summary>
     private void ApplyFullscreenImageForFitMode()
     {
@@ -570,6 +678,7 @@ public sealed partial class MainWindow
             return;
         }
 
+        ReclampPreviewUserZoomFactorForCurrentLayout();
         var z = _previewUserZoomFactor;
 
         if (!TryGetFullscreenViewportDips(out var vw, out var vh))
@@ -632,6 +741,7 @@ public sealed partial class MainWindow
             return;
         }
 
+        ReclampPreviewUserZoomFactorForCurrentLayout();
         var z = _previewUserZoomFactor;
 
         ComputeImageDisplayBaselineDipsWindowed(vw, vh, imgDipW, imgDipH, out var baseW, out var baseH);

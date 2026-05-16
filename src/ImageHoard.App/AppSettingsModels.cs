@@ -142,6 +142,10 @@ internal sealed class UiSettingsSection
     [JsonPropertyName("previewMinimumDisplaySeconds")]
     public double? PreviewMinimumDisplaySeconds { get; set; }
 
+    /// <summary>Multiplier per preview zoom-in/out step (must be &gt; 1).</summary>
+    [JsonPropertyName("previewZoomStepRatio")]
+    public double? PreviewZoomStepRatio { get; set; }
+
     /// <summary>When set and &gt; 0, mouse multi-click timing on the image preview uses this many ms between presses; otherwise Windows default is used for that surface.</summary>
     [JsonPropertyName("previewImagePaneMultiClickThresholdMs")]
     public int? PreviewImagePaneMultiClickThresholdMs { get; set; }
@@ -195,6 +199,9 @@ internal sealed class UiLayoutState
 
     /// <summary>null or 0: use Windows double-click time on the image pane; otherwise ms between presses for multi-click chains starting on the preview.</summary>
     public int? PreviewImagePaneMultiClickThresholdMs { get; set; }
+
+    /// <summary>Per zoom-in/out step on preview/fullscreen image scale; clamped when loading/applying (typically 1.01–2.0).</summary>
+    public double PreviewZoomStepRatio { get; set; } = 1.1;
 }
 
 public enum ListSortKind

@@ -110,6 +110,20 @@
                         LargeChange="50"
                         SpinButtonPlacementMode="Inline"
                         ValueChanged="PreviewImagePaneMultiClickThresholdNumberBox_ValueChanged" />
+                    <TextBlock
+                        Margin="0,16,0,8"
+                        TextWrapping="Wrap"
+                        Opacity="0.7"
+                        Text="Zoom in and zoom out multiply the current preview scale by this value each step (for example 1.1 is about a 10% change per step)." />
+                    <NumberBox
+                        x:Name="PreviewZoomStepRatioNumberBox"
+                        Header="Preview zoom step (multiplier)"
+                        Minimum="1.01"
+                        Maximum="2"
+                        SmallChange="0.01"
+                        LargeChange="0.05"
+                        SpinButtonPlacementMode="Inline"
+                        ValueChanged="PreviewZoomStepRatioNumberBox_ValueChanged" />
                 </StackPanel>
             </ScrollViewer>
             <Grid

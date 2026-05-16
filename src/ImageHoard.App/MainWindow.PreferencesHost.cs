@@ -13,6 +13,8 @@ public sealed partial class MainWindow
 
     double IPreferencesSession.PreviewMinimumDisplaySeconds => _layoutState.PreviewMinimumDisplaySeconds;
 
+    double IPreferencesSession.PreviewZoomStepRatio => _layoutState.PreviewZoomStepRatio;
+
     int IPreferencesSession.PreviewImagePaneMultiClickThresholdMs =>
         _layoutState.PreviewImagePaneMultiClickThresholdMs ?? 0;
 
@@ -31,6 +33,14 @@ public sealed partial class MainWindow
         if (double.IsNaN(value) || double.IsInfinity(value))
             return;
         _layoutState.PreviewMinimumDisplaySeconds = Math.Clamp(value, 0, 5);
+        PersistLayout();
+    }
+
+    void IPreferencesSession.ApplyPreviewZoomStepRatio(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            return;
+        _layoutState.PreviewZoomStepRatio = Math.Clamp(value, 1.01, 2.0);
         PersistLayout();
     }
 

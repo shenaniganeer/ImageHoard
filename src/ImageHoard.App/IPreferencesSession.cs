@@ -10,6 +10,8 @@ public interface IPreferencesSession
 
     double PreviewMinimumDisplaySeconds { get; }
 
+    double PreviewZoomStepRatio { get; }
+
     /// <summary>0 means use Windows default on the image preview; otherwise milliseconds between presses.</summary>
     int PreviewImagePaneMultiClickThresholdMs { get; }
 
@@ -18,6 +20,8 @@ public interface IPreferencesSession
     void ApplyPreviewNavCatchUpLagSeconds(double value);
 
     void ApplyPreviewMinimumDisplaySeconds(double value);
+
+    void ApplyPreviewZoomStepRatio(double value);
 
     void ApplyPreviewImagePaneMultiClickThresholdMs(double value);
 

@@ -4,22 +4,22 @@ overview: (1) Reinterpret preview zoom max as a cap on displayed size vs oriente
 todos:
   - id: native-clamp-helpers
     content: "Native-relative zoom: TryGetPreviewNativeFileIntrinsicDips + TryGetPreviewUserZoomClampRange; zMax = min(preview, fullscreen) when both viewports valid"
-    status: pending
+    status: completed
   - id: native-clamp-wire
     content: "Native-relative zoom: replace fixed z clamps, re-clamp in UpdatePreviewScrollMetrics, TryExecuteViewZoomActualPixels, zoom in/out; DecodeTargets CreateWicDecodeLayout; update XML comments"
-    status: pending
+    status: completed
   - id: step-prefs-models
     content: "Zoom step: PreviewZoomStepRatio on UiSettingsSection/UiLayoutState; AppSettingsStore load/save + validation"
-    status: pending
+    status: completed
   - id: step-prefs-ui
     content: "Zoom step: IPreferencesSession + MainWindow.PreferencesHost + PreferencesPanel XAML/code-behind"
-    status: pending
+    status: completed
   - id: step-prefs-runtime
     content: "Zoom step: MainWindow.PreviewScroll GetPreviewZoomStepRatio from _layoutState in TryExecuteViewZoomIn/Out"
-    status: pending
+    status: completed
   - id: verify
-    content: "Close ImageHoard.App; dotnet build/test; manual large-image native 1:1 + oversample cap + step preference persistence"
-    status: pending
+    content: Close ImageHoard.App; dotnet build/test; manual large-image native 1:1 + oversample cap + step preference persistence
+    status: completed
 isProject: false
 ---
 

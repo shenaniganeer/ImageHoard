@@ -9,6 +9,7 @@ public sealed class MouseButtonClickChainTracker
     private double _anchorYDip;
     private long _lastDownMs;
     private int _chainCount;
+    private int _committedDoubleClickTimeMs;
 
     public MouseButtonClickChainTracker(Func<long> clockMs) => _clockMs = clockMs;
 
@@ -18,13 +19,14 @@ public sealed class MouseButtonClickChainTracker
     /// <param name="button">Schema button name (e.g. Left).</param>
     /// <param name="xDip">Horizontal position in DIPs (stable space across the gesture).</param>
     /// <param name="yDip">Vertical position in DIPs.</param>
-    /// <param name="metrics">Windows double-click time and rectangle converted to DIPs.</param>
+    /// <param name="metrics">Double-click time and hit slop in DIPs; inter-click timeout is taken from the first press of a chain.</param>
     /// <returns>1-based click index in the current chain, capped at <see cref="MaxSchemaClickCount"/>.</returns>
     public int OnMouseButtonDown(string button, double xDip, double yDip, in MouseButtonClickMetrics metrics)
     {
         var now = _clockMs();
+        var timeThresholdMs = _chainCount > 0 ? _committedDoubleClickTimeMs : metrics.DoubleClickTimeMs;
         if (_chainButton != button
-            || now - _lastDownMs > metrics.DoubleClickTimeMs
+            || now - _lastDownMs > timeThresholdMs
             || Math.Abs(xDip - _anchorXDip) > metrics.MaxDistanceDipX
             || Math.Abs(yDip - _anchorYDip) > metrics.MaxDistanceDipY)
         {
@@ -33,6 +35,7 @@ public sealed class MouseButtonClickChainTracker
             _anchorYDip = yDip;
             _lastDownMs = now;
             _chainCount = 1;
+            _committedDoubleClickTimeMs = metrics.DoubleClickTimeMs;
             return 1;
         }
 
@@ -46,6 +49,7 @@ public sealed class MouseButtonClickChainTracker
         _chainButton = null;
         _chainCount = 0;
         _lastDownMs = 0;
+        _committedDoubleClickTimeMs = 0;
     }
 }
 

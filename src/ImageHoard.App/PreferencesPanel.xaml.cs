@@ -97,6 +97,7 @@ public sealed partial class PreferencesPanel : UserControl
         {
             PreviewNavCatchUpLagNumberBox.Value = _host.PreviewNavCatchUpLagSeconds;
             PreviewMinimumDisplayNumberBox.Value = _host.PreviewMinimumDisplaySeconds;
+            PreviewImagePaneMultiClickThresholdNumberBox.Value = _host.PreviewImagePaneMultiClickThresholdMs;
 
             ArchiveRootDisplay.Text = string.IsNullOrEmpty(_host.ArchiveRoot)
                 ? "(not set)"
@@ -160,6 +161,16 @@ public sealed partial class PreferencesPanel : UserControl
         if (double.IsNaN(v) || double.IsInfinity(v))
             return;
         _host.ApplyPreviewMinimumDisplaySeconds(v);
+    }
+
+    private void PreviewImagePaneMultiClickThresholdNumberBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (_suppressEvents)
+            return;
+        var v = args.NewValue;
+        if (double.IsNaN(v) || double.IsInfinity(v))
+            return;
+        _host.ApplyPreviewImagePaneMultiClickThresholdMs(v);
     }
 
     private async void SetArchiveRoot_Click(object sender, RoutedEventArgs e)

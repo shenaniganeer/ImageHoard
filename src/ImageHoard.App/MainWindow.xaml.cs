@@ -659,6 +659,11 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         return true;
     }
 
+    private bool IsImagePaneMultiClickOrigin(DependencyObject? origin) =>
+        origin != null
+        && (IsDescendantOf(origin, PreviewHostGrid)
+            || (_isFullscreen && IsDescendantOf(origin, FullscreenScrollContentGrid)));
+
     private void RootGrid_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
     {
         var origin = e.OriginalSource as DependencyObject;
@@ -765,7 +770,15 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         if (buttonName != null && chainPoint.PointerDeviceType == Microsoft.UI.Input.PointerDeviceType.Mouse)
         {
             var scale = RootGrid.XamlRoot?.RasterizationScale ?? 1.0;
-            var metrics = Win32MouseMetrics.GetClickMetrics(scale);
+            int? doubleClickOverrideMs = null;
+            if (_layoutState.PreviewImagePaneMultiClickThresholdMs is { } th
+                && th > 0
+                && IsImagePaneMultiClickOrigin(origin))
+            {
+                doubleClickOverrideMs = th;
+            }
+
+            var metrics = Win32MouseMetrics.GetClickMetrics(scale, doubleClickOverrideMs);
             mouseClickIndex = _mouseButtonClickChainTracker.OnMouseButtonDown(
                 buttonName,
                 chainPoint.Position.X,

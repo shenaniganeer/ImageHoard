@@ -13,6 +13,9 @@ public sealed partial class MainWindow
 
     double IPreferencesSession.PreviewMinimumDisplaySeconds => _layoutState.PreviewMinimumDisplaySeconds;
 
+    int IPreferencesSession.PreviewImagePaneMultiClickThresholdMs =>
+        _layoutState.PreviewImagePaneMultiClickThresholdMs ?? 0;
+
     string? IPreferencesSession.ArchiveRoot => _session.ArchiveRoot;
 
     void IPreferencesSession.ApplyPreviewNavCatchUpLagSeconds(double value)
@@ -28,6 +31,18 @@ public sealed partial class MainWindow
         if (double.IsNaN(value) || double.IsInfinity(value))
             return;
         _layoutState.PreviewMinimumDisplaySeconds = Math.Clamp(value, 0, 5);
+        PersistLayout();
+    }
+
+    void IPreferencesSession.ApplyPreviewImagePaneMultiClickThresholdMs(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            return;
+        var v = (int)Math.Round(value);
+        if (v <= 0)
+            _layoutState.PreviewImagePaneMultiClickThresholdMs = null;
+        else
+            _layoutState.PreviewImagePaneMultiClickThresholdMs = Math.Clamp(v, 100, 2000);
         PersistLayout();
     }
 

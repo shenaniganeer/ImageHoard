@@ -141,6 +141,10 @@ internal sealed class UiSettingsSection
     /// <summary>Minimum seconds each preview stays on screen when more navigations are queued; 0 disables.</summary>
     [JsonPropertyName("previewMinimumDisplaySeconds")]
     public double? PreviewMinimumDisplaySeconds { get; set; }
+
+    /// <summary>When set and &gt; 0, mouse multi-click timing on the image preview uses this many ms between presses; otherwise Windows default is used for that surface.</summary>
+    [JsonPropertyName("previewImagePaneMultiClickThresholdMs")]
+    public int? PreviewImagePaneMultiClickThresholdMs { get; set; }
 }
 
 internal sealed class UiLayoutState
@@ -188,6 +192,9 @@ internal sealed class UiLayoutState
 
     /// <summary>After each preview commit, wait at least this many seconds before decoding the next queued path when the queue is non-empty. 0 disables.</summary>
     public double PreviewMinimumDisplaySeconds { get; set; } = 0.25;
+
+    /// <summary>null or 0: use Windows double-click time on the image pane; otherwise ms between presses for multi-click chains starting on the preview.</summary>
+    public int? PreviewImagePaneMultiClickThresholdMs { get; set; }
 }
 
 public enum ListSortKind

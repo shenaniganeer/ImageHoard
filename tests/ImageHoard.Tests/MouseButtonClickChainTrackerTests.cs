@@ -65,4 +65,16 @@ public sealed class MouseButtonClickChainTrackerTests
         t = 20;
         Assert.Equal(1, tr.OnMouseButtonDown("Left", 0, 0, metrics));
     }
+
+    [Fact]
+    public void Continuation_uses_double_click_time_from_first_press_of_chain()
+    {
+        long t = 0;
+        var longWindow = new MouseButtonClickMetrics(800, 100, 100);
+        var shortWindow = new MouseButtonClickMetrics(200, 100, 100);
+        var tr = new MouseButtonClickChainTracker(() => t);
+        Assert.Equal(1, tr.OnMouseButtonDown("Left", 10, 20, longWindow));
+        t = 300;
+        Assert.Equal(2, tr.OnMouseButtonDown("Left", 10, 20, shortWindow));
+    }
 }

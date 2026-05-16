@@ -96,6 +96,20 @@
                         LargeChange="0.25"
                         SpinButtonPlacementMode="Inline"
                         ValueChanged="PreviewMinimumDisplayNumberBox_ValueChanged" />
+                    <TextBlock
+                        Margin="0,16,0,8"
+                        TextWrapping="Wrap"
+                        Opacity="0.7"
+                        Text="Maximum time between mouse presses for double-click and triple-click chords that are bound to the image preview (windowed or fullscreen), for example first or last image in the current folder. Use 0 for the Windows default. Does not change folder tree double-click behavior." />
+                    <NumberBox
+                        x:Name="PreviewImagePaneMultiClickThresholdNumberBox"
+                        Header="Image preview multi-click threshold (ms)"
+                        Minimum="0"
+                        Maximum="2000"
+                        SmallChange="10"
+                        LargeChange="50"
+                        SpinButtonPlacementMode="Inline"
+                        ValueChanged="PreviewImagePaneMultiClickThresholdNumberBox_ValueChanged" />
                 </StackPanel>
             </ScrollViewer>
             <Grid

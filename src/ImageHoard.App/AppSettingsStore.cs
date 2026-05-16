@@ -135,6 +135,9 @@ internal static class AppSettingsStore
             && minDisp >= 0)
             state.PreviewMinimumDisplaySeconds = minDisp;
 
+        if (ui?.PreviewImagePaneMultiClickThresholdMs is { } mc && mc > 0)
+            state.PreviewImagePaneMultiClickThresholdMs = Math.Clamp(mc, 100, 2000);
+
         return state;
     }
 
@@ -223,6 +226,7 @@ internal static class AppSettingsStore
             file.Ui.FolderListSort = layout.FolderListSort.ToString();
             file.Ui.PreviewNavCatchUpLagSeconds = layout.PreviewNavCatchUpLagSeconds;
             file.Ui.PreviewMinimumDisplaySeconds = layout.PreviewMinimumDisplaySeconds;
+            file.Ui.PreviewImagePaneMultiClickThresholdMs = layout.PreviewImagePaneMultiClickThresholdMs;
 
             file.Paths ??= new PathsSettingsSection();
             file.Paths.ArchiveRoot = session.ArchiveRoot;

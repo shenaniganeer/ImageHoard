@@ -10,11 +10,16 @@ public interface IPreferencesSession
 
     double PreviewMinimumDisplaySeconds { get; }
 
+    /// <summary>0 means use Windows default on the image preview; otherwise milliseconds between presses.</summary>
+    int PreviewImagePaneMultiClickThresholdMs { get; }
+
     string? ArchiveRoot { get; }
 
     void ApplyPreviewNavCatchUpLagSeconds(double value);
 
     void ApplyPreviewMinimumDisplaySeconds(double value);
+
+    void ApplyPreviewImagePaneMultiClickThresholdMs(double value);
 
     Task PromptEditArchiveRootAsync(XamlRoot xamlRoot);
 

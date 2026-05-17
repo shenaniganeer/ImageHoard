@@ -34,7 +34,7 @@ Split responsibilities into **three layers** with a **single writer** to filesys
 |-----------|------|
 | **`TreeController`** | Owns flat model + expansion + selection; subscribes to **`FsDiffStream`**; computes **`FlatModelDelta`**; posts updates to the UI thread. |
 | **`ImagePaneController`** | Current folder path, sort, include subfolders, find scope; subscribes to **`FsDiffStream`** filtered by current-folder prefix. |
-| **`CrossPaneCoordinator`** | Replaces glue in `MainWindow.BrowserPane.cs` for V2: image step → tree reveal, wizard reconciliation, slideshow overlay anchoring, `lastActedFsObject` capture where still needed. |
+| **`CrossPaneCoordinator`** | Replaces glue in `MainWindow.BrowserPane.cs` for V2: image step → tree reveal, wizard reconciliation, slideshow **overlay list position** (`TryGetSlideshowOverlayListPosition` / browse mimic), `lastActedFsObject` capture where still needed. **Tree slideshow** does not change image-pane folder per slide (see coordination doc). |
 | **`BrowserFindController`** | Query `FsMap` (folder names) and image pane (file names); folder hit → `TreeController.RevealAndSelect`; file hit → select in pane + reveal parent in tree. |
 
 ### 3. Presentation — WinUI 3

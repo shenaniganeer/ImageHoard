@@ -44,6 +44,7 @@ Ship in **Settings → About random fairness…** (or help panel) under **“Ran
 - **Discovered path store:** [`SlideshowDiscoveredPathStore`](../../src/ImageHoard.Core/Slideshow/SlideshowDiscoveredPathStore.cs) + [`TreeSlideshowSession`](../../src/ImageHoard.Core/Slideshow/TreeSlideshowSession.cs) append each enumerated path, update `DiscoveredImageCount`, and draw `Random.Next(count)` for each new forward step (excluding the current path when `count > 1` to avoid trivial immediate repeats).
 - **Sibling navigation in slideshow** uses a separate ordered list for the current file’s directory, **not** the tree path store; see [slideshow-tree-vs-folder-scope.md](./slideshow-tree-vs-folder-scope.md).
 - **PRNG:** use a single well-seeded generator for discovery shuffle and for slide picks; sibling overlay does not advance tree session state.
+- **Browse2 host (FR-SL-06 / FR-SL-07 vs FR-BR-01):** tree slideshow advances update **preview only** (`_currentImageFullPath`); they do **not** rebind **`ImagePaneController.CurrentFolderPath`** or folder-tree selection on each slide. Aligning Browse2 with the slide’s on-disk folder is reserved for **`slideshow.switchToBrowseAtCurrentLocation`** (see [browser-navigation-wizard-tree-coordination.md](../tech-design/browser-navigation-wizard-tree-coordination.md)).
 
 ## Acceptance
 

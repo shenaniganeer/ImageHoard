@@ -190,8 +190,6 @@ public sealed partial class MainWindow
                     _lastDecodeTargetBoxWidthPx = -1;
                     _lastDecodeTargetBoxHeightPx = -1;
                     UpdatePathOverlays();
-                    if (_slideshowUiActive)
-                        SyncTreeSelectionToImagePath(path);
                     PersistLayout();
                     return Task.CompletedTask;
                 }).ConfigureAwait(true);
@@ -219,8 +217,6 @@ public sealed partial class MainWindow
                     RememberPreviewOrientedPixelSize(decode.OrientedPixelWidth, decode.OrientedPixelHeight);
                     UpdatePreviewScrollMetrics();
                     UpdatePathOverlays();
-                    if (_slideshowUiActive)
-                        SyncTreeSelectionToImagePath(path);
                     SetTransientStatus(Path.GetFileName(path));
                     PersistLayout();
                 }).ConfigureAwait(true);

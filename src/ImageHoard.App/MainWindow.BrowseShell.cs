@@ -113,7 +113,13 @@ public sealed partial class MainWindow
 
     private Task Browse2ApplyViewportIntentAsync(BrowserTreeViewportIntent intent)
     {
-        if (_suppressBrowserTreeViewportMutationForColdBoot || _browse2Coordinator == null)
+        if (_browse2Coordinator == null)
+            return Task.CompletedTask;
+
+        // Suppress incidental viewport during cold-boot restore, but always allow the explicit
+        // RunColdBootViewportAsync pass (same try block still has SuppressViewportForColdBoot true).
+        if (_suppressBrowserTreeViewportMutationForColdBoot
+            && intent.Reason != BrowserTreeViewportReason.ColdBootRestore)
             return Task.CompletedTask;
 
         if (intent.Reason == BrowserTreeViewportReason.ColdBootRestore)

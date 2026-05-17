@@ -133,14 +133,33 @@ public sealed partial class FolderTreeView : UserControl
 
     public void ScrollFolderIntoView(string folderPath, bool centerInViewport = false)
     {
+        // Drop deferred preserveViewport restore so a queued Low-priority RestorePendingScroll cannot
+        // overwrite this explicit scroll (e.g. RevealAndSelect then ScrollFolderIntoView on cold boot / Find).
+        _pendingScrollRestore = null;
         var ix = FindRowIndex(folderPath);
         if (ix < 0)
             return;
         var rowH = RowHeight;
-        var y = ix * rowH;
+        if (rowH <= 0)
+            return;
+        // Force layout so the inner ItemsRepeater has measured its extent before ChangeView; otherwise
+        // on cold boot ScrollableHeight is still 0 and ChangeView silently clamps the target to the top.
+        TreeScrollViewer.UpdateLayout();
+        TreeRepeater.UpdateLayout();
+        // Negative intra-row offset is fine: RestorePendingScroll re-evaluates the y as
+        // (ix * rowH + offset) and re-clamps against the current ScrollableHeight.
+        var offset = 0.0;
         if (centerInViewport && TreeScrollViewer.ViewportHeight > rowH)
-            y = Math.Max(0, y - (TreeScrollViewer.ViewportHeight - rowH) / 2);
+            offset = -(TreeScrollViewer.ViewportHeight - rowH) / 2;
+        var y = ix * rowH + offset;
+        var maxY = Math.Max(0, TreeScrollViewer.ScrollableHeight);
+        y = FolderTreeViewportAnchorMath.ClampVerticalScrollTarget(y, maxY);
         TreeScrollViewer.ChangeView(null, y, null, disableAnimation: true);
+        // Belt-and-braces: re-apply at Low priority after layout settles. If layout was still in
+        // progress and ScrollableHeight clamped y down, the deferred pass re-evaluates against the
+        // final extent once rows are realized.
+        _pendingScrollRestore = (ix, offset);
+        DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, RestorePendingScroll);
     }
 
     /// <summary>Restores vertical scroll from persisted <c>paths.browserTree.viewportAnchor</c> after cold-boot row reset.</summary>

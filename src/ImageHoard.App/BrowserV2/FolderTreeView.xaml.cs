@@ -364,29 +364,6 @@ public sealed partial class FolderTreeView : UserControl
         }
     }
 
-    private void Root_GotFocus(object sender, RoutedEventArgs e) =>
-        OuterBorder.BorderBrush = Application.Current.Resources["AccentFillColorDefaultBrush"] as Brush
-                                  ?? OuterBorder.BorderBrush;
-
-    private void Root_LosingFocus(UIElement sender, LosingFocusEventArgs args)
-    {
-        if (args.NewFocusedElement is DependencyObject o && IsDescendantOf(o, this))
-            return;
-        OuterBorder.BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"];
-    }
-
-    private static bool IsDescendantOf(DependencyObject? node, DependencyObject ancestor)
-    {
-        while (node is not null)
-        {
-            if (ReferenceEquals(node, ancestor))
-                return true;
-            node = VisualTreeHelper.GetParent(node);
-        }
-
-        return false;
-    }
-
     private void Root_KeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (_rows.Count == 0)

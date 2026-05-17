@@ -1,9 +1,12 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using ImageHoard.App;
 using ImageHoard.Core.Browse;
 using ImageHoard.Core.Browse2;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -58,7 +61,6 @@ public sealed partial class ImagePaneView : UserControl
         }
 
         ImageList.ItemsSource = _controller.Items;
-        _controller.SelectedImagePathChanged += Controller_SelectedImagePathChanged;
         _controller.ImagePaneItemsRebuiltKeepingSelection += Controller_ImagePaneItemsRebuiltKeepingSelection;
         _controller.SelectedImagePathsChanged += Controller_SelectedImagePathsChanged;
         SyncListSelectionFromController();
@@ -68,15 +70,11 @@ public sealed partial class ImagePaneView : UserControl
     {
         if (_controller is null)
             return;
-        _controller.SelectedImagePathChanged -= Controller_SelectedImagePathChanged;
         _controller.ImagePaneItemsRebuiltKeepingSelection -= Controller_ImagePaneItemsRebuiltKeepingSelection;
         _controller.SelectedImagePathsChanged -= Controller_SelectedImagePathsChanged;
         ImageList.ItemsSource = null;
         _controller = null;
     }
-
-    private void Controller_SelectedImagePathChanged(object? sender, string? e) =>
-        SyncListSelectionFromController();
 
     private void Controller_ImagePaneItemsRebuiltKeepingSelection(object? sender, EventArgs e) =>
         SyncListSelectionFromController();
@@ -117,7 +115,39 @@ public sealed partial class ImagePaneView : UserControl
         SchedulePrimaryRowViewportScroll();
     }
 
-private void SchedulePrimaryRowViewportScroll()
+    /// <summary>
+    /// Plain left-click selects immediately (preview + controller) even when focus was in the folder tree;
+    /// WinUI <see cref="ListView"/> extended mode can otherwise require a second click after cross-pane focus.
+    /// Ctrl/Shift clicks are left to the list's built-in multi-select.
+    /// </summary>
+    private void ImageRowGrid_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (_controller is null || sender is not FrameworkElement { DataContext: ImagePaneRow row } fe)
+            return;
+
+        if (e.GetCurrentPoint(fe).Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed)
+            return;
+
+        var (ctrl, shift, _, _) = WinUiKeyboardInterop.GetModifierStates();
+        if (ctrl || shift)
+            return;
+
+        _suppressSelectionSync = true;
+        try
+        {
+            ImageList.SelectedItems.Clear();
+            ImageList.SelectedItem = row;
+        }
+        finally
+        {
+            _suppressSelectionSync = false;
+        }
+
+        _controller.NotifySelectedFromView(row.FullPath);
+        SchedulePrimaryRowViewportScroll();
+    }
+
+    private void SchedulePrimaryRowViewportScroll()
     {
         _ = DispatcherQueue.GetForCurrentThread()?.TryEnqueue(DispatcherQueuePriority.Normal, () => ApplyPrimaryRowViewportScroll(0));
     }
@@ -205,22 +235,68 @@ private void SchedulePrimaryRowViewportScroll()
                 paths.Add(r.FullPath);
         }
 
+        string? primary;
         if (paths.Count == 0)
-        {
-            _controller.NotifySelectedFromView(null);
-            return;
-        }
-
-        string? primary = null;
-        if (ImageList.SelectedItem is ImagePaneRow focus)
+            primary = null;
+        else if (ImageList.SelectedItem is ImagePaneRow focus)
             primary = focus.FullPath;
         else if (e.AddedItems.Count > 0 && e.AddedItems[^1] is ImagePaneRow added)
             primary = added.FullPath;
         else
             primary = paths[^1];
 
+        if (ViewSelectionMatchesController(paths, primary, _controller))
+            return;
+
+        if (paths.Count == 0)
+        {
+            _controller.NotifySelectedFromView(null);
+            return;
+        }
+
         _controller.NotifySelectionFromView(paths, primary);
         SchedulePrimaryRowViewportScroll();
+    }
+
+    /// <summary>
+    /// True when list selection already matches controller primary + selected set (order-independent),
+    /// so we skip notifying the controller and scheduling viewport work (avoids feedback loops / flicker).
+    /// </summary>
+    private static bool ViewSelectionMatchesController(
+        List<string> pathsFromView,
+        string? primaryFromView,
+        ImagePaneController controller)
+    {
+        var snapshot = controller.GetSelectedImagePathsSnapshot();
+        var ctrlPrimary = controller.SelectedImagePath;
+
+        if (pathsFromView.Count == 0)
+            return snapshot.Count == 0 && string.IsNullOrEmpty(ctrlPrimary);
+
+        var normPrimary = string.IsNullOrEmpty(primaryFromView)
+            ? null
+            : FavoriteIndexRoots.NormalizeFavoritePath(primaryFromView);
+        if (!string.Equals(normPrimary, ctrlPrimary, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var viewSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in pathsFromView)
+        {
+            var n = FavoriteIndexRoots.NormalizeFavoritePath(p);
+            if (!string.IsNullOrEmpty(n))
+                viewSet.Add(n);
+        }
+
+        if (viewSet.Count != snapshot.Count)
+            return false;
+
+        foreach (var s in snapshot)
+        {
+            if (!viewSet.Contains(s))
+                return false;
+        }
+
+        return true;
     }
 
     private void ImageRowGrid_RightTapped(object sender, RightTappedRoutedEventArgs e)

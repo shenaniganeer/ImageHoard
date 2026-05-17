@@ -12,8 +12,6 @@
     IsTabStop="True"
     UseSystemFocusVisuals="False"
     KeyDown="Root_KeyDown"
-    GotFocus="Root_GotFocus"
-    LosingFocus="Root_LosingFocus"
     automation:AutomationProperties.Name="Folder tree">
     <UserControl.Resources>
         <DataTemplate x:Key="FolderRowTemplate" x:DataType="browse2:FolderRow">

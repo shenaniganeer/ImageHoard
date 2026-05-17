@@ -34,6 +34,8 @@
 
                 DragStarting="ImageRowGrid_DragStarting"
 
+                PointerPressed="ImageRowGrid_PointerPressed"
+
                 RightTapped="ImageRowGrid_RightTapped">
 
                 <Grid.ColumnDefinitions>

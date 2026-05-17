@@ -39,4 +39,27 @@ public sealed class FsColdBootPathResolverTests
         var got = FsColdBootPathResolver.ResolveSelectedFolder(ws, root, null, null);
         Assert.Equal(FavoriteIndexRoots.NormalizeFavoritePath(root), got);
     }
+
+    [Fact]
+    public void ResolveSelectedFolderForColdBoot_clamps_persisted_sibling_branch_to_tree_display_root()
+    {
+        var root = @"C:\Fav";
+        var display = Path.Combine(root, "Browse");
+        var diff = new FsDiffStream();
+        var ws = new FsMapWorkspace(root, @"C:\Temp\map2.json", diff);
+        ws.UpsertDirectoryRow(root, "", "Fav", null, true, 0, 0, 0, null);
+        ws.UpsertDirectoryRow(display, root, "Browse", null, true, 0, 0, 0, null);
+        var child = Path.Combine(display, "c");
+        ws.UpsertDirectoryRow(child, display, "c", null, false, 0, 0, 0, null);
+        var other = Path.Combine(root, "Other");
+        ws.UpsertDirectoryRow(other, root, "Other", null, false, 0, 0, 0, null);
+
+        var got = FsColdBootPathResolver.ResolveSelectedFolderForColdBoot(
+            ws,
+            root,
+            FavoriteIndexRoots.NormalizeFavoritePath(display),
+            other,
+            FavoriteIndexRoots.NormalizeFavoritePath(display));
+        Assert.Equal(FavoriteIndexRoots.NormalizeFavoritePath(display), got);
+    }
 }

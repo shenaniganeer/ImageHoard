@@ -14,10 +14,12 @@ public sealed class FolderTreeFlatModel : IDisposable
     private readonly List<FolderRow> _rows = new();
     private readonly Dictionary<string, int> _rowIndexByPath = new(StringComparer.OrdinalIgnoreCase);
     private FolderListSortKind _folderSortKind = FolderListSortKind.NameNatural;
+    private string _treeDisplayRoot;
 
     public FolderTreeFlatModel(FsMapWorkspace workspace, FsDiffStream diffStream, bool subscribeToDiffStream = true)
     {
         _workspace = workspace;
+        _treeDisplayRoot = FavoriteIndexRoots.NormalizeFavoritePath(workspace.IndexRoot);
         _diffStream = diffStream;
         if (subscribeToDiffStream)
         {
@@ -35,6 +37,13 @@ public sealed class FolderTreeFlatModel : IDisposable
     public IReadOnlyDictionary<string, int> RowIndexByPath => _rowIndexByPath;
 
     public FolderListSortKind FolderSortKind => _folderSortKind;
+
+    /// <summary>Browse2 UI root: rows are the immediate children of this folder (no row for this path), clamped under <see cref="FsMapWorkspace.IndexRoot"/>.</summary>
+    public string TreeDisplayRoot => _treeDisplayRoot;
+
+    /// <summary>Updates the visible subtree root without rebuilding; caller runs <see cref="Rebuild"/>.</summary>
+    public void SetTreeDisplayRoot(string? normalizedBrowseFolder) =>
+        _treeDisplayRoot = Browse2TreeDisplayRoot.ClampToWorkspace(_workspace, normalizedBrowseFolder);
 
     /// <summary>Sets sibling sort for visible rows and rebuilds the projection.</summary>
     public FlatModelDelta SetFolderSortKind(FolderListSortKind kind)
@@ -65,14 +74,14 @@ public sealed class FolderTreeFlatModel : IDisposable
     }
 
     /// <summary>Rebuilds the entire flat projection from <see cref="FsMapWorkspace"/> + <see cref="ExpansionState"/>.</summary>
-    /// <remarks>The index root row is not shown; depth 0 rows are immediate children of the root (implicitly expanded).</remarks>
+    /// <remarks>The <see cref="TreeDisplayRoot"/> row is not shown; depth 0 rows are its immediate children (implicitly expanded).</remarks>
     public FlatModelDelta Rebuild()
     {
         _rows.Clear();
         _rowIndexByPath.Clear();
-        var root = _workspace.IndexRoot;
-        if (_workspace.TryGetEntry(root, out var rootEntry) && rootEntry.HasSubfolders)
-            AppendVisibleChildRows(root, childDepth: 0, _rows);
+        var projectionRoot = _treeDisplayRoot;
+        if (_workspace.TryGetEntry(projectionRoot, out var rootEntry) && rootEntry.HasSubfolders)
+            AppendVisibleChildRows(projectionRoot, childDepth: 0, _rows);
         RebuildPathIndex();
         return new FlatModelDelta(new[] { new FlatModelReset(_rows.ToArray()) });
     }
@@ -82,8 +91,8 @@ public sealed class FolderTreeFlatModel : IDisposable
     {
         var changes = new List<FlatModelChange>();
         var path = FavoriteIndexRoots.NormalizeFavoritePath(folderPath);
-        // Index root has no row; its children are always visible when present.
-        if (IsIndexRootExpandedForProjection(path))
+        // Index root / tree display root have no row; their children are always visible when present.
+        if (IsImplicitProjectionRoot(path))
             return FlatModelDelta.Empty;
 
         if (!Expansion.TryExpand(path))
@@ -106,7 +115,7 @@ public sealed class FolderTreeFlatModel : IDisposable
             return Finalize(changes);
 
         // Under implicit root expansion, Rebuild already spliced immediate children; do not insert duplicates.
-        if (IsIndexRootExpandedForProjection(path) && CountDescendantRowCount(ix, _rows[ix].Depth) > 0)
+        if (IsImplicitProjectionRoot(path) && CountDescendantRowCount(ix, _rows[ix].Depth) > 0)
             return Finalize(changes);
 
         var inserted = new List<FolderRow>();
@@ -124,7 +133,7 @@ public sealed class FolderTreeFlatModel : IDisposable
     {
         var changes = new List<FlatModelChange>();
         var path = FavoriteIndexRoots.NormalizeFavoritePath(folderPath);
-        if (IsIndexRootExpandedForProjection(path))
+        if (IsImplicitProjectionRoot(path))
             return FlatModelDelta.Empty;
 
         if (!Expansion.TryCollapse(path))
@@ -180,7 +189,6 @@ public sealed class FolderTreeFlatModel : IDisposable
             return Finalize(changes);
         }
 
-        var root = _workspace.IndexRoot;
         int insertAt;
         int parentDepth;
         var parentIx = FindRowIndex(parent);
@@ -189,7 +197,7 @@ public sealed class FolderTreeFlatModel : IDisposable
             parentDepth = _rows[parentIx].Depth;
             insertAt = FindSiblingInsertIndex(parentIx, path, a.Snapshot.Name);
         }
-        else if (string.Equals(FavoriteIndexRoots.NormalizeFavoritePath(parent), root, StringComparison.OrdinalIgnoreCase))
+        else if (IsImplicitProjectionRoot(parent))
         {
             parentDepth = -1;
             insertAt = FindSiblingInsertIndexUnderRoot(path, a.Snapshot.Name);
@@ -257,7 +265,6 @@ public sealed class FolderTreeFlatModel : IDisposable
         if (AreAncestorsExpanded(newPath) && _workspace.TryGetEntry(newPath, out var ne))
         {
             var parentPath = FavoriteIndexRoots.NormalizeFavoritePath(m.NewParentPath);
-            var root = _workspace.IndexRoot;
             int insertAt;
             int parentDepth;
             var parentIx = FindRowIndex(parentPath);
@@ -266,7 +273,7 @@ public sealed class FolderTreeFlatModel : IDisposable
                 parentDepth = _rows[parentIx].Depth;
                 insertAt = FindSiblingInsertIndex(parentIx, newPath, ne.Name);
             }
-            else if (string.Equals(parentPath, root, StringComparison.OrdinalIgnoreCase))
+            else if (IsImplicitProjectionRoot(parentPath))
             {
                 parentDepth = -1;
                 insertAt = FindSiblingInsertIndexUnderRoot(newPath, ne.Name);
@@ -306,7 +313,7 @@ public sealed class FolderTreeFlatModel : IDisposable
         if (!_workspace.TryGetEntry(path, out var after))
             return FlatModelDelta.Empty;
 
-        if (!after.HasSubfolders && Expansion.Contains(path) && !IsIndexRootExpandedForProjection(path))
+        if (!after.HasSubfolders && Expansion.Contains(path) && !IsImplicitProjectionRoot(path))
         {
             Expansion.TryCollapse(path);
             var ix = FindRowIndex(path);
@@ -489,15 +496,16 @@ public sealed class FolderTreeFlatModel : IDisposable
         changes.Add(new FlatModelReplaceRow(ix, MakeRow(path, _rows[ix].Depth, e, isExpanded)));
     }
 
-    /// <summary>Index root is always treated as expanded for projection so immediate children are visible without persisting root in <see cref="ExpansionState"/>.</summary>
-    private bool IsIndexRootExpandedForProjection(string path)
+    /// <summary>Index root and tree display root are always treated as expanded for projection.</summary>
+    private bool IsImplicitProjectionRoot(string path)
     {
-        var root = _workspace.IndexRoot;
-        return string.Equals(FavoriteIndexRoots.NormalizeFavoritePath(path), root, StringComparison.OrdinalIgnoreCase);
+        var p = FavoriteIndexRoots.NormalizeFavoritePath(path);
+        return string.Equals(p, _workspace.IndexRoot, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(p, _treeDisplayRoot, StringComparison.OrdinalIgnoreCase);
     }
 
     private bool IsRowExpandedInProjection(string path) =>
-        Expansion.Contains(path) || IsIndexRootExpandedForProjection(path);
+        Expansion.Contains(path) || IsImplicitProjectionRoot(path);
 
     private void AppendVisibleChildRows(string parentPath, int childDepth, List<FolderRow> sink)
     {
@@ -662,14 +670,20 @@ public sealed class FolderTreeFlatModel : IDisposable
 
     private bool AreAncestorsExpanded(string path)
     {
-        var root = _workspace.IndexRoot;
+        var ir = _workspace.IndexRoot;
         var p = FavoriteIndexRoots.NormalizeFavoritePath(path);
-        while (!string.Equals(p, root, StringComparison.OrdinalIgnoreCase))
+        while (!string.Equals(p, ir, StringComparison.OrdinalIgnoreCase))
         {
-            var parent = FsMapPathHelpers.ParentPathOrEmpty(p, root);
+            var parent = FsMapPathHelpers.ParentPathOrEmpty(p, ir);
             if (string.IsNullOrEmpty(parent))
                 return false;
-            if (!Expansion.Contains(parent) && !string.Equals(parent, root, StringComparison.OrdinalIgnoreCase))
+            if (IsImplicitProjectionRoot(parent))
+            {
+                p = parent;
+                continue;
+            }
+
+            if (!Expansion.Contains(parent))
                 return false;
             p = parent;
         }
@@ -685,12 +699,27 @@ public sealed class FolderTreeFlatModel : IDisposable
         if (string.Equals(sel, removedPath, StringComparison.OrdinalIgnoreCase))
         {
             Selection.SelectedFolderPath = FsMapPathHelpers.ParentPathOrEmpty(removedPath, _workspace.IndexRoot);
+            EnsureSelectionUnderTreeDisplayRoot();
             return;
         }
 
         if (FavoriteIndexRoots.IsStrictSubpath(sel, removedPath))
             Selection.SelectedFolderPath = FsMapPathHelpers.ParentPathOrEmpty(removedPath, _workspace.IndexRoot);
+        EnsureSelectionUnderTreeDisplayRoot();
     }
+
+    private void EnsureSelectionUnderTreeDisplayRoot()
+    {
+        var sel = Selection.SelectedFolderPath;
+        if (string.IsNullOrEmpty(sel))
+            return;
+        if (Browse2TreeDisplayRoot.IsSameOrStrictDescendantOf(_treeDisplayRoot, sel))
+            return;
+        Selection.SelectedFolderPath = _treeDisplayRoot;
+    }
+
+    /// <summary>Keeps <see cref="SelectionState.SelectedFolderPath"/> within the visible subtree when the display root moves.</summary>
+    public void ClampSelectionToTreeDisplaySubtree() => EnsureSelectionUnderTreeDisplayRoot();
 
     private void RemapSelectionPrefix(string oldPrefix, string newPrefix)
     {
@@ -700,6 +729,7 @@ public sealed class FolderTreeFlatModel : IDisposable
         if (string.Equals(sel, oldPrefix, StringComparison.OrdinalIgnoreCase))
         {
             Selection.SelectedFolderPath = newPrefix;
+            EnsureSelectionUnderTreeDisplayRoot();
             return;
         }
 
@@ -709,6 +739,7 @@ public sealed class FolderTreeFlatModel : IDisposable
         Selection.SelectedFolderPath = string.IsNullOrEmpty(rel)
             ? newPrefix
             : FavoriteIndexRoots.NormalizeFavoritePath(Path.Combine(newPrefix, rel));
+        EnsureSelectionUnderTreeDisplayRoot();
     }
 
     private static string RelativeChildPath(string root, string fullPath)

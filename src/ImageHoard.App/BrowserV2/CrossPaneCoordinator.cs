@@ -13,6 +13,7 @@ namespace ImageHoard.App.BrowserV2;
 internal sealed class CrossPaneCoordinator : IDisposable
 {
     private FolderTreeView? _folderTreeView;
+    private string _treeDisplayRoot = "";
     private EventHandler<object>? _firstPaintScannerRenderingHandler;
     private FsBackgroundScanner? _firstPaintPendingScanner;
     private CancellationToken _firstPaintScannerCancellation;
@@ -75,7 +76,7 @@ internal sealed class CrossPaneCoordinator : IDisposable
         ArgumentNullException.ThrowIfNull(tree);
         DetachFolderTreeView();
         _folderTreeView = tree;
-        tree.IndexRoot = Workspace.IndexRoot;
+        tree.IndexRoot = string.IsNullOrEmpty(_treeDisplayRoot) ? Workspace.IndexRoot : _treeDisplayRoot;
         tree.ToggleExpandRequested += OnFolderTreeToggleExpand;
         tree.SelectedFolderPathChanged += OnFolderTreeSelectedPathChanged;
         tree.ResetRows(Tree.Model.Rows, preserveViewport: false);
@@ -101,10 +102,12 @@ internal sealed class CrossPaneCoordinator : IDisposable
         BrowserTreeStore? store,
         string? initialSelectedFolder,
         FolderListSortKind initialFolderListSort,
+        string normalizedTreeDisplayRoot,
         FsBackgroundScanner? backgroundScanner = null,
         CancellationToken appCancellationToken = default)
     {
-        _ = Tree.ColdBootFromStore(store, initialSelectedFolder, initialFolderListSort);
+        _treeDisplayRoot = Browse2TreeDisplayRoot.ClampToWorkspace(Workspace, normalizedTreeDisplayRoot);
+        _ = Tree.ColdBootFromStore(store, initialSelectedFolder, initialFolderListSort, _treeDisplayRoot);
         TreeStore = store;
         Images.OwningIndexRoot = Workspace.IndexRoot;
         Images.CurrentFolderPath = Tree.Model.Selection.SelectedFolderPath;
@@ -125,6 +128,28 @@ internal sealed class CrossPaneCoordinator : IDisposable
 
         _listingRefreshCancellation = appCancellationToken;
         _ = TargetedRefresher.RefreshAsync(Workspace.IndexRoot, _listingRefreshCancellation);
+    }
+
+    /// <summary>Updates the visible subtree when the browse folder moves under the same persisted map root.</summary>
+    public FlatModelDelta SyncBrowseTreeDisplayRoot(string browseFolder)
+    {
+        var clamped = Browse2TreeDisplayRoot.ClampToWorkspace(Workspace, browseFolder);
+        if (string.Equals(clamped, _treeDisplayRoot, StringComparison.OrdinalIgnoreCase))
+            return FlatModelDelta.Empty;
+
+        _treeDisplayRoot = clamped;
+        var delta = Tree.SyncTreeDisplayRoot(browseFolder);
+        if (_folderTreeView is not null)
+        {
+            _folderTreeView.IndexRoot = _treeDisplayRoot;
+            if (!delta.IsEmpty)
+            {
+                _folderTreeView.ApplyModelDelta(delta, preserveViewport: true);
+                _folderTreeView.SelectedFolderPath = Tree.Model.Selection.SelectedFolderPath;
+            }
+        }
+
+        return delta;
     }
 
     /// <summary>DFS aggregate refresh for each immediate child folder under <paramref name="parentFolderPath"/> (Browse2 size/image-count sorts).</summary>

@@ -67,6 +67,9 @@ public sealed partial class FolderTreeView : UserControl
 
     public event TypedEventHandler<FolderTreeView, string>? OpenInExplorerRequested;
 
+    /// <summary>User double-clicked a folder row to open it as the browse root (same as Navigate to folder).</summary>
+    public event TypedEventHandler<FolderTreeView, string>? NavigateIntoFolderRequested;
+
     public event TypedEventHandler<FolderTreeView, string>? SelectedFolderPathChanged;
 
     /// <summary>Forwarded from the inner <see cref="ScrollViewer"/> for layout persistence.</summary>
@@ -401,8 +404,8 @@ public sealed partial class FolderTreeView : UserControl
             return;
         if (IsExpandToggleHostFromEventSource(e.OriginalSource as DependencyObject))
             return;
-        OpenInExplorerRequested?.Invoke(this, row.Path);
-        _ = global::Windows.System.Launcher.LaunchFolderPathAsync(row.Path);
+        e.Handled = true;
+        NavigateIntoFolderRequested?.Invoke(this, row.Path);
     }
 
     private void FolderRow_RightTapped(object sender, RightTappedRoutedEventArgs e)

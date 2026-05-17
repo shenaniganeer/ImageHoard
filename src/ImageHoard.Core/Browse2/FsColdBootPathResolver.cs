@@ -59,4 +59,28 @@ public static class FsColdBootPathResolver
 
         return false;
     }
+
+    /// <summary>
+    /// Resolves cold-boot selection then clamps it to the Browse2 tree display subtree rooted at <paramref name="treeDisplayRoot"/>.
+    /// </summary>
+    public static string ResolveSelectedFolderForColdBoot(
+        FsMapWorkspace workspace,
+        string indexRoot,
+        string treeDisplayRoot,
+        string? storeSelected,
+        string? initialSelectedFolder)
+    {
+        var ir = FavoriteIndexRoots.NormalizeFavoritePath(indexRoot);
+        var dr = FavoriteIndexRoots.NormalizeFavoritePath(treeDisplayRoot);
+        var baseSel = ResolveSelectedFolder(workspace, ir, storeSelected, initialSelectedFolder);
+
+        if (Browse2TreeDisplayRoot.IsSameOrStrictDescendantOf(dr, baseSel))
+            return baseSel;
+
+        if (TryClampToExistingMapFolder(workspace, ir, initialSelectedFolder, out var init)
+            && Browse2TreeDisplayRoot.IsSameOrStrictDescendantOf(dr, init))
+            return init;
+
+        return Browse2TreeDisplayRoot.ClampToWorkspace(workspace, dr);
+    }
 }

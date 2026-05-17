@@ -83,6 +83,8 @@ public sealed partial class MainWindow
         _browse2Coordinator.Images.NavigationMode = _browseNavigationMode;
         _browse2Coordinator.Images.SetSortFlagStateSource(p => _sortSession.GetState(p));
 
+        _browse2Coordinator.SyncBrowseTreeDisplayRoot(_currentFolderPath!);
+
         var selFolder = TryGetBrowseTreeSelectedFolderPath() ?? _currentFolderPath;
         if (!string.IsNullOrEmpty(selFolder))
             _browse2Coordinator.Tree.SetSelectedFolder(selFolder);
@@ -146,7 +148,13 @@ public sealed partial class MainWindow
 
         var store = BrowserTreeStore.TryFromSession(_session, _currentFolderPath);
         var scanner = new FsBackgroundScanner();
-        _browse2Coordinator.ColdBoot(store, _currentFolderPath, _layoutState.FolderListSort, scanner, _browse2LifetimeCts.Token);
+        _browse2Coordinator.ColdBoot(
+            store,
+            _currentFolderPath,
+            _layoutState.FolderListSort,
+            FavoriteIndexRoots.NormalizeFavoritePath(_currentFolderPath),
+            scanner,
+            _browse2LifetimeCts.Token);
         Browse2SyncCoordinatorFromLegacyShell();
         Browse2AttachUiChrome();
     }

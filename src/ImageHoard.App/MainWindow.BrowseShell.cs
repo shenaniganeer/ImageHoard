@@ -80,6 +80,7 @@ public sealed partial class MainWindow
         _browserTreeContextMenu.Items.Add(favoriteItem);
 
         BrowserV2Host.FolderTree.ScrollViewerViewChanged += Browse2FolderTreeScroll_ViewChanged;
+        BrowserV2Host.FolderTree.NavigateIntoFolderRequested += Browse2FolderTree_NavigateIntoFolderRequested;
 
         BrowserV2Host.FileListHeaderSortNameNatural += SortList_NameNatural_Click;
         BrowserV2Host.FileListHeaderSortSize += SortList_Size_Click;
@@ -97,6 +98,13 @@ public sealed partial class MainWindow
         if (_suppressBrowserTreeViewportMutationForColdBoot)
             return;
         SchedulePersistLayoutDebounced();
+    }
+
+    private async void Browse2FolderTree_NavigateIntoFolderRequested(FolderTreeView sender, string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return;
+        await NavigateToFolderAsync(path).ConfigureAwait(true);
     }
 
     internal void ScheduleViewport(BrowserTreeViewportIntent intent) =>

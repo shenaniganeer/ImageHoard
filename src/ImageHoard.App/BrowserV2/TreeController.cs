@@ -1,6 +1,7 @@
 using ImageHoard.Core.Browse;
 using ImageHoard.Core.Browse2;
 using Microsoft.UI.Dispatching;
+using System.Linq;
 
 namespace ImageHoard.App.BrowserV2;
 
@@ -46,27 +47,62 @@ internal sealed class TreeController : IDisposable
     }
 
     /// <summary>Load expansion from cold-boot snapshot, rebuild visible rows from the hydrated map, assign selection (persisted path clamped to map, then <paramref name="initialSelectedFolder"/>).</summary>
-    public FlatModelDelta ColdBootFromStore(BrowserTreeStore? store, string? initialSelectedFolder, FolderListSortKind initialFolderListSort)
+    public FlatModelDelta ColdBootFromStore(
+        BrowserTreeStore? store,
+        string? initialSelectedFolder,
+        FolderListSortKind initialFolderListSort,
+        string normalizedTreeDisplayRoot)
     {
         _model.InitializeFolderSortKind(initialFolderListSort);
+        _model.SetTreeDisplayRoot(normalizedTreeDisplayRoot);
         _model.Expansion.Clear();
         if (store?.ExpandedFolderPaths is { Count: > 0 } paths)
             _model.Expansion.Load(paths);
 
+        FilterExpansionToDisplaySubtree();
+
         var delta = _model.Rebuild();
-        var sel = FsColdBootPathResolver.ResolveSelectedFolder(
+        var sel = FsColdBootPathResolver.ResolveSelectedFolderForColdBoot(
             _workspace,
             _workspace.IndexRoot,
+            _model.TreeDisplayRoot,
             store?.SelectedFolderPath,
             initialSelectedFolder);
-        var normRoot = FavoriteIndexRoots.NormalizeFavoritePath(_workspace.IndexRoot);
+        var normDisplayRoot = FavoriteIndexRoots.NormalizeFavoritePath(_model.TreeDisplayRoot);
         if (!string.IsNullOrWhiteSpace(sel)
             && _model.Rows.Count > 0
-            && string.Equals(FavoriteIndexRoots.NormalizeFavoritePath(sel), normRoot, StringComparison.OrdinalIgnoreCase))
+            && string.Equals(FavoriteIndexRoots.NormalizeFavoritePath(sel), normDisplayRoot, StringComparison.OrdinalIgnoreCase))
             sel = _model.Rows[0].Path;
         _model.Selection.SelectedFolderPath = sel;
         RaiseIfNonEmpty(delta);
         return delta;
+    }
+
+    /// <summary>When the browse folder changes under the same <see cref="FsMapWorkspace.IndexRoot"/>, updates the visible subtree root and rebuilds rows.</summary>
+    public FlatModelDelta SyncTreeDisplayRoot(string normalizedBrowseFolder)
+    {
+        EnsureDispatcherThread();
+        var clamped = Browse2TreeDisplayRoot.ClampToWorkspace(_workspace, normalizedBrowseFolder);
+        if (string.Equals(clamped, _model.TreeDisplayRoot, StringComparison.OrdinalIgnoreCase))
+            return FlatModelDelta.Empty;
+
+        _model.SetTreeDisplayRoot(clamped);
+        FilterExpansionToDisplaySubtree();
+        var delta = _model.Rebuild();
+        _model.ClampSelectionToTreeDisplaySubtree();
+        RaiseIfNonEmpty(delta);
+        return delta;
+    }
+
+    private void FilterExpansionToDisplaySubtree()
+    {
+        var dr = _model.TreeDisplayRoot;
+        foreach (var p in _model.Expansion.ExpandedPaths.ToList())
+        {
+            if (Browse2TreeDisplayRoot.IsSameOrStrictDescendantOf(dr, p))
+                continue;
+            _model.Expansion.TryCollapse(p);
+        }
     }
 
     public FlatModelDelta ExpandFolder(string folderPath)
@@ -119,12 +155,12 @@ internal sealed class TreeController : IDisposable
     {
         EnsureDispatcherThread();
         var norm = FavoriteIndexRoots.NormalizeFavoritePath(folderPath);
-        var root = _workspace.IndexRoot;
+        var displayRoot = _model.TreeDisplayRoot;
         var merged = new List<FlatModelChange>();
         var chain = new List<string>();
-        for (var c = ParentPathOrEmpty(norm, root);
+        for (var c = ParentPathOrEmpty(norm, displayRoot);
              !string.IsNullOrEmpty(c);
-             c = ParentPathOrEmpty(c, root))
+             c = ParentPathOrEmpty(c, displayRoot))
         {
             chain.Add(c);
         }

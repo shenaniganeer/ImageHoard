@@ -1,3 +1,4 @@
+using ImageHoard.Core.Browse;
 using ImageHoard.Core.Browse2;
 
 namespace ImageHoard.Tests;
@@ -267,6 +268,36 @@ public sealed class FolderTreeFlatModelTests
         model.Rebuild();
         var again = model.Expand(root);
         Assert.True(again.IsEmpty);
+    }
+
+    [Fact]
+    public async Task Rebuild_tree_display_root_shows_only_immediate_children_of_display_root()
+    {
+        using var dir = NewTempDir();
+        var root = Path.Combine(dir.Path, "Fav");
+        var mid = Path.Combine(root, "mid");
+        var leafA = Path.Combine(mid, "a");
+        var leafB = Path.Combine(mid, "b");
+        Directory.CreateDirectory(leafA);
+        Directory.CreateDirectory(leafB);
+
+        var diff = new FsDiffStream();
+        var registry = new FsMapRegistry(dir.Path, new[] { root }, diff);
+        await registry.LoadAllAsync();
+        var ws = registry.TryGetWorkspaceForPath(root)!;
+        ws.UpsertDirectoryRow(root, "", "Fav", DateTimeOffset.UtcNow, true, 0, 0, 0, DateTimeOffset.UtcNow);
+        ws.UpsertDirectoryRow(mid, root, "mid", DateTimeOffset.UtcNow, true, 0, 0, 0, DateTimeOffset.UtcNow);
+        ws.UpsertDirectoryRow(leafA, mid, "a", DateTimeOffset.UtcNow, false, 0, 0, 0, DateTimeOffset.UtcNow);
+        ws.UpsertDirectoryRow(leafB, mid, "b", DateTimeOffset.UtcNow, false, 0, 0, 0, DateTimeOffset.UtcNow);
+
+        using var model = new FolderTreeFlatModel(ws, diff, subscribeToDiffStream: false);
+        model.SetTreeDisplayRoot(mid);
+        model.Rebuild();
+        Assert.Equal(2, model.Rows.Count);
+        Assert.Equal(0, model.Rows[0].Depth);
+        Assert.Equal(0, model.Rows[1].Depth);
+        Assert.Equal(FavoriteIndexRoots.NormalizeFavoritePath(leafA), FavoriteIndexRoots.NormalizeFavoritePath(model.Rows[0].Path));
+        Assert.Equal(FavoriteIndexRoots.NormalizeFavoritePath(leafB), FavoriteIndexRoots.NormalizeFavoritePath(model.Rows[1].Path));
     }
 
     private sealed class TempDir : IDisposable

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Threading;
 using ImageHoard.Core.Browse;
 using ImageHoard.Core.Browse2;
 using ImageHoard.Core.Models;
@@ -28,6 +29,10 @@ public sealed class ImagePaneController : IDisposable
     private Func<string, SortFlagState> _getSortFlagState = _ => SortFlagState.Unset;
     private bool _showFileSizeColumn = true;
     private bool _showFileDateColumn = true;
+
+    private readonly object _reloadWaitLock = new();
+    private int _lastStableAppliedReloadGeneration;
+    private readonly List<(int TargetGen, TaskCompletionSource<bool> Tcs)> _reloadWaiters = new();
 
     public ImagePaneController(IFileSystem fileSystem, FsDiffStream diffStream, DispatcherQueue dispatcher)
     {
@@ -176,6 +181,78 @@ public sealed class ImagePaneController : IDisposable
         _dispatcher.TryEnqueue(DispatcherQueuePriority.Low, StartReloadForCurrentGeneration);
     }
 
+    /// <summary>
+    /// Waits until <see cref="Items"/> reflects the current <see cref="CurrentFolderPath"/> / sort / filter for the latest
+    /// reload generation (coalesced reloads may advance the generation while this method runs).
+    /// </summary>
+    public async Task WaitForReloadAppliedAsync(CancellationToken cancellationToken = default)
+    {
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var curGen = Volatile.Read(ref _reloadGeneration);
+            TaskCompletionSource<bool> tcs;
+            lock (_reloadWaitLock)
+            {
+                if (_lastStableAppliedReloadGeneration >= curGen)
+                    return;
+
+                tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _reloadWaiters.Add((curGen, tcs));
+            }
+
+            IDisposable? ctr = null;
+            if (cancellationToken.CanBeCanceled)
+            {
+                ctr = cancellationToken.Register(
+                    () =>
+                    {
+                        lock (_reloadWaitLock)
+                        {
+                            tcs.TrySetCanceled(cancellationToken);
+                            for (var i = _reloadWaiters.Count - 1; i >= 0; i--)
+                            {
+                                if (ReferenceEquals(_reloadWaiters[i].Tcs, tcs))
+                                {
+                                    _reloadWaiters.RemoveAt(i);
+                                    break;
+                                }
+                            }
+                        }
+                    });
+            }
+
+            try
+            {
+                await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                ctr?.Dispose();
+            }
+        }
+    }
+
+    private void SignalReloadAppliedIfCurrent(int captureGeneration)
+    {
+        var cur = Volatile.Read(ref _reloadGeneration);
+        if (captureGeneration != cur)
+            return;
+
+        Volatile.Write(ref _lastStableAppliedReloadGeneration, captureGeneration);
+        lock (_reloadWaitLock)
+        {
+            for (var i = _reloadWaiters.Count - 1; i >= 0; i--)
+            {
+                if (_reloadWaiters[i].TargetGen <= captureGeneration)
+                {
+                    _reloadWaiters[i].Tcs.TrySetResult(true);
+                    _reloadWaiters.RemoveAt(i);
+                }
+            }
+        }
+    }
+
     private void OnDiffReceived(FsMapDiff diff)
     {
         if (_owningIndexRoot is { } root
@@ -266,6 +343,8 @@ public sealed class ImagePaneController : IDisposable
 
             if (captureGeneration != Volatile.Read(ref _reloadGeneration))
                 _dispatcher.TryEnqueue(DispatcherQueuePriority.Low, StartReloadForCurrentGeneration);
+            else
+                SignalReloadAppliedIfCurrent(captureGeneration);
         });
     }
 

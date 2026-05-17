@@ -890,6 +890,10 @@ public sealed partial class MainWindow
 
             var onDisk = toDelete.Where(p => existedAtStart.TryGetValue(p, out var ex) && ex).ToList();
 
+            IReadOnlyList<string>? deferredImagePanePathsSnapshot = null;
+            if (deferBrowserPaneRefresh && _browse2Coordinator != null)
+                deferredImagePanePathsSnapshot = _browse2Coordinator.Images.Items.Select(r => r.FullPath).ToList();
+
             var recycledOk = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             if (onDisk.Count > 0)
             {
@@ -1084,7 +1088,13 @@ public sealed partial class MainWindow
             {
                 _deferredWizardBatchSucceededStats = new List<WizardPredeletedFileStat>(succeededStats);
                 _deferredWizardBatchRefocusContext =
-                    new BrowserTreeRefocusAfterWizardContext(null, imageDeletionWorkingFolder);
+                    new BrowserTreeRefocusAfterWizardContext(
+                        PreferredNextFolderFullPath: null,
+                        ImageDeletionWorkingFolder: imageDeletionWorkingFolder,
+                        DeletedImagePathsForRefocus: succeededStats.Count > 0
+                            ? succeededStats.Select(s => s.FullPath).ToList()
+                            : null,
+                        ImagePanePathsBeforeDeletion: deferredImagePanePathsSnapshot);
             }
             else
             {

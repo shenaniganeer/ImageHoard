@@ -568,10 +568,18 @@ public sealed partial class MainWindow
         EnterBrowserPaneMutation();
         try
         {
-            if (string.IsNullOrEmpty(parentPath) || !Directory.Exists(parentPath))
+            if (string.IsNullOrEmpty(parentPath))
                 return;
 
-            await NavigateToFolderAsync(parentPath, suppressViewportAfterRootPopulate: true).ConfigureAwait(true);
+            var preferred = refocusContext?.PreferredNextFolderFullPath;
+            var navigateTo = !string.IsNullOrEmpty(preferred) && Directory.Exists(preferred)
+                ? preferred
+                : parentPath;
+
+            if (!Directory.Exists(navigateTo))
+                return;
+
+            await NavigateToFolderAsync(navigateTo, suppressViewportAfterRootPopulate: true).ConfigureAwait(true);
             ClearImageSelectionAndPreviewCore();
             await CommitIncrementalFolderPreviewAndSelectionAsync(refocusContext).ConfigureAwait(true);
             PrepareBrowserTreeViewportAfterWizardMutation();
@@ -591,6 +599,23 @@ public sealed partial class MainWindow
         }
     }
 
+    private static BrowserTreeRefocusAfterWizardContext? MergeRefocusContextWithDeleteStats(
+        BrowserTreeRefocusAfterWizardContext? refocusContext,
+        IReadOnlyList<WizardPredeletedFileStat> succeeded,
+        IReadOnlyList<string>? imagePanePathsBeforeDeletion)
+    {
+        if (succeeded.Count == 0)
+            return refocusContext;
+
+        var deleted = succeeded.Select(s => s.FullPath).ToList();
+        var c = refocusContext;
+        return new BrowserTreeRefocusAfterWizardContext(
+            c?.PreferredNextFolderFullPath,
+            c?.ImageDeletionWorkingFolder,
+            c?.DeletedImagePathsForRefocus ?? deleted,
+            c?.ImagePanePathsBeforeDeletion ?? imagePanePathsBeforeDeletion);
+    }
+
     internal async Task RefreshBrowserPaneAfterWizardImageDeletesAsync(
         IReadOnlyList<WizardPredeletedFileStat> succeeded,
         BrowserTreeRefocusAfterWizardContext? refocusContext = null)
@@ -599,6 +624,12 @@ public sealed partial class MainWindow
         try
         {
             _ = Interlocked.Increment(ref _populateBrowserGeneration);
+
+            IReadOnlyList<string>? paneOrderBefore = null;
+            if (_browse2Coordinator != null && succeeded.Count > 0)
+                paneOrderBefore = _browse2Coordinator.Images.Items.Select(r => r.FullPath).ToList();
+
+            var refocusForCommit = MergeRefocusContextWithDeleteStats(refocusContext, succeeded, paneOrderBefore);
 
             var affectedParentDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (succeeded.Count > 0)
@@ -632,12 +663,12 @@ public sealed partial class MainWindow
                     await _browse2Coordinator.RefreshFolderListingAsync(d, CancellationToken.None).ConfigureAwait(true);
             }
 
-            await CommitIncrementalFolderPreviewAndSelectionAsync(refocusContext).ConfigureAwait(true);
+            await CommitIncrementalFolderPreviewAndSelectionAsync(refocusForCommit).ConfigureAwait(true);
             PrepareBrowserTreeViewportAfterWizardMutation();
             await ScheduleViewportAsync(
                     BrowserTreeViewportIntentResolver.ForWizardCommit(
                         BuildBrowserPaneState(),
-                        refocusContext))
+                        refocusForCommit))
                 .ConfigureAwait(true);
             UpdatePathOverlays();
             UpdateFullscreenMenuEnabled();
@@ -758,23 +789,7 @@ public sealed partial class MainWindow
             {
                 _ = _browse2Coordinator.Tree.RevealAndSelect(preferred);
                 _browse2Coordinator.Images.CurrentFolderPath = preferred;
-                await Task.Yield();
-                var first = _browse2Coordinator.Images.Items.FirstOrDefault();
-                if (first != null
-                    && BrowseNavigationModeFilter.Matches(_sortSession.GetState(first.FullPath), _browseNavigationMode))
-                {
-                    _browse2Coordinator.Images.SelectByPath(first.FullPath);
-                    EnqueuePreviewNavigation(first.FullPath, false);
-                    _session.LastSelectedImage = first.FullPath;
-                    return;
-                }
-            }
-
-            if (!string.IsNullOrEmpty(_currentFolderPath) && Directory.Exists(_currentFolderPath))
-            {
-                _ = _browse2Coordinator.Tree.RevealAndSelect(_currentFolderPath);
-                _browse2Coordinator.Images.CurrentFolderPath = _currentFolderPath;
-                await Task.Yield();
+                await _browse2Coordinator.Images.WaitForReloadAppliedAsync(CancellationToken.None).ConfigureAwait(true);
                 foreach (var it in _browse2Coordinator.Images.Items)
                 {
                     if (!BrowseNavigationModeFilter.Matches(_sortSession.GetState(it.FullPath), _browseNavigationMode))
@@ -782,6 +797,72 @@ public sealed partial class MainWindow
                     _browse2Coordinator.Images.SelectByPath(it.FullPath);
                     EnqueuePreviewNavigation(it.FullPath, false);
                     _session.LastSelectedImage = it.FullPath;
+                    await ApplyBrowserTreeLeadPreviewAsync().ConfigureAwait(true);
+                    return;
+                }
+            }
+
+            if (refocusContext is { } rcDel
+                && !string.IsNullOrEmpty(rcDel.ImageDeletionWorkingFolder)
+                && Directory.Exists(rcDel.ImageDeletionWorkingFolder)
+                && !string.IsNullOrEmpty(_currentFolderPath)
+                && IsSameOrDescendantDirectory(_currentFolderPath, rcDel.ImageDeletionWorkingFolder))
+            {
+                _ = _browse2Coordinator.Tree.RevealAndSelect(_currentFolderPath);
+                _browse2Coordinator.Images.CurrentFolderPath = _currentFolderPath;
+                await _browse2Coordinator.Images.WaitForReloadAppliedAsync(CancellationToken.None).ConfigureAwait(true);
+
+                var before = rcDel.ImagePanePathsBeforeDeletion;
+                var deleted = rcDel.DeletedImagePathsForRefocus;
+                string? pick = null;
+                if (before is { Count: > 0 } && deleted is { Count: > 0 })
+                    pick = BrowseContextImageSequence.PickNextDisplayedPathAfterRemovalsInOrderedList(before, deleted);
+
+                if (!string.IsNullOrEmpty(pick) && File.Exists(pick))
+                {
+                    var pickDir = Path.GetDirectoryName(pick);
+                    if (!string.IsNullOrEmpty(pickDir))
+                    {
+                        _ = _browse2Coordinator.Tree.RevealAndSelect(pickDir);
+                        _browse2Coordinator.Images.CurrentFolderPath = pickDir;
+                        await _browse2Coordinator.Images.WaitForReloadAppliedAsync(CancellationToken.None).ConfigureAwait(true);
+                    }
+
+                    _browse2Coordinator.Images.SelectByPath(pick);
+                    EnqueuePreviewNavigation(pick, false);
+                    _session.LastSelectedImage = pick;
+                    await ApplyBrowserTreeLeadPreviewAsync().ConfigureAwait(true);
+                    return;
+                }
+
+                foreach (var it in _browse2Coordinator.Images.Items)
+                {
+                    if (!BrowseNavigationModeFilter.Matches(_sortSession.GetState(it.FullPath), _browseNavigationMode))
+                        continue;
+                    _browse2Coordinator.Images.SelectByPath(it.FullPath);
+                    EnqueuePreviewNavigation(it.FullPath, false);
+                    _session.LastSelectedImage = it.FullPath;
+                    await ApplyBrowserTreeLeadPreviewAsync().ConfigureAwait(true);
+                    return;
+                }
+
+                ClearBrowserPaneImagePreviewStatePreserveTreeSelection();
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(_currentFolderPath) && Directory.Exists(_currentFolderPath))
+            {
+                _ = _browse2Coordinator.Tree.RevealAndSelect(_currentFolderPath);
+                _browse2Coordinator.Images.CurrentFolderPath = _currentFolderPath;
+                await _browse2Coordinator.Images.WaitForReloadAppliedAsync(CancellationToken.None).ConfigureAwait(true);
+                foreach (var it in _browse2Coordinator.Images.Items)
+                {
+                    if (!BrowseNavigationModeFilter.Matches(_sortSession.GetState(it.FullPath), _browseNavigationMode))
+                        continue;
+                    _browse2Coordinator.Images.SelectByPath(it.FullPath);
+                    EnqueuePreviewNavigation(it.FullPath, false);
+                    _session.LastSelectedImage = it.FullPath;
+                    await ApplyBrowserTreeLeadPreviewAsync().ConfigureAwait(true);
                     return;
                 }
             }
@@ -1850,14 +1931,6 @@ public sealed partial class MainWindow
                     return;
             }
         }
-
-        await ClearBrowserTreeSelectionAfterDeleteAsync().ConfigureAwait(true);
-    }
-
-    private async Task ClearBrowserTreeSelectionAfterDeleteAsync()
-    {
-        _browse2Coordinator?.Images.SelectByPath(null);
-        await ApplyBrowserTreeLeadPreviewAsync().ConfigureAwait(true);
     }
 
     internal IReadOnlyList<TreeViewNode> GetSelectedBrowserTreeNavNodes()

@@ -5,6 +5,7 @@ using ImageHoard.Core.Browse2;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -413,11 +414,11 @@ public sealed partial class FolderTreeView : UserControl
 
     private void ExpandToggleHost_Tapped(object sender, TappedRoutedEventArgs e)
     {
-        e.Handled = true;
         if (sender is not FrameworkElement { DataContext: FolderRow row })
             return;
         if (!row.HasChildren)
             return;
+        e.Handled = true;
         ToggleExpandRequested?.Invoke(this, row.Path);
         Focus(FocusState.Pointer);
     }
@@ -482,11 +483,21 @@ public sealed partial class FolderTreeView : UserControl
         if (rowRoot.FindName("IndentHost") is FrameworkElement indent)
             indent.Width = Math.Max(0, row.Depth) * IndentPerDepthPx;
 
+        // Keep expand column width for all rows so folder names align; hide only the glyph for leaves.
         if (rowRoot.FindName("ExpandToggleHost") is UIElement expandHost)
-            expandHost.Visibility = row.HasChildren ? Visibility.Visible : Visibility.Collapsed;
+        {
+            expandHost.Visibility = Visibility.Visible;
+            expandHost.IsHitTestVisible = row.HasChildren;
+            AutomationProperties.SetAccessibilityView(
+                expandHost,
+                row.HasChildren ? AccessibilityView.Control : AccessibilityView.Raw);
+        }
 
         if (rowRoot.FindName("ChevronIcon") is FontIcon chevron)
+        {
+            chevron.Visibility = row.HasChildren ? Visibility.Visible : Visibility.Collapsed;
             chevron.Glyph = row.IsExpanded ? "\uE70D" : "\uE76C";
+        }
 
         if (rowRoot.FindName("SizeText") is UIElement sizeEl)
             sizeEl.Visibility = _folderSizeColumnVisibility;

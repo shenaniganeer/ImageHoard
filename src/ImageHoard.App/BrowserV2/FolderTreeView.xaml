@@ -32,7 +32,7 @@
                         <MenuFlyoutItem Tag="explorer" Text="Open in File Explorer" Click="CtxMenuItem_Click" />
                     </MenuFlyout>
                 </Grid.ContextFlyout>
-                <Grid Padding="8,0,8,0">
+                <Grid Padding="0,0,8,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />

@@ -7,7 +7,6 @@ namespace ImageHoard.App.BrowserV2;
 /// <summary>Swappable browse chrome: virtualized folder tree + image list (Browse2).</summary>
 public sealed partial class BrowserV2Host : UserControl
 {
-    private bool _suppressBrowse2SubtreeCheck;
     private bool _folderImageSplitDrag;
     private double _folderImageSplitPressX;
     private double _folderImageInitFolderW;
@@ -25,9 +24,6 @@ public sealed partial class BrowserV2Host : UserControl
 
     /// <summary>Invoked on splitter release with normalized star weights (sum ≈ 1).</summary>
     public event Action<double, double>? FolderImagePaneSharesChanged;
-
-    /// <summary>Fired when the Browse2 image-pane subtree checkbox changes (not during programmatic <see cref="SetImagePaneIncludeSubfoldersCheck"/>).</summary>
-    public event RoutedEventHandler? ImagePaneIncludeSubfoldersChanged;
 
     /// <summary>Forwarded from the file list header row (Name natural sort).</summary>
     public event RoutedEventHandler? FileListHeaderSortNameNatural;
@@ -50,21 +46,6 @@ public sealed partial class BrowserV2Host : UserControl
     /// <summary>Forwarded from the folder list header row (Date modified).</summary>
     public event RoutedEventHandler? FolderListHeaderSortDate;
 
-    public void SetImagePaneIncludeSubfoldersCheck(bool includeSubtree)
-    {
-        _suppressBrowse2SubtreeCheck = true;
-        try
-        {
-            Browse2ImagePaneSubtreeCheck.IsChecked = includeSubtree;
-        }
-        finally
-        {
-            _suppressBrowse2SubtreeCheck = false;
-        }
-    }
-
-    public bool GetImagePaneIncludeSubfoldersCheck() => Browse2ImagePaneSubtreeCheck.IsChecked == true;
-
     public void SetFolderHeaderRowVisible(bool visible) =>
         Browse2FolderListHeaderHost.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
 
@@ -78,13 +59,6 @@ public sealed partial class BrowserV2Host : UserControl
         var sum = f + i;
         Browse2FolderColumn.Width = new GridLength(f / sum, GridUnitType.Star);
         Browse2ImageColumn.Width = new GridLength(i / sum, GridUnitType.Star);
-    }
-
-    private void Browse2ImagePaneSubtreeCheck_IsCheckedChanged(object sender, RoutedEventArgs e)
-    {
-        if (_suppressBrowse2SubtreeCheck)
-            return;
-        ImagePaneIncludeSubfoldersChanged?.Invoke(sender, e);
     }
 
     private void Browse2FileHeaderSort_NameNatural_Click(object sender, RoutedEventArgs e) =>

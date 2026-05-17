@@ -237,7 +237,6 @@
         <Grid Grid.Column="2" MinHeight="80">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <ContentControl
@@ -247,16 +246,9 @@
                 HorizontalContentAlignment="Stretch"
                 ContentTemplate="{StaticResource BrowserFileListHeaderTemplate}"
                 Visibility="Collapsed" />
-            <CheckBox
-                x:Name="Browse2ImagePaneSubtreeCheck"
-                Grid.Row="1"
-                Margin="0,0,0,4"
-                Content="Include subfolders in image list"
-                Checked="Browse2ImagePaneSubtreeCheck_IsCheckedChanged"
-                Unchecked="Browse2ImagePaneSubtreeCheck_IsCheckedChanged" />
             <local:ImagePaneView
                 x:Name="BrowseImagePane"
-                Grid.Row="2"
+                Grid.Row="1"
                 MinHeight="40" />
         </Grid>
     </Grid>

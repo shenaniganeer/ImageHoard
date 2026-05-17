@@ -77,8 +77,7 @@ internal sealed class CrossPaneCoordinator : IDisposable
         tree.IndexRoot = Workspace.IndexRoot;
         tree.ToggleExpandRequested += OnFolderTreeToggleExpand;
         tree.SelectedFolderPathChanged += OnFolderTreeSelectedPathChanged;
-        if (Tree.Model.Rows.Count > 0)
-            tree.ResetRows(Tree.Model.Rows, preserveViewport: false);
+        tree.ResetRows(Tree.Model.Rows, preserveViewport: false);
         tree.SelectedFolderPath = Tree.Model.Selection.SelectedFolderPath;
         if (_pendingColdBootViewportRestore && TreeStore?.ViewportAnchor is { AnchorFolderPath: { Length: > 0 } ap } va)
         {

@@ -23,7 +23,6 @@ public sealed partial class MainWindow
 
     private EventHandler<string?>? _browse2CoordinatorImageSelHandler;
     private EventHandler<string?>? _browse2CoordinatorFolderSelHandler;
-    private RoutedEventHandler? _browse2ImagePaneSubtreeHandler;
 
     private void OnBrowse2FolderImagePaneSharesChanged(double folderShare, double imageShare)
     {
@@ -160,18 +159,17 @@ public sealed partial class MainWindow
             return;
 
         UnhookBrowse2CoordinatorSelectionHandlers();
-        UnhookBrowse2ImagePaneSubtreeCheck();
         _browse2Coordinator.DetachFolderTreeView();
         BrowserV2Host.ImagePane.Controller = null;
 
-        _browse2CoordinatorImageSelHandler ??= (_, _) => SyncBrowse2SyntheticPrimaryNavNode();
+        _browse2CoordinatorImageSelHandler ??= (_, _) =>
+        {
+            SyncBrowse2SyntheticPrimaryNavNode();
+            _ = ApplyBrowserTreeLeadPreviewAsync();
+        };
         _browse2CoordinatorFolderSelHandler ??= (_, _) => SyncBrowse2SyntheticPrimaryNavNode();
         _browse2Coordinator.SelectedImagePathChanged += _browse2CoordinatorImageSelHandler;
         _browse2Coordinator.SelectedFolderPathChanged += _browse2CoordinatorFolderSelHandler;
-
-        _browse2ImagePaneSubtreeHandler ??= (_, _) => OnBrowse2ImagePaneIncludeSubfoldersChanged();
-        BrowserV2Host.SetImagePaneIncludeSubfoldersCheck(_layoutState.Browse2ImagePaneIncludeSubfolders);
-        BrowserV2Host.ImagePaneIncludeSubfoldersChanged += _browse2ImagePaneSubtreeHandler;
 
         BrowserV2Host.FolderImagePaneSharesChanged += OnBrowse2FolderImagePaneSharesChanged;
 
@@ -184,7 +182,6 @@ public sealed partial class MainWindow
     private void Browse2DetachUiChrome()
     {
         UnhookBrowse2CoordinatorSelectionHandlers();
-        UnhookBrowse2ImagePaneSubtreeCheck();
         BrowserV2Host.FolderImagePaneSharesChanged -= OnBrowse2FolderImagePaneSharesChanged;
         TeardownBrowse2ListHeaderHosts();
         _browse2Coordinator?.DetachFolderTreeView();
@@ -201,27 +198,11 @@ public sealed partial class MainWindow
             _browse2Coordinator.SelectedFolderPathChanged -= _browse2CoordinatorFolderSelHandler;
     }
 
-    private void UnhookBrowse2ImagePaneSubtreeCheck()
-    {
-        if (_browse2ImagePaneSubtreeHandler is not null)
-            BrowserV2Host.ImagePaneIncludeSubfoldersChanged -= _browse2ImagePaneSubtreeHandler;
-    }
-
-    private void OnBrowse2ImagePaneIncludeSubfoldersChanged()
-    {
-        if (_browse2Coordinator is null)
-            return;
-        _layoutState.Browse2ImagePaneIncludeSubfolders = BrowserV2Host.GetImagePaneIncludeSubfoldersCheck();
-        _browse2Coordinator.Images.IncludeSubfolders = _layoutState.Browse2ImagePaneIncludeSubfolders;
-        SchedulePersistLayoutDebounced();
-    }
-
     private void ToggleBrowse2ImagePaneSubtreeRecursionFromInput()
     {
         _layoutState.Browse2ImagePaneIncludeSubfolders = !_layoutState.Browse2ImagePaneIncludeSubfolders;
         if (_browse2Coordinator is not null)
             _browse2Coordinator.Images.IncludeSubfolders = _layoutState.Browse2ImagePaneIncludeSubfolders;
-        BrowserV2Host.SetImagePaneIncludeSubfoldersCheck(_layoutState.Browse2ImagePaneIncludeSubfolders);
         SchedulePersistLayoutDebounced();
     }
 

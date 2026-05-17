@@ -443,15 +443,19 @@ public sealed partial class FolderTreeView : UserControl
     {
         if (args.Element is not FrameworkElement fe)
             return;
-        if (fe.DataContext is not FolderRow row)
+        var ix = args.Index;
+        if (ix < 0 || ix >= _rows.Count)
             return;
+        var row = _rows[ix];
+        fe.DataContext = row;
         ApplyRowLayoutAndAutomation(fe, row);
         ApplySelectionChrome(fe, row.Path);
     }
 
     private void TreeRepeater_ElementClearing(ItemsRepeater sender, ItemsRepeaterElementClearingEventArgs args)
     {
-        // no-op; row may be recycled
+        if (args.Element is FrameworkElement fe)
+            fe.DataContext = null;
     }
 
     private void ApplyRowLayoutAndAutomation(FrameworkElement rowRoot, FolderRow row)
@@ -502,7 +506,16 @@ public sealed partial class FolderTreeView : UserControl
         for (var i = first; i <= last; i++)
         {
             var el = TreeRepeater.TryGetElement(i);
-            if (el is FrameworkElement fe && fe.DataContext is FolderRow row)
+            if (el is not FrameworkElement fe)
+                continue;
+            var row = fe.DataContext as FolderRow;
+            if (row is null && i >= 0 && i < _rows.Count)
+            {
+                row = _rows[i];
+                fe.DataContext = row;
+            }
+
+            if (row is not null)
             {
                 ApplyRowLayoutAndAutomation(fe, row);
                 ApplySelectionChrome(fe, row.Path);

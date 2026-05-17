@@ -478,7 +478,7 @@ public sealed partial class MainWindow
 
         _ = Interlocked.Increment(ref _populateBrowserGeneration);
         await SeedFavoriteFilesystemMapsIntoAggregateCachesAsync(Volatile.Read(ref _populateBrowserGeneration))
-            .ConfigureAwait(false);
+            .ConfigureAwait(true);
         _currentFolderPath = path;
         _session.LastBrowseFolder = path;
         _browseNavAnchorPath = null;

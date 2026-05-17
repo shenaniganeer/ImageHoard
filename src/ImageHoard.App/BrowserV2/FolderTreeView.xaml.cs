@@ -507,6 +507,9 @@ public sealed partial class FolderTreeView : UserControl
         var sel = SelectedFolderPath;
         var selected = !string.IsNullOrEmpty(sel) &&
                        string.Equals(path, sel, StringComparison.OrdinalIgnoreCase);
+        if (rowRoot.FindName("SelectionIndicator") is UIElement indicator)
+            indicator.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
+
         if (selected)
             panel.Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"];
         else

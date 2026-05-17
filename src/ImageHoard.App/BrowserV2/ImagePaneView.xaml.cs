@@ -43,6 +43,7 @@ public sealed partial class ImagePaneView : UserControl
 
         ImageList.ItemsSource = _controller.Items;
         _controller.SelectedImagePathChanged += Controller_SelectedImagePathChanged;
+        _controller.ImagePaneItemsRebuiltKeepingSelection += Controller_ImagePaneItemsRebuiltKeepingSelection;
         SyncListSelectionFromController();
     }
 
@@ -51,11 +52,15 @@ public sealed partial class ImagePaneView : UserControl
         if (_controller is null)
             return;
         _controller.SelectedImagePathChanged -= Controller_SelectedImagePathChanged;
+        _controller.ImagePaneItemsRebuiltKeepingSelection -= Controller_ImagePaneItemsRebuiltKeepingSelection;
         ImageList.ItemsSource = null;
         _controller = null;
     }
 
     private void Controller_SelectedImagePathChanged(object? sender, string? e) =>
+        SyncListSelectionFromController();
+
+    private void Controller_ImagePaneItemsRebuiltKeepingSelection(object? sender, EventArgs e) =>
         SyncListSelectionFromController();
 
     private void SyncListSelectionFromController()

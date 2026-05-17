@@ -2225,9 +2225,23 @@ public sealed partial class MainWindow
     private void RefreshSortFlagDisplayInList(string fullPath)
     {
         _ = fullPath;
+        if (_browseNavigationMode == BrowseNavigationMode.AllImages)
+        {
+            SyncBrowse2SyntheticPrimaryNavNode();
+            return;
+        }
+
         _browse2Coordinator?.Images.RequestReload();
     }
 
-    private void RefreshAllSortFlagDisplaysInList() =>
+    private void RefreshAllSortFlagDisplaysInList()
+    {
+        if (_browseNavigationMode == BrowseNavigationMode.AllImages)
+        {
+            SyncBrowse2SyntheticPrimaryNavNode();
+            return;
+        }
+
         _browse2Coordinator?.Images.RequestReload();
+    }
 }

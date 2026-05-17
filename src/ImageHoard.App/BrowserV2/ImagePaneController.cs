@@ -122,6 +122,12 @@ public sealed class ImagePaneController : IDisposable
 
     public event EventHandler<string?>? SelectedImagePathChanged;
 
+    /// <summary>
+    /// Fired after <see cref="Items"/> was rebuilt while <see cref="SelectedImagePath"/> stayed the same string,
+    /// so the list view can re-bind selection to a new <see cref="ImagePaneRow"/> instance.
+    /// </summary>
+    public event EventHandler? ImagePaneItemsRebuiltKeepingSelection;
+
     public void SelectByPath(string? fullPath)
     {
         var n = string.IsNullOrEmpty(fullPath) ? null : FavoriteIndexRoots.NormalizeFavoritePath(fullPath);
@@ -250,8 +256,13 @@ public sealed class ImagePaneController : IDisposable
                 }
             }
 
-            SelectedImagePath = match?.FullPath;
-            SelectedImagePathChanged?.Invoke(this, SelectedImagePath);
+            var nextSel = match?.FullPath;
+            var pathChanged = !string.Equals(capturedSelection, nextSel, StringComparison.OrdinalIgnoreCase);
+            SelectedImagePath = nextSel;
+            if (pathChanged)
+                SelectedImagePathChanged?.Invoke(this, SelectedImagePath);
+            else if (!string.IsNullOrEmpty(nextSel))
+                ImagePaneItemsRebuiltKeepingSelection?.Invoke(this, EventArgs.Empty);
 
             if (captureGeneration != Volatile.Read(ref _reloadGeneration))
                 _dispatcher.TryEnqueue(DispatcherQueuePriority.Low, StartReloadForCurrentGeneration);

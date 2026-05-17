@@ -1,176 +1,113 @@
 <UserControl
-
     x:Class="ImageHoard.App.BrowserV2.ImagePaneView"
-
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-
     xmlns:automation="using:Microsoft.UI.Xaml.Automation"
-
+    xmlns:controls="using:Microsoft.UI.Xaml.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-
     xmlns:local="using:ImageHoard.App.BrowserV2"
-
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-
+    x:Name="Root"
+    IsTabStop="True"
+    UseSystemFocusVisuals="False"
+    KeyDown="Root_KeyDown"
     mc:Ignorable="d"
-
     automation:AutomationProperties.Name="Image list">
-
     <UserControl.Resources>
-
         <DataTemplate x:Key="ImageRowTemplate" x:DataType="local:ImagePaneRow">
-
             <Grid
-
-                Padding="8,4"
-
+                Height="36"
+                MinHeight="36"
+                MaxHeight="36"
+                Padding="8,0"
                 VerticalAlignment="Center"
-
                 ColumnSpacing="10"
-
+                Background="Transparent"
                 CanDrag="True"
-
                 DragStarting="ImageRowGrid_DragStarting"
-
                 PointerPressed="ImageRowGrid_PointerPressed"
-
                 RightTapped="ImageRowGrid_RightTapped">
-
                 <Grid.ColumnDefinitions>
-
                     <ColumnDefinition Width="*" MinWidth="120" />
-
                     <ColumnDefinition Width="Auto" />
-
                     <ColumnDefinition Width="Auto" />
-
                 </Grid.ColumnDefinitions>
-
                 <StackPanel
-
                     Grid.Column="0"
-
+                    Margin="6,0,0,0"
                     Orientation="Horizontal"
-
                     Spacing="6"
-
                     VerticalAlignment="Center">
-
                     <FontIcon
-
                         FontFamily="{ThemeResource SymbolThemeFontFamily}"
-
                         FontSize="12"
-
                         VerticalAlignment="Center"
-
                         Glyph="&#xE76C;"
-
                         Foreground="#FF4CAF50"
-
                         Visibility="{x:Bind SortFlagKeepIconVisibility, Mode=OneWay}" />
-
                     <FontIcon
-
                         FontFamily="{ThemeResource SymbolThemeFontFamily}"
-
                         FontSize="12"
-
                         VerticalAlignment="Center"
-
                         Glyph="&#xE711;"
-
                         Foreground="#FFE81123"
-
                         Visibility="{x:Bind SortFlagDeleteIconVisibility, Mode=OneWay}" />
-
                     <TextBlock
-
                         VerticalAlignment="Center"
-
                         Text="{x:Bind DisplayName, Mode=OneWay}"
-
                         TextTrimming="CharacterEllipsis" />
-
                 </StackPanel>
-
                 <TextBlock
-
                     Grid.Column="1"
-
                     MinWidth="56"
-
                     VerticalAlignment="Center"
-
                     Text="{x:Bind SizeDisplay, Mode=OneWay}"
-
                     TextAlignment="Right"
-
                     TextTrimming="CharacterEllipsis"
-
                     Visibility="{x:Bind SizeColumnVisibility, Mode=OneWay}" />
-
                 <TextBlock
-
                     Grid.Column="2"
-
                     MinWidth="120"
-
                     VerticalAlignment="Center"
-
                     Text="{x:Bind DateDisplay, Mode=OneWay}"
-
                     TextTrimming="CharacterEllipsis"
-
                     Visibility="{x:Bind DateColumnVisibility, Mode=OneWay}" />
-
+                <Border
+                    x:Name="SelectionIndicator"
+                    Grid.ColumnSpan="3"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Stretch"
+                    Width="3"
+                    IsHitTestVisible="False"
+                    Visibility="Collapsed"
+                    Background="{ThemeResource AccentFillColorDefaultBrush}"
+                    Canvas.ZIndex="1" />
             </Grid>
-
         </DataTemplate>
-
     </UserControl.Resources>
-
     <Border
-
         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-
         BorderThickness="1"
-
         CornerRadius="4">
-
-        <ListView
-
-            x:Name="ImageList"
-
-            ItemTemplate="{StaticResource ImageRowTemplate}"
-
-            IsItemClickEnabled="False"
-
-            AllowDrop="True"
-
+        <ScrollViewer
+            x:Name="ImageScrollViewer"
+            HorizontalScrollMode="Disabled"
+            VerticalScrollBarVisibility="Auto"
+            HorizontalScrollBarVisibility="Disabled"
+            IsTabStop="False"
+            BringIntoViewOnFocusChange="False"
             DragOver="ImagePaneRoot_DragOver"
-
             Drop="ImagePaneRoot_Drop"
-
-            SelectionChanged="ImageList_SelectionChanged"
-
-            SelectionMode="Extended">
-
-            <ListView.ItemsPanel>
-
-                <ItemsPanelTemplate>
-
-                    <VirtualizingStackPanel />
-
-                </ItemsPanelTemplate>
-
-            </ListView.ItemsPanel>
-
-        </ListView>
-
+            ViewChanged="ImageScrollViewer_ViewChanged">
+            <controls:ItemsRepeater
+                x:Name="ImageRepeater"
+                ItemTemplate="{StaticResource ImageRowTemplate}"
+                ElementPrepared="ImageRepeater_ElementPrepared"
+                ElementClearing="ImageRepeater_ElementClearing">
+                <controls:ItemsRepeater.Layout>
+                    <controls:StackLayout Orientation="Vertical" Spacing="0" />
+                </controls:ItemsRepeater.Layout>
+            </controls:ItemsRepeater>
+        </ScrollViewer>
     </Border>
-
 </UserControl>
-

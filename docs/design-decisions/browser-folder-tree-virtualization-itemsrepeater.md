@@ -10,7 +10,7 @@ WinUI `TreeView` does not virtualize like `ListView` + `VirtualizingStackPanel`.
 
 ## Accepted strategy (locked)
 
-**Presenter:** `Microsoft.UI.Xaml.Controls.ItemsRepeater` bound to an `ObservableCollection` of **flat line** view models (Browser V2: **folder rows only** in the tree; images live in the sibling **`ImagePaneView`** — see [browser-tree-rewrite-architecture.md](./browser-tree-rewrite-architecture.md)).
+**Presenter:** `Microsoft.UI.Xaml.Controls.ItemsRepeater` bound to an `ObservableCollection` of **flat line** view models (Browser V2: **folder rows only** in the tree; **image rows** use the same **`ItemsRepeater` + `ScrollViewer`** pattern in **`ImagePaneView`** — see [browser-tree-rewrite-architecture.md](./browser-tree-rewrite-architecture.md)).
 
 **Model:** A single **visible hierarchy projection**: each line carries depth, path, expand/collapse state, `HasChildren` / `HasUnrealizedChildren` equivalents, and sort/metrics fields. Expand/collapse **splices** the flat list only (insert/remove logical lines for revealed subtrees) so the repeater recycles containers for viewport rows.
 
@@ -49,7 +49,7 @@ Migration off `TreeViewNode` must preserve, at minimum:
 |------|--------|
 | 2026-05-13 | Browser tree virtualization direction: ItemsRepeater + flat projection (this ADR); `TreeView` remains until phased migration. |
 | 2026-05-16 | Record Browser V2 implementation stance; folders-only tree + image pane; link rewrite + viewport ADRs; supersede path-to-node for new paths. |
-| 2026-05-16 | Browse2 folder rows: six columns (indent, chevron, name, size, images, date) with View-menu column visibility; pinned headers collapsed in V2 — headers live in `BrowserV2Host`; draggable folder/image splitter persisted as `browse2PaneColumns`. |
+| 2026-05-17 | Browse2 **`ImagePaneView`**: **`ItemsRepeater`** + fixed row height; **`ScrollImagePathIntoView`** matches folder indexed pin + conditional Low restore; **`ScrollViewerViewChanged`** for layout persistence. |
 
 ## Implementation notes (Browser V2)
 

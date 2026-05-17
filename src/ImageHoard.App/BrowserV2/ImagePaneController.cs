@@ -153,7 +153,7 @@ public sealed class ImagePaneController : IDisposable
 
     /// <summary>
     /// Fired after <see cref="Items"/> was rebuilt while <see cref="SelectedImagePath"/> stayed the same string,
-    /// so the list view can re-bind selection to a new <see cref="ImagePaneRow"/> instance.
+    /// so the image pane can re-bind selection chrome after a new <see cref="ImagePaneRow"/> instance.
     /// </summary>
     public event EventHandler? ImagePaneItemsRebuiltKeepingSelection;
 

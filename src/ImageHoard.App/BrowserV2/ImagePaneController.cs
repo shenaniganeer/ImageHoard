@@ -123,6 +123,21 @@ public sealed class ImagePaneController : IDisposable
     public void SetSortFlagStateSource(Func<string, SortFlagState> getState) =>
         _getSortFlagState = getState ?? (_ => SortFlagState.Unset);
 
+    /// <summary>
+    /// Refreshes sort-flag prefix glyphs on existing rows without a full reload (e.g. All-images navigation).
+    /// Call from the UI thread.
+    /// </summary>
+    public void RefreshSortFlagPresentation(string? onlyPathOrNullForAll)
+    {
+        foreach (var row in Items)
+        {
+            if (onlyPathOrNullForAll is { } one
+                && !string.Equals(row.FullPath, one, StringComparison.OrdinalIgnoreCase))
+                continue;
+            row.ApplySortFlag(_getSortFlagState(row.FullPath));
+        }
+    }
+
     public string? SelectedImagePath { get; private set; }
 
     public event EventHandler<string?>? SelectedImagePathChanged;
@@ -381,7 +396,8 @@ public sealed class ImagePaneController : IDisposable
                     src?.LengthBytes,
                     src?.LastWriteTimeUtc,
                     sizeVis,
-                    dateVis));
+                    dateVis,
+                    getFlag(p)));
             }
 
             return rows;
@@ -409,7 +425,8 @@ public sealed class ImagePaneController : IDisposable
                 fe?.LengthBytes,
                 fe?.LastWriteTimeUtc,
                 sizeVis,
-                dateVis));
+                dateVis,
+                getFlag(p)));
         }
 
         return outRows;

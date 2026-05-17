@@ -2366,10 +2366,10 @@ public sealed partial class MainWindow
 
     private void RefreshSortFlagDisplayInList(string fullPath)
     {
-        _ = fullPath;
         if (_browseNavigationMode == BrowseNavigationMode.AllImages)
         {
             SyncBrowse2SyntheticPrimaryNavNode();
+            _browse2Coordinator?.Images.RefreshSortFlagPresentation(fullPath);
             return;
         }
 
@@ -2381,6 +2381,7 @@ public sealed partial class MainWindow
         if (_browseNavigationMode == BrowseNavigationMode.AllImages)
         {
             SyncBrowse2SyntheticPrimaryNavNode();
+            _browse2Coordinator?.Images.RefreshSortFlagPresentation(onlyPathOrNullForAll: null);
             return;
         }
 

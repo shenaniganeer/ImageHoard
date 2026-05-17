@@ -42,15 +42,53 @@
 
                 </Grid.ColumnDefinitions>
 
-                <TextBlock
+                <StackPanel
 
                     Grid.Column="0"
 
-                    VerticalAlignment="Center"
+                    Orientation="Horizontal"
 
-                    Text="{x:Bind DisplayName, Mode=OneWay}"
+                    Spacing="6"
 
-                    TextTrimming="CharacterEllipsis" />
+                    VerticalAlignment="Center">
+
+                    <FontIcon
+
+                        FontFamily="{ThemeResource SymbolThemeFontFamily}"
+
+                        FontSize="12"
+
+                        VerticalAlignment="Center"
+
+                        Glyph="&#xE76C;"
+
+                        Foreground="#FF4CAF50"
+
+                        Visibility="{x:Bind SortFlagKeepIconVisibility, Mode=OneWay}" />
+
+                    <FontIcon
+
+                        FontFamily="{ThemeResource SymbolThemeFontFamily}"
+
+                        FontSize="12"
+
+                        VerticalAlignment="Center"
+
+                        Glyph="&#xE711;"
+
+                        Foreground="#FFE81123"
+
+                        Visibility="{x:Bind SortFlagDeleteIconVisibility, Mode=OneWay}" />
+
+                    <TextBlock
+
+                        VerticalAlignment="Center"
+
+                        Text="{x:Bind DisplayName, Mode=OneWay}"
+
+                        TextTrimming="CharacterEllipsis" />
+
+                </StackPanel>
 
                 <TextBlock
 

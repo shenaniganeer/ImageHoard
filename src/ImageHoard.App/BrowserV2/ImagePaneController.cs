@@ -470,7 +470,7 @@ public sealed class ImagePaneController : IDisposable
 
             var pathSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var it in Items)
-                pathSet.Add(it.FullPath);
+                pathSet.Add(FavoriteIndexRoots.NormalizeFavoritePath(it.FullPath));
 
             var newOrdered = new List<string>();
             foreach (var p in capturedPaths)
@@ -554,15 +554,16 @@ public sealed class ImagePaneController : IDisposable
             var rows = new List<ImagePaneRow>(paths.Count);
             foreach (var p in paths)
             {
-                byImmediate.TryGetValue(FavoriteIndexRoots.NormalizeFavoritePath(p), out var src);
+                var pn = FavoriteIndexRoots.NormalizeFavoritePath(p);
+                byImmediate.TryGetValue(pn, out var src);
                 rows.Add(new ImagePaneRow(
-                    p,
-                    Path.GetFileName(p),
+                    pn,
+                    Path.GetFileName(pn),
                     src?.LengthBytes,
                     src?.LastWriteTimeUtc,
                     sizeVis,
                     dateVis,
-                    getFlag(p)));
+                    getFlag(pn)));
             }
 
             return rows;
@@ -585,13 +586,13 @@ public sealed class ImagePaneController : IDisposable
             var n = FavoriteIndexRoots.NormalizeFavoritePath(p);
             byPath.TryGetValue(n, out var fe);
             outRows.Add(new ImagePaneRow(
-                p,
-                Path.GetFileName(p),
+                n,
+                Path.GetFileName(n),
                 fe?.LengthBytes,
                 fe?.LastWriteTimeUtc,
                 sizeVis,
                 dateVis,
-                getFlag(p)));
+                getFlag(n)));
         }
 
         return outRows;

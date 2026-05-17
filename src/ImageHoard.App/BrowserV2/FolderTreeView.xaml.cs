@@ -24,6 +24,8 @@ public sealed partial class FolderTreeView : UserControl
 {
     public const double DefaultRowHeight = 32;
 
+    private static readonly SolidColorBrush RowIdleHitTestBrush = new(Microsoft.UI.Colors.Transparent);
+
     private readonly ObservableCollection<FolderRow> _rows = new();
 
     private readonly HashSet<string> _selectedFolderPaths = new(StringComparer.OrdinalIgnoreCase);
@@ -610,7 +612,7 @@ public sealed partial class FolderTreeView : UserControl
         else if (multi)
             panel.Background = (Brush)Application.Current.Resources["SubtleFillColorTertiaryBrush"];
         else
-            panel.ClearValue(Panel.BackgroundProperty);
+            panel.Background = RowIdleHitTestBrush;
     }
 
     private void RefreshRealizedRowChrome()

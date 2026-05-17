@@ -27,6 +27,8 @@ public sealed partial class ImagePaneView : UserControl
     /// <summary>Logical row height (must match item template <c>Height</c>).</summary>
     public const double ImageRowHeight = 36;
 
+    private static readonly SolidColorBrush RowIdleHitTestBrush = new(Microsoft.UI.Colors.Transparent);
+
     private ImagePaneController? _controller;
     private int _rangeAnchorIndex = -1;
     private (int anchorIndex, double offsetInRowPx)? _pendingImageScrollRestore;
@@ -133,7 +135,8 @@ public sealed partial class ImagePaneView : UserControl
             return -1;
         for (var i = 0; i < _controller.Items.Count; i++)
         {
-            if (string.Equals(_controller.Items[i].FullPath, n, StringComparison.OrdinalIgnoreCase))
+            var rowNorm = FavoriteIndexRoots.NormalizeFavoritePath(_controller.Items[i].FullPath);
+            if (string.Equals(rowNorm, n, StringComparison.OrdinalIgnoreCase))
                 return i;
         }
 
@@ -227,6 +230,7 @@ public sealed partial class ImagePaneView : UserControl
             _controller.NotifySelectedFromView(row.FullPath);
             _rangeAnchorIndex = FindRowIndex(row.FullPath);
             Focus(FocusState.Pointer);
+            e.Handled = true;
             return;
         }
 
@@ -235,6 +239,7 @@ public sealed partial class ImagePaneView : UserControl
             ToggleImagePathInSelection(row.FullPath);
             _rangeAnchorIndex = FindRowIndex(row.FullPath);
             Focus(FocusState.Pointer);
+            e.Handled = true;
             return;
         }
 
@@ -253,12 +258,14 @@ public sealed partial class ImagePaneView : UserControl
             }
 
             Focus(FocusState.Pointer);
+            e.Handled = true;
             return;
         }
 
         ToggleImagePathInSelection(row.FullPath);
         _rangeAnchorIndex = FindRowIndex(row.FullPath);
         Focus(FocusState.Pointer);
+        e.Handled = true;
     }
 
     private void ToggleImagePathInSelection(string fullPath)
@@ -347,7 +354,7 @@ public sealed partial class ImagePaneView : UserControl
         else if (multi)
             panel.Background = (Brush)Application.Current.Resources["SubtleFillColorTertiaryBrush"];
         else
-            panel.ClearValue(Panel.BackgroundProperty);
+            panel.Background = RowIdleHitTestBrush;
     }
 
     private void RefreshRealizedRowChrome()

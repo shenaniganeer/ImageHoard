@@ -24,14 +24,6 @@
                 Tapped="FolderRow_Tapped"
                 DoubleTapped="FolderRow_DoubleTapped"
                 RightTapped="FolderRow_RightTapped">
-                <Grid.ContextFlyout>
-                    <MenuFlyout Opening="FolderRowContextFlyout_Opening">
-                        <MenuFlyoutItem Tag="expand" Text="Expand" Click="CtxMenuItem_Click" />
-                        <MenuFlyoutItem Tag="collapse" Text="Collapse" Click="CtxMenuItem_Click" />
-                        <MenuFlyoutSeparator />
-                        <MenuFlyoutItem Tag="explorer" Text="Open in File Explorer" Click="CtxMenuItem_Click" />
-                    </MenuFlyout>
-                </Grid.ContextFlyout>
                 <Grid Padding="0,0,8,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />

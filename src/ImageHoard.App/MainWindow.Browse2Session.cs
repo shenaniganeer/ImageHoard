@@ -212,7 +212,7 @@ public sealed partial class MainWindow
         SchedulePersistLayoutDebounced();
     }
 
-    internal async Task Browse2RefreshVisibleFoldersAsync()
+    internal async Task Browse2RefreshVisibleFoldersAsync(string? ensureFolderListingPath = null)
     {
         if (_browse2Coordinator is null || _browse2LifetimeCts is null)
             return;
@@ -224,6 +224,9 @@ public sealed partial class MainWindow
             set.Add(_currentFolderPath);
         foreach (var p in _browse2Coordinator.Tree.Model.Expansion.ExpandedPaths)
             set.Add(p);
+
+        if (!string.IsNullOrEmpty(ensureFolderListingPath))
+            set.Add(ensureFolderListingPath);
 
         foreach (var p in set.OrderBy(x => x.Length))
         {

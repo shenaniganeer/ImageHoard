@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using ImageHoard.App;
 using ImageHoard.Core.Browse;
 using ImageHoard.Core.Browse2;
 using Microsoft.UI.Dispatching;
@@ -23,7 +22,6 @@ public sealed partial class FolderTreeView : UserControl
 
     private readonly ObservableCollection<FolderRow> _rows = new();
 
-    private string? _contextMenuPath;
     private (int anchorIndex, double offsetInRowPx)? _pendingScrollRestore;
     private bool _suspendSelectedPathCallback;
     private Visibility _folderSizeColumnVisibility = Visibility.Visible;
@@ -65,7 +63,8 @@ public sealed partial class FolderTreeView : UserControl
 
     public event TypedEventHandler<FolderTreeView, string>? ToggleExpandRequested;
 
-    public event TypedEventHandler<FolderTreeView, string>? OpenInExplorerRequested;
+    /// <summary>User right-clicked a folder row after selection was applied; host shows the browser pane context menu.</summary>
+    public event TypedEventHandler<FolderTreeView, BrowserPaneContextMenuRequestedEventArgs>? ContextMenuRequested;
 
     /// <summary>User double-clicked a folder row to open it as the browse root (same as Navigate to folder).</summary>
     public event TypedEventHandler<FolderTreeView, string>? NavigateIntoFolderRequested;
@@ -410,9 +409,10 @@ public sealed partial class FolderTreeView : UserControl
 
     private void FolderRow_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: FolderRow row })
+        if (sender is not FrameworkElement { DataContext: FolderRow row } anchor)
             return;
         SetSelectedPathFromUi(row.Path, scrollIntoView: false);
+        ContextMenuRequested?.Invoke(this, new BrowserPaneContextMenuRequestedEventArgs(anchor, e));
     }
 
     private void ExpandToggleHost_Tapped(object sender, TappedRoutedEventArgs e)
@@ -424,42 +424,6 @@ public sealed partial class FolderTreeView : UserControl
         e.Handled = true;
         ToggleExpandRequested?.Invoke(this, row.Path);
         Focus(FocusState.Pointer);
-    }
-
-    private void FolderRowContextFlyout_Opening(object? sender, object e)
-    {
-        if (sender is not MenuFlyout mf || mf.Target is not FrameworkElement t || t.DataContext is not FolderRow row)
-            return;
-        _contextMenuPath = row.Path;
-        foreach (var item in mf.Items)
-        {
-            if (item is not MenuFlyoutItem mi)
-                continue;
-            var tag = mi.Tag as string;
-            if (tag == "expand")
-                mi.Visibility = row is { HasChildren: true, IsExpanded: false } ? Visibility.Visible : Visibility.Collapsed;
-            else if (tag == "collapse")
-                mi.Visibility = row is { HasChildren: true, IsExpanded: true } ? Visibility.Visible : Visibility.Collapsed;
-            else if (tag == "explorer")
-                mi.Visibility = Visibility.Visible;
-        }
-    }
-
-    private void CtxMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not MenuFlyoutItem { Tag: string tag } || _contextMenuPath is not { } p)
-            return;
-        switch (tag)
-        {
-            case "expand":
-            case "collapse":
-                ToggleExpandRequested?.Invoke(this, p);
-                break;
-            case "explorer":
-                OpenInExplorerRequested?.Invoke(this, p);
-                _ = global::Windows.System.Launcher.LaunchFolderPathAsync(p);
-                break;
-        }
     }
 
     private void TreeRepeater_ElementPrepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs args)

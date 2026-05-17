@@ -1,5 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Windows.Foundation;
 
 namespace ImageHoard.App.BrowserV2;
 
@@ -15,6 +17,9 @@ public sealed partial class ImagePaneView : UserControl
     {
         InitializeComponent();
     }
+
+    /// <summary>User right-clicked an image row after selection was applied; host shows the browser pane context menu.</summary>
+    public event TypedEventHandler<ImagePaneView, BrowserPaneContextMenuRequestedEventArgs>? ContextMenuRequested;
 
     public ImagePaneController? Controller
     {
@@ -102,5 +107,24 @@ public sealed partial class ImagePaneView : UserControl
             return;
         var path = (ImageList.SelectedItem as ImagePaneRow)?.FullPath;
         _controller.NotifySelectedFromView(path);
+    }
+
+    private void ImageRowGrid_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: ImagePaneRow row } anchor || _controller is null)
+            return;
+
+        _suppressSelectionSync = true;
+        try
+        {
+            ImageList.SelectedItem = row;
+        }
+        finally
+        {
+            _suppressSelectionSync = false;
+        }
+
+        _controller.NotifySelectedFromView(row.FullPath);
+        ContextMenuRequested?.Invoke(this, new BrowserPaneContextMenuRequestedEventArgs(anchor, e));
     }
 }

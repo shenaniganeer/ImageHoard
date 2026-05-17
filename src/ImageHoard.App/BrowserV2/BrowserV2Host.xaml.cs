@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Windows.Foundation;
 
 namespace ImageHoard.App.BrowserV2;
 
@@ -12,7 +13,21 @@ public sealed partial class BrowserV2Host : UserControl
     private double _folderImageInitFolderW;
     private double _folderImageInitImageW;
 
-    public BrowserV2Host() => InitializeComponent();
+    public BrowserV2Host()
+    {
+        InitializeComponent();
+        BrowseFolderTree.ContextMenuRequested += OnFolderTreeContextMenuRequested;
+        BrowseImagePane.ContextMenuRequested += OnImagePaneContextMenuRequested;
+    }
+
+    /// <summary>Right-click on folder tree or image list after row selection; app shows the shared browser context menu.</summary>
+    public event TypedEventHandler<BrowserV2Host, BrowserPaneContextMenuRequestedEventArgs>? BrowserPaneContextMenuRequested;
+
+    private void OnFolderTreeContextMenuRequested(FolderTreeView sender, BrowserPaneContextMenuRequestedEventArgs e) =>
+        BrowserPaneContextMenuRequested?.Invoke(this, e);
+
+    private void OnImagePaneContextMenuRequested(ImagePaneView sender, BrowserPaneContextMenuRequestedEventArgs e) =>
+        BrowserPaneContextMenuRequested?.Invoke(this, e);
 
     public FolderTreeView FolderTree => BrowseFolderTree;
 

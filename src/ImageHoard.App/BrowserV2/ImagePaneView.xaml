@@ -1,62 +1,126 @@
-<UserControl
-    x:Class="ImageHoard.App.BrowserV2.ImagePaneView"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:automation="using:Microsoft.UI.Xaml.Automation"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:local="using:ImageHoard.App.BrowserV2"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d"
-    automation:AutomationProperties.Name="Image list">
-    <UserControl.Resources>
-        <DataTemplate x:Key="ImageRowTemplate" x:DataType="local:ImagePaneRow">
-            <Grid
-                Padding="8,4"
-                VerticalAlignment="Center"
-                ColumnSpacing="10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" MinWidth="120" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock
-                    Grid.Column="0"
-                    VerticalAlignment="Center"
-                    Text="{x:Bind DisplayName, Mode=OneWay}"
-                    TextTrimming="CharacterEllipsis" />
-                <TextBlock
-                    Grid.Column="1"
-                    MinWidth="56"
-                    VerticalAlignment="Center"
-                    Text="{x:Bind SizeDisplay, Mode=OneWay}"
-                    TextAlignment="Right"
-                    TextTrimming="CharacterEllipsis"
-                    Visibility="{x:Bind SizeColumnVisibility, Mode=OneWay}" />
-                <TextBlock
-                    Grid.Column="2"
-                    MinWidth="120"
-                    VerticalAlignment="Center"
-                    Text="{x:Bind DateDisplay, Mode=OneWay}"
-                    TextTrimming="CharacterEllipsis"
-                    Visibility="{x:Bind DateColumnVisibility, Mode=OneWay}" />
-            </Grid>
-        </DataTemplate>
-    </UserControl.Resources>
-    <Border
-        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-        BorderThickness="1"
-        CornerRadius="4">
-        <ListView
-            x:Name="ImageList"
-            ItemTemplate="{StaticResource ImageRowTemplate}"
-            IsItemClickEnabled="False"
-            SelectionChanged="ImageList_SelectionChanged"
-            SelectionMode="Single">
-            <ListView.ItemsPanel>
-                <ItemsPanelTemplate>
-                    <VirtualizingStackPanel />
-                </ItemsPanelTemplate>
-            </ListView.ItemsPanel>
-        </ListView>
-    </Border>
-</UserControl>
+<UserControl
+
+    x:Class="ImageHoard.App.BrowserV2.ImagePaneView"
+
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+
+    xmlns:automation="using:Microsoft.UI.Xaml.Automation"
+
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+
+    xmlns:local="using:ImageHoard.App.BrowserV2"
+
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+
+    mc:Ignorable="d"
+
+    automation:AutomationProperties.Name="Image list">
+
+    <UserControl.Resources>
+
+        <DataTemplate x:Key="ImageRowTemplate" x:DataType="local:ImagePaneRow">
+
+            <Grid
+
+                Padding="8,4"
+
+                VerticalAlignment="Center"
+
+                ColumnSpacing="10"
+
+                RightTapped="ImageRowGrid_RightTapped">
+
+                <Grid.ColumnDefinitions>
+
+                    <ColumnDefinition Width="*" MinWidth="120" />
+
+                    <ColumnDefinition Width="Auto" />
+
+                    <ColumnDefinition Width="Auto" />
+
+                </Grid.ColumnDefinitions>
+
+                <TextBlock
+
+                    Grid.Column="0"
+
+                    VerticalAlignment="Center"
+
+                    Text="{x:Bind DisplayName, Mode=OneWay}"
+
+                    TextTrimming="CharacterEllipsis" />
+
+                <TextBlock
+
+                    Grid.Column="1"
+
+                    MinWidth="56"
+
+                    VerticalAlignment="Center"
+
+                    Text="{x:Bind SizeDisplay, Mode=OneWay}"
+
+                    TextAlignment="Right"
+
+                    TextTrimming="CharacterEllipsis"
+
+                    Visibility="{x:Bind SizeColumnVisibility, Mode=OneWay}" />
+
+                <TextBlock
+
+                    Grid.Column="2"
+
+                    MinWidth="120"
+
+                    VerticalAlignment="Center"
+
+                    Text="{x:Bind DateDisplay, Mode=OneWay}"
+
+                    TextTrimming="CharacterEllipsis"
+
+                    Visibility="{x:Bind DateColumnVisibility, Mode=OneWay}" />
+
+            </Grid>
+
+        </DataTemplate>
+
+    </UserControl.Resources>
+
+    <Border
+
+        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+
+        BorderThickness="1"
+
+        CornerRadius="4">
+
+        <ListView
+
+            x:Name="ImageList"
+
+            ItemTemplate="{StaticResource ImageRowTemplate}"
+
+            IsItemClickEnabled="False"
+
+            SelectionChanged="ImageList_SelectionChanged"
+
+            SelectionMode="Single">
+
+            <ListView.ItemsPanel>
+
+                <ItemsPanelTemplate>
+
+                    <VirtualizingStackPanel />
+
+                </ItemsPanelTemplate>
+
+            </ListView.ItemsPanel>
+
+        </ListView>
+
+    </Border>
+
+</UserControl>
+

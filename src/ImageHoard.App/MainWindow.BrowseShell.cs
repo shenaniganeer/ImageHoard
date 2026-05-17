@@ -36,6 +36,7 @@ public sealed partial class MainWindow
     private MenuFlyout? _browserTreeContextMenu;
     private bool _browserContextMenuIsToolbarCurrentFolder;
     private MenuFlyoutItem? _browserTreeContextMenuRenameItem;
+    private TreeViewNode? _browse2ContextMenuTargetWrapNode;
 
     private readonly BrowserFolderListHeaderMarker _browse2FolderListHeaderMarker = new();
     private readonly BrowserFileListHeaderMarker _browse2FileListHeaderMarker = new();
@@ -89,6 +90,48 @@ public sealed partial class MainWindow
         BrowserV2Host.FolderListHeaderSortSize += FolderBrowserHeaderSort_Size_Click;
         BrowserV2Host.FolderListHeaderSortImageCount += FolderBrowserHeaderSort_ImageCount_Click;
         BrowserV2Host.FolderListHeaderSortDate += FolderBrowserHeaderSort_Date_Click;
+
+        BrowserV2Host.BrowserPaneContextMenuRequested -= Browse2Host_BrowserPaneContextMenuRequested;
+        BrowserV2Host.BrowserPaneContextMenuRequested += Browse2Host_BrowserPaneContextMenuRequested;
+    }
+
+    private void Browse2Host_BrowserPaneContextMenuRequested(BrowserV2Host sender, BrowserPaneContextMenuRequestedEventArgs e)
+    {
+        if (_browserTreeContextMenu == null || e.Anchor.XamlRoot is null)
+            return;
+
+        e.Source.Handled = true;
+        _browserContextMenuIsToolbarCurrentFolder = false;
+
+        _browse2ContextMenuTargetWrapNode ??= new TreeViewNode();
+
+        switch (e.Anchor.DataContext)
+        {
+            case ImagePaneRow ipr:
+            {
+                var path = ipr.FullPath;
+                var name = Path.GetFileName(path);
+                var row = new ImageRow(path, name, 0, DateTimeOffset.MinValue, "—", "—", "·");
+                ApplySortFlagPresentationToRow(row, path);
+                _browse2ContextMenuTargetWrapNode.Content = row;
+                _browserContextMenuTargetNode = _browse2ContextMenuTargetWrapNode;
+                break;
+            }
+            case FolderRow fr:
+            {
+                var label = Path.GetFileName(fr.Path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                if (string.IsNullOrEmpty(label))
+                    label = fr.Path;
+                _browse2ContextMenuTargetWrapNode.Content = new FolderTreeEntry(fr.Path, label);
+                _browserContextMenuTargetNode = _browse2ContextMenuTargetWrapNode;
+                break;
+            }
+            default:
+                return;
+        }
+
+        SyncBrowse2SyntheticPrimaryNavNode();
+        _browserTreeContextMenu.ShowAt(e.Anchor, new FlyoutShowOptions { Position = e.Source.GetPosition(e.Anchor) });
     }
 
     private void Browse2FolderTreeScroll_ViewChanged(FolderTreeView sender, ScrollViewerViewChangedEventArgs e)
@@ -556,13 +599,13 @@ public sealed partial class MainWindow
         }
     }
 
-    internal async Task RefreshBrowserTreeFromSettingsAsync()
+    internal async Task RefreshBrowserTreeFromSettingsAsync(string? contextMenuRowRefreshFolder = null)
     {
         Browse2ApplyImageListSortFromLayout();
         ApplyBrowserFileDetailsChrome();
         ApplyBrowserFolderDetailsChrome();
         if (_browse2Coordinator != null && !string.IsNullOrEmpty(_currentFolderPath))
-            await Browse2RefreshVisibleFoldersAsync().ConfigureAwait(true);
+            await Browse2RefreshVisibleFoldersAsync(contextMenuRowRefreshFolder).ConfigureAwait(true);
     }
 
     private void PrepareBrowserTreeViewportAfterWizardMutation()
@@ -1601,6 +1644,9 @@ public sealed partial class MainWindow
 
     private async void BrowserBrowseToolbar_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
+        if (string.IsNullOrEmpty(_currentFolderPath) || !Directory.Exists(_currentFolderPath))
+            return;
+
         e.Handled = true;
         _browserContextMenuIsToolbarCurrentFolder = true;
         _browserContextMenuTargetNode = null;
@@ -1613,7 +1659,21 @@ public sealed partial class MainWindow
 
     private async void BrowserContextRefresh_Click()
     {
-        await RefreshBrowserTreeFromSettingsAsync().ConfigureAwait(true);
+        if (_browserContextMenuIsToolbarCurrentFolder)
+        {
+            _browserContextMenuIsToolbarCurrentFolder = false;
+            await RefreshBrowserTreeFromSettingsAsync(contextMenuRowRefreshFolder: null).ConfigureAwait(true);
+            return;
+        }
+
+        var rowFolder = _browserContextMenuTargetNode?.Content switch
+        {
+            FolderTreeEntry fe => fe.Path,
+            ImageRow row => Path.GetDirectoryName(row.FullPath),
+            _ => null,
+        };
+
+        await RefreshBrowserTreeFromSettingsAsync(contextMenuRowRefreshFolder: rowFolder).ConfigureAwait(true);
     }
 
     private void BrowserContextRename_Click()

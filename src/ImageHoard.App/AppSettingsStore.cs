@@ -96,6 +96,9 @@ internal static class AppSettingsStore
         if (ui?.IncludeSubfoldersInList is { } inc)
             state.IncludeSubfoldersInList = inc;
 
+        if (ui?.Browse2ImagePaneIncludeSubfolders is { } b2Inc)
+            state.Browse2ImagePaneIncludeSubfolders = b2Inc;
+
         if (!string.IsNullOrEmpty(ui?.ListSort) && Enum.TryParse<ListSortKind>(ui.ListSort, out var sk))
             state.ListSort = sk;
 
@@ -145,6 +148,16 @@ internal static class AppSettingsStore
             && zsr <= 2.0)
             state.PreviewZoomStepRatio = zsr;
 
+        if (ui?.Browse2PaneColumns is { Length: >= 2 } b2cols)
+        {
+            var sum2 = b2cols[0] + b2cols[1];
+            if (sum2 > 1e-6)
+            {
+                state.Browse2FolderPaneShare = b2cols[0] / sum2;
+                state.Browse2ImagePaneShare = b2cols[1] / sum2;
+            }
+        }
+
         return state;
     }
 
@@ -178,6 +191,8 @@ internal static class AppSettingsStore
                 Array.Empty<string>(),
                 raw,
                 BrowserTreeSnapshot.MaxExpandedFolderPaths);
+            snap.SelectedFolderPath = ResolveBrowserTreeSelectedFolderPath(lbf, bt.SelectedFolderPath, s.LastActedFsObject);
+            snap.ViewportAnchor = ResolveBrowserTreeViewportAnchor(lbf, bt.ViewportAnchor, snap.SelectedFolderPath, s.LastActedFsObject);
             s.BrowserTree = snap;
         }
 
@@ -224,6 +239,7 @@ internal static class AppSettingsStore
             file.Ui.ShowOverlayListPosition = layout.ShowOverlayListPosition;
             file.Ui.ShowBrowserPane = layout.ShowBrowserPane;
             file.Ui.IncludeSubfoldersInList = layout.IncludeSubfoldersInList;
+            file.Ui.Browse2ImagePaneIncludeSubfolders = layout.Browse2ImagePaneIncludeSubfolders;
             file.Ui.ListSort = layout.ListSort.ToString();
             file.Ui.ShowBrowserFileSize = layout.ShowBrowserFileSize;
             file.Ui.ShowBrowserFileDate = layout.ShowBrowserFileDate;
@@ -237,6 +253,7 @@ internal static class AppSettingsStore
             file.Ui.PreviewMinimumDisplaySeconds = layout.PreviewMinimumDisplaySeconds;
             file.Ui.PreviewImagePaneMultiClickThresholdMs = layout.PreviewImagePaneMultiClickThresholdMs;
             file.Ui.PreviewZoomStepRatio = layout.PreviewZoomStepRatio;
+            file.Ui.Browse2PaneColumns = [layout.Browse2FolderPaneShare, layout.Browse2ImagePaneShare];
 
             file.Paths ??= new PathsSettingsSection();
             file.Paths.ArchiveRoot = session.ArchiveRoot;
@@ -255,6 +272,16 @@ internal static class AppSettingsStore
                     SnapshotBrowseRoot = session.BrowserTree.SnapshotBrowseRoot,
                     ExpandedFolderPaths = session.BrowserTree.ExpandedFolderPaths.Count > 0
                         ? session.BrowserTree.ExpandedFolderPaths
+                        : null,
+                    SelectedFolderPath = string.IsNullOrWhiteSpace(session.BrowserTree.SelectedFolderPath)
+                        ? null
+                        : session.BrowserTree.SelectedFolderPath,
+                    ViewportAnchor = session.BrowserTree.ViewportAnchor is { AnchorFolderPath: { Length: > 0 } }
+                        ? new ViewportAnchorDto
+                        {
+                            AnchorFolderPath = session.BrowserTree.ViewportAnchor.AnchorFolderPath,
+                            OffsetWithinRowPx = SanitizeViewportOffsetWithinRowPx(session.BrowserTree.ViewportAnchor.OffsetWithinRowPx),
+                        }
                         : null,
                 };
             }
@@ -297,5 +324,132 @@ internal static class AppSettingsStore
         {
             // ignored
         }
+    }
+
+    private static string ResolveBrowserTreeSelectedFolderPath(string browseRoot, string? persistedSelected, string? lastActedFsObject)
+    {
+        var fromDto = SanitizeFolderPathUnderBrowseRoot(browseRoot, persistedSelected);
+        if (!string.IsNullOrEmpty(fromDto))
+            return fromDto;
+
+        return MigrateSelectedFolderFromLegacyActedPath(browseRoot, lastActedFsObject);
+    }
+
+    private static ViewportAnchorDto ResolveBrowserTreeViewportAnchor(
+        string browseRoot,
+        ViewportAnchorDto? persistedAnchor,
+        string? resolvedSelectedFolderPath,
+        string? lastActedFsObject)
+    {
+        if (persistedAnchor is { AnchorFolderPath: { Length: > 0 } ap })
+        {
+            var sanitizedPath = SanitizeFolderPathUnderBrowseRoot(browseRoot, ap);
+            if (!string.IsNullOrEmpty(sanitizedPath))
+            {
+                return new ViewportAnchorDto
+                {
+                    AnchorFolderPath = sanitizedPath,
+                    OffsetWithinRowPx = SanitizeViewportOffsetWithinRowPx(persistedAnchor.OffsetWithinRowPx),
+                };
+            }
+        }
+
+        var fallbackPath = !string.IsNullOrEmpty(resolvedSelectedFolderPath)
+            ? resolvedSelectedFolderPath
+            : MigrateSelectedFolderFromLegacyActedPath(browseRoot, lastActedFsObject);
+
+        return new ViewportAnchorDto
+        {
+            AnchorFolderPath = fallbackPath,
+            OffsetWithinRowPx = 0,
+        };
+    }
+
+    private static string MigrateSelectedFolderFromLegacyActedPath(string browseRoot, string? lastActedFsObject)
+    {
+        if (string.IsNullOrWhiteSpace(lastActedFsObject))
+            return NormalizeBrowseRootFolderPath(browseRoot);
+
+        try
+        {
+            var acted = lastActedFsObject.Trim();
+            if (Directory.Exists(acted))
+            {
+                var dir = Path.GetFullPath(acted.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                var under = SanitizeFolderPathUnderBrowseRoot(browseRoot, dir);
+                if (!string.IsNullOrEmpty(under))
+                    return under;
+            }
+
+            if (File.Exists(acted))
+            {
+                var parent = Path.GetDirectoryName(acted);
+                var under = SanitizeFolderPathUnderBrowseRoot(browseRoot, parent);
+                if (!string.IsNullOrEmpty(under))
+                    return under;
+            }
+
+            var trimmed = acted.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var name = Path.GetFileName(trimmed);
+            if (!string.IsNullOrEmpty(name) && Path.HasExtension(trimmed))
+            {
+                var parent = Path.GetDirectoryName(acted);
+                var under = SanitizeFolderPathUnderBrowseRoot(browseRoot, parent);
+                if (!string.IsNullOrEmpty(under))
+                    return under;
+            }
+
+            var asFolder = Path.GetFullPath(trimmed);
+            var under2 = SanitizeFolderPathUnderBrowseRoot(browseRoot, asFolder);
+            if (!string.IsNullOrEmpty(under2))
+                return under2;
+        }
+        catch
+        {
+            // fall through
+        }
+
+        return NormalizeBrowseRootFolderPath(browseRoot);
+    }
+
+    private static string NormalizeBrowseRootFolderPath(string browseRoot)
+    {
+        try
+        {
+            return Path.GetFullPath(browseRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        }
+        catch
+        {
+            return browseRoot;
+        }
+    }
+
+    private static string? SanitizeFolderPathUnderBrowseRoot(string browseRoot, string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+            return null;
+
+        try
+        {
+            var root = Path.GetFullPath(browseRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            var folder = Path.GetFullPath(candidate.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (string.Equals(root, folder, StringComparison.OrdinalIgnoreCase))
+                return folder;
+            if (BrowserTreeDeletePathDedupe.IsStrictDescendantPath(root, folder))
+                return folder;
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private static double SanitizeViewportOffsetWithinRowPx(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value) || value < 0)
+            return 0;
+        return value;
     }
 }

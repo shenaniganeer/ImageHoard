@@ -565,6 +565,7 @@ public sealed partial class MainWindow
         try
         {
             await AppServices.FileSystem.MergeMoveDirectoryAsync(work, dest).ConfigureAwait(true);
+            await Browse2NotifyWizardDirectoryMovedAsync(work, dest).ConfigureAwait(true);
             ClearDeferredWizardBatchBrowserRefreshCapture();
             var rec = new OperationLogBatchRecord
             {
@@ -591,7 +592,7 @@ public sealed partial class MainWindow
                 }
                 else
                 {
-                    FolderTree.RootNodes.Clear();
+                    Browse2NavigateClearRootSnapshot();
                     _browseNavAnchorPath = null;
                     _currentFolderPath = null;
                     UpdateBrowserToolbar();
@@ -704,6 +705,7 @@ public sealed partial class MainWindow
         {
             EnterBrowserPaneMutation();
             ShellRecycle.SendDirectoryToRecycleBin(work);
+            await Browse2NotifyWizardFolderRecycledAsync(work).ConfigureAwait(true);
             var rec = new OperationLogBatchRecord
             {
                 Operation = "DeleteFolderRecycle",
@@ -733,7 +735,7 @@ public sealed partial class MainWindow
                 }
                 else
                 {
-                    FolderTree.RootNodes.Clear();
+                    Browse2NavigateClearRootSnapshot();
                     _browseNavAnchorPath = null;
                     _currentFolderPath = null;
                     UpdateBrowserToolbar();
@@ -887,6 +889,10 @@ public sealed partial class MainWindow
             const int permanentDeleteParallelism = 6;
 
             var onDisk = toDelete.Where(p => existedAtStart.TryGetValue(p, out var ex) && ex).ToList();
+
+            IReadOnlyList<string>? deferredImagePanePathsSnapshot = null;
+            if (deferBrowserPaneRefresh && _browse2Coordinator != null)
+                deferredImagePanePathsSnapshot = _browse2Coordinator.Images.Items.Select(r => r.FullPath).ToList();
 
             var recycledOk = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             if (onDisk.Count > 0)
@@ -1082,7 +1088,13 @@ public sealed partial class MainWindow
             {
                 _deferredWizardBatchSucceededStats = new List<WizardPredeletedFileStat>(succeededStats);
                 _deferredWizardBatchRefocusContext =
-                    new BrowserTreeRefocusAfterWizardContext(null, imageDeletionWorkingFolder);
+                    new BrowserTreeRefocusAfterWizardContext(
+                        PreferredNextFolderFullPath: null,
+                        ImageDeletionWorkingFolder: imageDeletionWorkingFolder,
+                        DeletedImagePathsForRefocus: succeededStats.Count > 0
+                            ? succeededStats.Select(s => s.FullPath).ToList()
+                            : null,
+                        ImagePanePathsBeforeDeletion: deferredImagePanePathsSnapshot);
             }
             else
             {

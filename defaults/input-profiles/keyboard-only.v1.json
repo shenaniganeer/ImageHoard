@@ -42,6 +42,7 @@
       { "kind": "keyboard", "keys": ["Backspace"] }
     ],
     "browse.findInTree": [{ "kind": "keyboard", "keys": ["Control", "KeyF"] }],
+    "browse2.refreshTree": [{ "kind": "keyboard", "keys": ["F5"] }],
     "browse.treeNext": [{ "kind": "keyboard", "keys": ["ArrowDown"] }],
     "browse.treePrevious": [{ "kind": "keyboard", "keys": ["ArrowUp"] }],
     "browse.treeExpand": [{ "kind": "keyboard", "keys": ["ArrowRight"] }],

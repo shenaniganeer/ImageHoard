@@ -39,23 +39,6 @@ public sealed partial class MainWindow
         }
     }
 
-    private void TrySeedFolderEntryFromFavoriteFilesystemMap(FolderTreeEntry entry)
-    {
-        if (_layoutState.ShowBrowserFolderSize
-            && _folderAggregateBytesByPath.TryGetValue(entry.Path, out var agg)
-            && agg.HasValue)
-        {
-            entry.SetAggregateSize(agg.Value);
-        }
-
-        if (_layoutState.ShowBrowserFolderImageCount
-            && _folderImageFileCountByPath.TryGetValue(entry.Path, out var img)
-            && img.HasValue)
-        {
-            entry.SetImageFileCount(img.Value);
-        }
-    }
-
     private void KickFavoriteFilesystemMapBackgroundReconcileForIndexRoots()
     {
         if (!_layoutState.ShowBrowserFolderSize && !_layoutState.ShowBrowserFolderImageCount)

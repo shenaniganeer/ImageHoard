@@ -1,7 +1,8 @@
 # Browser folder tree: path-to-`TreeViewNode` index (maintenance)
 
-**Status:** Implemented (WinUI host)  
-**Related:** [folder-aggregate-metrics-model.md](./folder-aggregate-metrics-model.md) (FR-BR-06, FR-BR-07, NFR-PF-05); cold-boot UI work (folder metrics snapshot merge); future presenter swap [browser-folder-tree-virtualization-itemsrepeater.md](./browser-folder-tree-virtualization-itemsrepeater.md)
+**Status:** **Superseded** for new browser code — Browser V2 uses **`FolderTreeFlatModel`** / path→flat-row indexing per [browser-tree-rewrite-architecture.md](./browser-tree-rewrite-architecture.md) and [browser-folder-tree-virtualization-itemsrepeater.md](./browser-folder-tree-virtualization-itemsrepeater.md). **Still authoritative** for the legacy WinUI **`TreeView`** host (`MainWindow.BrowserPane.cs` and related partials) until that host is removed.
+
+**Related:** [browser-tree-rewrite-architecture.md](./browser-tree-rewrite-architecture.md); [folder-aggregate-metrics-model.md](./folder-aggregate-metrics-model.md) (FR-BR-06, FR-BR-07, NFR-PF-05); cold-boot UI work (folder metrics snapshot merge); [browser-folder-tree-virtualization-itemsrepeater.md](./browser-folder-tree-virtualization-itemsrepeater.md)
 
 ## Why this exists
 

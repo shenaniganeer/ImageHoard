@@ -102,4 +102,47 @@ public static class BrowseContextImageSequence
 
         return r;
     }
+
+    /// <summary>
+    /// After deleting one or more paths from a browse-ordered image list, pick the next remaining path after the
+    /// last deleted row, or the previous remaining path if the tail was removed (same spirit as
+    /// <see cref="FolderDirectorySort.PickAdjacentSiblingAfterRemoval"/>).
+    /// </summary>
+    /// <param name="orderedPathsBeforeDeletion">Image paths in browse display order before deletion.</param>
+    /// <param name="removedFullPaths">Paths removed from disk (and from the list).</param>
+    public static string? PickNextDisplayedPathAfterRemovalsInOrderedList(
+        IReadOnlyList<string> orderedPathsBeforeDeletion,
+        IReadOnlyCollection<string> removedFullPaths)
+    {
+        if (orderedPathsBeforeDeletion.Count == 0 || removedFullPaths.Count == 0)
+            return null;
+
+        var removed = new HashSet<string>(removedFullPaths, StringComparer.OrdinalIgnoreCase);
+
+        var maxRemovedIndex = -1;
+        for (var i = 0; i < orderedPathsBeforeDeletion.Count; i++)
+        {
+            if (removed.Contains(orderedPathsBeforeDeletion[i]))
+                maxRemovedIndex = Math.Max(maxRemovedIndex, i);
+        }
+
+        if (maxRemovedIndex < 0)
+            return null;
+
+        for (var j = maxRemovedIndex + 1; j < orderedPathsBeforeDeletion.Count; j++)
+        {
+            var p = orderedPathsBeforeDeletion[j];
+            if (!removed.Contains(p))
+                return p;
+        }
+
+        for (var j = maxRemovedIndex - 1; j >= 0; j--)
+        {
+            var p = orderedPathsBeforeDeletion[j];
+            if (!removed.Contains(p))
+                return p;
+        }
+
+        return null;
+    }
 }

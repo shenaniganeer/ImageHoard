@@ -58,6 +58,7 @@ public static class InputBindingActivation
 
         if (commandId.StartsWith("sort.", StringComparison.Ordinal)
             || commandId.StartsWith("browse.", StringComparison.Ordinal)
+            || commandId.StartsWith("browse2.", StringComparison.Ordinal)
             || commandId.StartsWith("nav.", StringComparison.Ordinal))
             return InputBindingActivationMask.Browse;
 

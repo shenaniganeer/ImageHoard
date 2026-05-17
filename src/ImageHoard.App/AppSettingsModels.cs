@@ -52,6 +52,22 @@ internal sealed class BrowserTreeSettingsDto
 
     [JsonPropertyName("expandedFolderPaths")]
     public List<string>? ExpandedFolderPaths { get; set; }
+
+    /// <summary>Currently selected folder in the tree (Browse2); absent in legacy files — migrated from <c>lastActedFsObject</c> / browse root on load.</summary>
+    [JsonPropertyName("selectedFolderPath")]
+    public string? SelectedFolderPath { get; set; }
+
+    [JsonPropertyName("viewportAnchor")]
+    public ViewportAnchorDto? ViewportAnchor { get; set; }
+}
+
+internal sealed class ViewportAnchorDto
+{
+    [JsonPropertyName("anchorFolderPath")]
+    public string? AnchorFolderPath { get; set; }
+
+    [JsonPropertyName("offsetWithinRowPx")]
+    public double OffsetWithinRowPx { get; set; }
 }
 
 /// <summary>Runtime session mirror of persisted <c>paths.browserTree</c>.</summary>
@@ -60,6 +76,10 @@ internal sealed class BrowserTreeSessionSnapshot
     public string? SnapshotBrowseRoot { get; set; }
 
     public List<string> ExpandedFolderPaths { get; set; } = new();
+
+    public string? SelectedFolderPath { get; set; }
+
+    public ViewportAnchorDto? ViewportAnchor { get; set; }
 }
 
 /// <summary>ui.* keys persisted to settings.json (FR-ST-01).</summary>
@@ -101,6 +121,10 @@ internal sealed class UiSettingsSection
     [JsonPropertyName("includeSubfoldersInList")]
     public bool? IncludeSubfoldersInList { get; set; }
 
+    /// <summary>Browse2 image pane: when true, list images in current folder and all descendants (opt-in; default false).</summary>
+    [JsonPropertyName("browse2ImagePaneIncludeSubfolders")]
+    public bool? Browse2ImagePaneIncludeSubfolders { get; set; }
+
     [JsonPropertyName("listSort")]
     public string? ListSort { get; set; }
 
@@ -127,6 +151,10 @@ internal sealed class UiSettingsSection
 
     [JsonPropertyName("folderListSort")]
     public string? FolderListSort { get; set; }
+
+    /// <summary>Two shares: Browse2 folder column, image column (sum ~1).</summary>
+    [JsonPropertyName("browse2PaneColumns")]
+    public double[]? Browse2PaneColumns { get; set; }
 
     /// <summary>Seconds of backlog before coalescing rapid preview navigation (0 or less = never coalesce; show every queued step).</summary>
     [JsonPropertyName("previewNavCatchUpLagSeconds")]
@@ -167,6 +195,9 @@ internal sealed class UiLayoutState
 
     public bool IncludeSubfoldersInList { get; set; } = true;
 
+    /// <summary>Browse2-only: recursive image list in the image pane (decoupled from legacy <see cref="IncludeSubfoldersInList"/>).</summary>
+    public bool Browse2ImagePaneIncludeSubfolders { get; set; }
+
     public ListSortKind ListSort { get; set; } = ListSortKind.NameNatural;
 
     public bool ShowBrowserFileSize { get; set; } = true;
@@ -184,6 +215,11 @@ internal sealed class UiLayoutState
     public bool ShowBrowserFolderImageCount { get; set; } = true;
 
     public FolderListSortKind FolderListSort { get; set; } = FolderListSortKind.NameNatural;
+
+    /// <summary>Browse2 folder vs image pane horizontal star split (normalized; default 0.5 / 0.5).</summary>
+    public double Browse2FolderPaneShare { get; set; } = 0.5;
+
+    public double Browse2ImagePaneShare { get; set; } = 0.5;
 
     /// <summary>When the oldest queued preview request exceeds this age (seconds) and more than one is queued, drop to the latest path. Values &lt;= 0 disable this coalescing.</summary>
     public double PreviewNavCatchUpLagSeconds { get; set; } = 0.5;

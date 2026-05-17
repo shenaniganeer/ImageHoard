@@ -52,7 +52,7 @@ Per **directory path** (normalized long path string):
 
 ## UI merge path (WinUI host)
 
-When metrics snapshots are merged on the UI thread, updating **`TreeViewNode.HasUnrealizedChildren`** must not require a full-tree lookup each time. The app maintains **`_folderTreeNodeByPath`** next to **`_folderTreeEntryByPath`**; anyone who adds, removes, or rekeys folder rows must keep that map in sync. See [browser-folder-tree-path-to-node-index.md](./browser-folder-tree-path-to-node-index.md).
+When metrics snapshots are merged on the UI thread, updating **`TreeViewNode.HasUnrealizedChildren`** must not require a full-tree lookup each time. The **legacy** app maintains **`_folderTreeNodeByPath`** next to **`_folderTreeEntryByPath`**; anyone who adds, removes, or rekeys folder rows must keep that map in sync. See [browser-folder-tree-path-to-node-index.md](./browser-folder-tree-path-to-node-index.md). **Browser V2** replaces this with **`FsMap`** + flat row projection — [browser-tree-rewrite-architecture.md](./browser-tree-rewrite-architecture.md).
 
 ### Browser tree: collapsed folder totals vs expand chevron
 

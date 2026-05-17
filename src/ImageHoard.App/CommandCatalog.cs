@@ -48,6 +48,8 @@ internal static class CommandCatalog
         new("browse.treeExpand", "Browse: tree — expand current folder", true, HotkeySection.Browse),
         new("browse.treeCollapse", "Browse: tree — collapse current folder", true, HotkeySection.Browse),
         new("browse.treeDelete", "Browse: tree — delete selected item(s) to Recycle Bin", true, HotkeySection.Browse),
+        new("browse2.refreshTree", "Browse2: refresh folder tree listings (current + expanded)", true, HotkeySection.Browse),
+        new("browse2.toggleImagePaneSubtreeRecursion", "Browse2: toggle include subfolders in image list", true, HotkeySection.Browse),
         new("view.cycleFitMode", "View: cycle shrink only / shrink & stretch / 1:1", true, HotkeySection.View),
         new("view.clearSelection", "View: clear image selection and preview", true, HotkeySection.View),
         new("view.panPreview", "View: pan primary preview (hold chord and drag)", true, HotkeySection.View),

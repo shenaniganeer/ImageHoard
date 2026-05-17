@@ -167,6 +167,7 @@ public sealed partial class MainWindow
         UnhookBrowse2CoordinatorSelectionHandlers();
         _browse2Coordinator.DetachFolderTreeView();
         BrowserV2Host.ImagePane.Controller = null;
+        Browse2DetachMoveDropHandlers();
 
         _browse2CoordinatorImageSelHandler ??= (_, _) =>
         {
@@ -181,6 +182,7 @@ public sealed partial class MainWindow
 
         _browse2Coordinator.AttachFolderTreeView(BrowserV2Host.FolderTree);
         BrowserV2Host.ImagePane.Controller = _browse2Coordinator.Images;
+        Browse2AttachMoveDropHandlers();
         SyncBrowse2SyntheticPrimaryNavNode();
         SyncBrowse2ColumnHeadersAndMarkers();
     }
@@ -190,6 +192,7 @@ public sealed partial class MainWindow
         UnhookBrowse2CoordinatorSelectionHandlers();
         BrowserV2Host.FolderImagePaneSharesChanged -= OnBrowse2FolderImagePaneSharesChanged;
         TeardownBrowse2ListHeaderHosts();
+        Browse2DetachMoveDropHandlers();
         _browse2Coordinator?.DetachFolderTreeView();
         BrowserV2Host.ImagePane.Controller = null;
     }

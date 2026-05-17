@@ -45,6 +45,13 @@ Split responsibilities into **three layers** with a **single writer** to filesys
 | **`ImagePaneView`** | Virtualized list of image rows (existing flat-list pattern is acceptable). |
 | **`BrowserFindOverlay`** | Reuse `BrowserFindPanel` chrome; backing logic moves to **`BrowserFindController`**. |
 
+## Folder tree: browsed folder vs multi-select; internal drag-move
+
+- **Browsed folder** (what fills the image list) remains the single path in **`SelectionState`** / coordinator: a **plain** click on a folder row updates browsed folder, persists selection, and resets tree multi-select to that one folder.
+- **Ctrl** toggles a folder in a **parallel multi-select set** without changing the browsed folder; **Shift** range-selects in **flat row order** without changing the browsed folder.
+- **Image list** uses **`ListView` Extended** selection (Ctrl/Shift, no checkboxes). **`ImagePaneController`** keeps a **primary** path (preview / keyboard step) plus an ordered multi-select path list.
+- **Internal drag-move** uses MIME **`application/x-imagehoard-paths-v1`** (newline-separated normalized paths). Valid drop targets: a **folder row** (move into that directory) or a **drop on the image list** (move into the **current browsed** folder). Path-only batch validation is **`BrowserPaneMovePathValidation`** in Core. Execution runs under **`BrowserPaneMutationGate`** / legacy browser mutation depth and appends **`RenameMove`** batches to the operation log when possible.
+
 ## Scroll anchoring contract (G3)
 
 For **every** model-mutating operation (expand, collapse, FS diff, wizard patch, sort change):

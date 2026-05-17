@@ -1,6 +1,9 @@
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
 using ImageHoard.Core.Browse;
 using ImageHoard.Core.Browse2;
+using ImageHoard.App;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -8,6 +11,7 @@ using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 
 namespace ImageHoard.App.BrowserV2;
@@ -21,6 +25,10 @@ public sealed partial class FolderTreeView : UserControl
     public const double DefaultRowHeight = 32;
 
     private readonly ObservableCollection<FolderRow> _rows = new();
+
+    private readonly HashSet<string> _selectedFolderPaths = new(StringComparer.OrdinalIgnoreCase);
+
+    private int _rangeAnchorIndex = -1;
 
     private (int anchorIndex, double offsetInRowPx)? _pendingScrollRestore;
     private bool _suspendSelectedPathCallback;
@@ -71,8 +79,38 @@ public sealed partial class FolderTreeView : UserControl
 
     public event TypedEventHandler<FolderTreeView, string>? SelectedFolderPathChanged;
 
+    /// <summary>User dropped internal path drag data onto a folder row.</summary>
+    public event TypedEventHandler<FolderTreeView, BrowserPaneMoveDropRequestedEventArgs>? MoveDropRequested;
+
     /// <summary>Forwarded from the inner <see cref="ScrollViewer"/> for layout persistence.</summary>
     public event TypedEventHandler<FolderTreeView, ScrollViewerViewChangedEventArgs>? ScrollViewerViewChanged;
+
+    public IReadOnlyList<string> GetSelectedFolderPathsSnapshot() =>
+        _selectedFolderPaths.Count == 0
+            ? Array.Empty<string>()
+            : _selectedFolderPaths.ToArray();
+
+    public bool IsFolderPathSelected(string folderPath)
+    {
+        var n = FavoriteIndexRoots.NormalizeFavoritePath(folderPath);
+        return _selectedFolderPaths.Contains(n);
+    }
+
+    /// <summary>Resets tree multi-select to match the browsed <see cref="SelectedFolderPath"/> after disk mutations.</summary>
+    public void SyncFolderMultiSelectFromBrowsedPath()
+    {
+        _selectedFolderPaths.Clear();
+        if (!string.IsNullOrEmpty(SelectedFolderPath))
+        {
+            var n = FavoriteIndexRoots.NormalizeFavoritePath(SelectedFolderPath);
+            _selectedFolderPaths.Add(n);
+            _rangeAnchorIndex = FindRowIndex(n);
+        }
+        else
+            _rangeAnchorIndex = -1;
+
+        RefreshRealizedRowChrome();
+    }
 
     /// <summary>Logical row height used for scroll math (must match item template height).</summary>
     public double RowHeight { get; set; } = DefaultRowHeight;
@@ -218,8 +256,23 @@ public sealed partial class FolderTreeView : UserControl
     {
         if (_suspendSelectedPathCallback)
             return;
+        SyncMultiSelectFromExternalBrowse(newPath);
         RefreshRealizedRowChrome();
         SelectedFolderPathChanged?.Invoke(this, newPath ?? "");
+    }
+
+    private void SyncMultiSelectFromExternalBrowse(string? newPath)
+    {
+        _selectedFolderPaths.Clear();
+        if (string.IsNullOrEmpty(newPath))
+        {
+            _rangeAnchorIndex = -1;
+            return;
+        }
+
+        var n = FavoriteIndexRoots.NormalizeFavoritePath(newPath);
+        _selectedFolderPaths.Add(n);
+        _rangeAnchorIndex = FindRowIndex(n);
     }
 
     private void RestorePendingScroll()
@@ -376,13 +429,38 @@ public sealed partial class FolderTreeView : UserControl
 
     private void SetSelectedPathFromUi(string path, bool scrollIntoView)
     {
+        var n = FavoriteIndexRoots.NormalizeFavoritePath(path);
         _suspendSelectedPathCallback = true;
-        SelectedFolderPath = path;
+        SelectedFolderPath = n;
         _suspendSelectedPathCallback = false;
-        SelectedFolderPathChanged?.Invoke(this, path);
+        ReplaceMultiSelectForPlainClick(n);
+        SelectedFolderPathChanged?.Invoke(this, n);
         RefreshRealizedRowChrome();
         if (scrollIntoView)
-            ScrollFolderIntoView(path, centerInViewport: false);
+            ScrollFolderIntoView(n, centerInViewport: false);
+    }
+
+    private void ReplaceMultiSelectForPlainClick(string normalizedPath)
+    {
+        _selectedFolderPaths.Clear();
+        _selectedFolderPaths.Add(normalizedPath);
+        _rangeAnchorIndex = FindRowIndex(normalizedPath);
+    }
+
+    private void ToggleFolderPathInSelection(string path)
+    {
+        var n = FavoriteIndexRoots.NormalizeFavoritePath(path);
+        if (!_selectedFolderPaths.Add(n))
+            _selectedFolderPaths.Remove(n);
+    }
+
+    private void ApplyShiftRangeSelection(int anchorIx, int endIx)
+    {
+        var a = Math.Min(anchorIx, endIx);
+        var b = Math.Max(anchorIx, endIx);
+        _selectedFolderPaths.Clear();
+        for (var i = a; i <= b && i < _rows.Count; i++)
+            _selectedFolderPaths.Add(_rows[i].Path);
     }
 
     private void FolderRow_Tapped(object sender, TappedRoutedEventArgs e)
@@ -393,8 +471,44 @@ public sealed partial class FolderTreeView : UserControl
             return;
         if (root.DataContext is not FolderRow row)
             return;
-        SetSelectedPathFromUi(row.Path, scrollIntoView: false);
-        Focus(FocusState.Pointer);
+
+        var (ctrl, shift, _, _) = WinUiKeyboardInterop.GetModifierStates();
+
+        if (!ctrl && !shift)
+        {
+            SetSelectedPathFromUi(row.Path, scrollIntoView: false);
+            Focus(FocusState.Pointer);
+            return;
+        }
+
+        if (ctrl && !shift)
+        {
+            ToggleFolderPathInSelection(row.Path);
+            _rangeAnchorIndex = FindRowIndex(row.Path);
+            RefreshRealizedRowChrome();
+            Focus(FocusState.Pointer);
+            return;
+        }
+
+        if (shift && !ctrl)
+        {
+            var endIx = FindRowIndex(row.Path);
+            if (_rangeAnchorIndex < 0 || endIx < 0)
+                SetSelectedPathFromUi(row.Path, scrollIntoView: false);
+            else
+                ApplyShiftRangeSelection(_rangeAnchorIndex, endIx);
+            RefreshRealizedRowChrome();
+            Focus(FocusState.Pointer);
+            return;
+        }
+
+        if (ctrl)
+        {
+            ToggleFolderPathInSelection(row.Path);
+            _rangeAnchorIndex = FindRowIndex(row.Path);
+            RefreshRealizedRowChrome();
+            Focus(FocusState.Pointer);
+        }
     }
 
     private void FolderRow_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
@@ -482,14 +596,17 @@ public sealed partial class FolderTreeView : UserControl
     {
         if (rowRoot is not Panel panel)
             return;
-        var sel = SelectedFolderPath;
-        var selected = !string.IsNullOrEmpty(sel) &&
-                       string.Equals(path, sel, StringComparison.OrdinalIgnoreCase);
+        var n = FavoriteIndexRoots.NormalizeFavoritePath(path);
+        var browsed = !string.IsNullOrEmpty(SelectedFolderPath)
+                      && string.Equals(n, SelectedFolderPath, StringComparison.OrdinalIgnoreCase);
+        var multi = _selectedFolderPaths.Contains(n);
         if (rowRoot.FindName("SelectionIndicator") is UIElement indicator)
-            indicator.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
+            indicator.Visibility = browsed || multi ? Visibility.Visible : Visibility.Collapsed;
 
-        if (selected)
+        if (browsed)
             panel.Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"];
+        else if (multi)
+            panel.Background = (Brush)Application.Current.Resources["SubtleFillColorTertiaryBrush"];
         else
             panel.ClearValue(Panel.BackgroundProperty);
     }
@@ -533,5 +650,64 @@ public sealed partial class FolderTreeView : UserControl
         }
 
         return false;
+    }
+
+    private void FolderRow_DragStarting(UIElement sender, DragStartingEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: FolderRow row })
+            return;
+
+        IReadOnlyList<string> list = IsFolderPathSelected(row.Path)
+            ? GetSelectedFolderPathsSnapshot()
+            : new[] { FavoriteIndexRoots.NormalizeFavoritePath(row.Path) };
+
+        if (list.Count == 0)
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        var payload = string.Join('\n', list.Select(p => FavoriteIndexRoots.NormalizeFavoritePath(p)));
+        e.Data.SetData(BrowserPaneDragDropFormats.PathListV1, payload);
+        e.Data.Properties.Title = list.Count == 1
+            ? Path.GetFileName(list[0].TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+            : $"{list.Count} items";
+        e.AllowedOperations = DataPackageOperation.Move;
+    }
+
+    private void FolderRow_DragOver(object sender, DragEventArgs e)
+    {
+        if (!e.DataView.Contains(BrowserPaneDragDropFormats.PathListV1))
+        {
+            e.AcceptedOperation = DataPackageOperation.None;
+            return;
+        }
+
+        e.AcceptedOperation = DataPackageOperation.Move;
+        e.Handled = true;
+    }
+
+    private async void FolderRow_Drop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is not FrameworkElement { DataContext: FolderRow row })
+            return;
+
+        if (!e.DataView.Contains(BrowserPaneDragDropFormats.PathListV1))
+            return;
+
+        var raw = await e.DataView.GetTextAsync(BrowserPaneDragDropFormats.PathListV1);
+        var sources = ImagePaneView.ParsePathLines(raw);
+        if (sources.Count == 0)
+            return;
+
+        var dest = FavoriteIndexRoots.NormalizeFavoritePath(row.Path);
+        MoveDropRequested?.Invoke(
+            this,
+            new BrowserPaneMoveDropRequestedEventArgs
+            {
+                SourcePaths = sources,
+                DestinationDirectory = dest,
+            });
     }
 }

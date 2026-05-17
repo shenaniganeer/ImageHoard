@@ -30,6 +30,10 @@
 
                 ColumnSpacing="10"
 
+                CanDrag="True"
+
+                DragStarting="ImageRowGrid_DragStarting"
+
                 RightTapped="ImageRowGrid_RightTapped">
 
                 <Grid.ColumnDefinitions>
@@ -142,9 +146,15 @@
 
             IsItemClickEnabled="False"
 
+            AllowDrop="True"
+
+            DragOver="ImagePaneRoot_DragOver"
+
+            Drop="ImagePaneRoot_Drop"
+
             SelectionChanged="ImageList_SelectionChanged"
 
-            SelectionMode="Single">
+            SelectionMode="Extended">
 
             <ListView.ItemsPanel>
 

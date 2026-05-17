@@ -21,6 +21,11 @@
                 Height="32"
                 MinHeight="32"
                 Background="Transparent"
+                AllowDrop="True"
+                CanDrag="True"
+                DragStarting="FolderRow_DragStarting"
+                DragOver="FolderRow_DragOver"
+                Drop="FolderRow_Drop"
                 Tapped="FolderRow_Tapped"
                 DoubleTapped="FolderRow_DoubleTapped"
                 RightTapped="FolderRow_RightTapped">

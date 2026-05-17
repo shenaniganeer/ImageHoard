@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Threading;
 using ImageHoard.Core.Browse;
 using ImageHoard.Core.Browse2;
@@ -29,6 +30,10 @@ public sealed class ImagePaneController : IDisposable
     private Func<string, SortFlagState> _getSortFlagState = _ => SortFlagState.Unset;
     private bool _showFileSizeColumn = true;
     private bool _showFileDateColumn = true;
+
+    private readonly object _selectionLock = new();
+    private readonly List<string> _selectedImagePaths = new();
+    private readonly HashSet<string> _selectedImagePathSet = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly object _reloadWaitLock = new();
     private int _lastStableAppliedReloadGeneration;
@@ -138,9 +143,13 @@ public sealed class ImagePaneController : IDisposable
         }
     }
 
+    /// <summary>Primary path for preview and keyboard navigation.</summary>
     public string? SelectedImagePath { get; private set; }
 
     public event EventHandler<string?>? SelectedImagePathChanged;
+
+    /// <summary>Ordered multi-select paths (subset of visible <see cref="Items"/> when applicable).</summary>
+    public event EventHandler? SelectedImagePathsChanged;
 
     /// <summary>
     /// Fired after <see cref="Items"/> was rebuilt while <see cref="SelectedImagePath"/> stayed the same string,
@@ -148,13 +157,52 @@ public sealed class ImagePaneController : IDisposable
     /// </summary>
     public event EventHandler? ImagePaneItemsRebuiltKeepingSelection;
 
+    public IReadOnlyList<string> GetSelectedImagePathsSnapshot()
+    {
+        lock (_selectionLock)
+            return _selectedImagePaths.ToArray();
+    }
+
+    public bool IsImagePathSelected(string fullPath)
+    {
+        var n = FavoriteIndexRoots.NormalizeFavoritePath(fullPath);
+        lock (_selectionLock)
+            return _selectedImagePathSet.Contains(n);
+    }
+
     public void SelectByPath(string? fullPath)
     {
         var n = string.IsNullOrEmpty(fullPath) ? null : FavoriteIndexRoots.NormalizeFavoritePath(fullPath);
-        if (string.Equals(SelectedImagePath, n, StringComparison.OrdinalIgnoreCase))
-            return;
-        SelectedImagePath = n;
-        SelectedImagePathChanged?.Invoke(this, SelectedImagePath);
+        string? oldPrimary;
+        lock (_selectionLock)
+        {
+            oldPrimary = SelectedImagePath;
+            if (string.IsNullOrEmpty(n))
+            {
+                if (_selectedImagePaths.Count == 0 && string.IsNullOrEmpty(oldPrimary))
+                    return;
+            }
+            else if (_selectedImagePaths.Count == 1
+                     && string.Equals(_selectedImagePaths[0], n, StringComparison.OrdinalIgnoreCase)
+                     && string.Equals(oldPrimary, n, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _selectedImagePaths.Clear();
+            _selectedImagePathSet.Clear();
+            if (!string.IsNullOrEmpty(n))
+            {
+                _selectedImagePaths.Add(n);
+                _selectedImagePathSet.Add(n);
+            }
+
+            SelectedImagePath = n;
+        }
+
+        if (!string.Equals(oldPrimary, n, StringComparison.OrdinalIgnoreCase))
+            SelectedImagePathChanged?.Invoke(this, SelectedImagePath);
+        SelectedImagePathsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>Moves selection by <paramref name="delta"/> (+1 next, -1 previous) within <see cref="Items"/>.</summary>
@@ -164,11 +212,15 @@ public sealed class ImagePaneController : IDisposable
             return;
 
         var ix = 0;
-        if (!string.IsNullOrEmpty(SelectedImagePath))
+        string? cur;
+        lock (_selectionLock)
+            cur = SelectedImagePath;
+
+        if (!string.IsNullOrEmpty(cur))
         {
             for (var i = 0; i < Items.Count; i++)
             {
-                if (!string.Equals(Items[i].FullPath, SelectedImagePath, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(Items[i].FullPath, cur, StringComparison.OrdinalIgnoreCase))
                     continue;
                 ix = i;
                 break;
@@ -184,10 +236,84 @@ public sealed class ImagePaneController : IDisposable
     internal void NotifySelectedFromView(string? fullPath)
     {
         var n = string.IsNullOrEmpty(fullPath) ? null : FavoriteIndexRoots.NormalizeFavoritePath(fullPath);
-        if (string.Equals(SelectedImagePath, n, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrEmpty(n))
+        {
+            ClearSelectionFromView();
             return;
-        SelectedImagePath = n;
-        SelectedImagePathChanged?.Invoke(this, SelectedImagePath);
+        }
+
+        ReplaceSelectionFromView(new[] { n }, n);
+    }
+
+    internal void NotifySelectionFromView(IReadOnlyList<string> pathsInListOrder, string? primaryFullPath)
+    {
+        if (pathsInListOrder.Count == 0)
+        {
+            ClearSelectionFromView();
+            return;
+        }
+
+        var norm = new List<string>(pathsInListOrder.Count);
+        foreach (var p in pathsInListOrder)
+        {
+            var n = FavoriteIndexRoots.NormalizeFavoritePath(p);
+            if (!string.IsNullOrEmpty(n))
+                norm.Add(n);
+        }
+
+        if (norm.Count == 0)
+        {
+            ClearSelectionFromView();
+            return;
+        }
+
+        var primary = string.IsNullOrEmpty(primaryFullPath)
+            ? norm[^1]
+            : FavoriteIndexRoots.NormalizeFavoritePath(primaryFullPath);
+        if (!norm.Any(x => string.Equals(x, primary, StringComparison.OrdinalIgnoreCase)))
+            primary = norm[^1];
+
+        ReplaceSelectionFromView(norm, primary);
+    }
+
+    private void ClearSelectionFromView()
+    {
+        string? oldPrimary;
+        lock (_selectionLock)
+        {
+            oldPrimary = SelectedImagePath;
+            _selectedImagePaths.Clear();
+            _selectedImagePathSet.Clear();
+            SelectedImagePath = null;
+        }
+
+        if (oldPrimary != null)
+            SelectedImagePathChanged?.Invoke(this, null);
+        SelectedImagePathsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void ReplaceSelectionFromView(IReadOnlyList<string> orderedPaths, string primary)
+    {
+        string? oldPrimary;
+        bool primaryChanged;
+        lock (_selectionLock)
+        {
+            oldPrimary = SelectedImagePath;
+            _selectedImagePaths.Clear();
+            _selectedImagePathSet.Clear();
+            foreach (var p in orderedPaths)
+            {
+                if (_selectedImagePathSet.Add(p))
+                    _selectedImagePaths.Add(p);
+            }
+
+            SelectedImagePath = primary;
+            primaryChanged = !string.Equals(oldPrimary, primary, StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (primaryChanged)
+            SelectedImagePathChanged?.Invoke(this, SelectedImagePath);
+        SelectedImagePathsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void RequestReload()
@@ -320,7 +446,14 @@ public sealed class ImagePaneController : IDisposable
         if (token.IsCancellationRequested)
             return;
 
-        var capturedSelection = SelectedImagePath;
+        string? capturedPrimary;
+        List<string> capturedPaths;
+        lock (_selectionLock)
+        {
+            capturedPrimary = SelectedImagePath;
+            capturedPaths = _selectedImagePaths.ToList();
+        }
+
         _dispatcher.TryEnqueue(DispatcherQueuePriority.Normal, () =>
         {
             if (token.IsCancellationRequested)
@@ -335,26 +468,58 @@ public sealed class ImagePaneController : IDisposable
             foreach (var r in rows)
                 Items.Add(r);
 
-            ImagePaneRow? match = null;
-            if (!string.IsNullOrEmpty(capturedSelection))
+            var pathSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var it in Items)
+                pathSet.Add(it.FullPath);
+
+            var newOrdered = new List<string>();
+            foreach (var p in capturedPaths)
             {
-                foreach (var it in Items)
-                {
-                    if (string.Equals(it.FullPath, capturedSelection, StringComparison.OrdinalIgnoreCase))
-                    {
-                        match = it;
-                        break;
-                    }
-                }
+                if (pathSet.Contains(p))
+                    newOrdered.Add(p);
             }
 
-            var nextSel = match?.FullPath;
-            var pathChanged = !string.Equals(capturedSelection, nextSel, StringComparison.OrdinalIgnoreCase);
-            SelectedImagePath = nextSel;
+            string? nextPrimary = null;
+            if (newOrdered.Count > 0)
+            {
+                if (!string.IsNullOrEmpty(capturedPrimary)
+                    && newOrdered.Any(x => string.Equals(x, capturedPrimary, StringComparison.OrdinalIgnoreCase)))
+                {
+                    nextPrimary = newOrdered.First(x => string.Equals(x, capturedPrimary, StringComparison.OrdinalIgnoreCase));
+                }
+                else
+                    nextPrimary = newOrdered[0];
+            }
+
+            var pathChanged = false;
+            var pathsChanged = false;
+            lock (_selectionLock)
+            {
+                _selectedImagePaths.Clear();
+                _selectedImagePathSet.Clear();
+                foreach (var p in newOrdered)
+                {
+                    _selectedImagePaths.Add(p);
+                    _selectedImagePathSet.Add(p);
+                }
+
+                if (!string.Equals(SelectedImagePath, nextPrimary, StringComparison.OrdinalIgnoreCase))
+                {
+                    SelectedImagePath = nextPrimary;
+                    pathChanged = true;
+                }
+
+                pathsChanged = newOrdered.Count != capturedPaths.Count
+                    || !newOrdered.SequenceEqual(capturedPaths, StringComparer.OrdinalIgnoreCase);
+            }
+
             if (pathChanged)
                 SelectedImagePathChanged?.Invoke(this, SelectedImagePath);
-            else if (!string.IsNullOrEmpty(nextSel))
+            else if (!string.IsNullOrEmpty(nextPrimary))
                 ImagePaneItemsRebuiltKeepingSelection?.Invoke(this, EventArgs.Empty);
+
+            if (pathsChanged || pathChanged)
+                SelectedImagePathsChanged?.Invoke(this, EventArgs.Empty);
 
             if (captureGeneration != Volatile.Read(ref _reloadGeneration))
                 _dispatcher.TryEnqueue(DispatcherQueuePriority.Low, StartReloadForCurrentGeneration);

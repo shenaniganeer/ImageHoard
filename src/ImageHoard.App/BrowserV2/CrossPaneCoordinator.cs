@@ -37,6 +37,7 @@ internal sealed class CrossPaneCoordinator : IDisposable
         Mutations = new BrowserPaneMutationGate();
 
         Tree.TreeModelDelta += OnTreeModelDelta;
+        Tree.AfterRevealAndSelect += OnTreeAfterRevealAndSelect;
         Images.SelectedImagePathChanged += OnImagesSelectedImagePathChanged;
         Registry.DiffStream.DiffReceived += OnRegistryDiffForParentListing;
     }
@@ -217,6 +218,7 @@ internal sealed class CrossPaneCoordinator : IDisposable
     {
         Registry.DiffStream.DiffReceived -= OnRegistryDiffForParentListing;
         Tree.TreeModelDelta -= OnTreeModelDelta;
+        Tree.AfterRevealAndSelect -= OnTreeAfterRevealAndSelect;
         Images.SelectedImagePathChanged -= OnImagesSelectedImagePathChanged;
         UnhookFirstPaintScanner();
         DetachFolderTreeView();
@@ -247,6 +249,8 @@ internal sealed class CrossPaneCoordinator : IDisposable
         _folderTreeView?.ApplyModelDelta(delta, preserveViewport: true);
         SyncFolderTreeViewSelectedPathFromModel();
     }
+
+    private void OnTreeAfterRevealAndSelect() => SyncFolderTreeViewSelectedPathFromModel();
 
     private void SyncFolderTreeViewSelectedPathFromModel()
     {

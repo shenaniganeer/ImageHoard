@@ -22,7 +22,7 @@ The browser column ships as **Browse2** (`ImageHoard.App.BrowserV2`, `ImageHoard
 
 Architecture: [browser-tree-rewrite-architecture.md](../design-decisions/browser-tree-rewrite-architecture.md). Virtualized presenter: [browser-folder-tree-virtualization-itemsrepeater.md](../design-decisions/browser-folder-tree-virtualization-itemsrepeater.md). Legacy path→`TreeViewNode` index (superseded for Browse2): [browser-folder-tree-path-to-node-index.md](../design-decisions/browser-folder-tree-path-to-node-index.md).
 
-**Maintenance:** Any PR that changes **`BrowserV2Host`**, **`TreeController`**, **`FolderTreeFlatModel`**, **`FsDiffStream`** contracts, **`FsChangeApplier`**, **`FolderTreeView`** anchoring, **`ImagePaneController`**, **`CrossPaneCoordinator`**, **`MainWindow.Browse2Session`** (coordinator lifetime / refresh wiring), **`MainWindow_Activated`** Browse2 refresh, or **browser tree settings** for Browse2 must update this section **and** the linked ADRs when user-visible coordination changes.
+**Maintenance:** Any PR that changes **`BrowserV2Host`**, **`TreeController`**, **`FolderTreeFlatModel`**, **`FsDiffStream`** contracts, **`FsChangeApplier`**, **`FolderTreeView`** anchoring, **`ImagePaneController`**, **`CrossPaneCoordinator`**, **`MainWindow.Browse2Session`** (coordinator lifetime / refresh wiring), or **browser tree settings** for Browse2 must update this section **and** the linked ADRs when user-visible coordination changes.
 
 ### Browse2 targeted refresh triggers (`FsTargetedRefresher.RefreshAsync`)
 
@@ -30,7 +30,7 @@ Architecture: [browser-tree-rewrite-architecture.md](../design-decisions/browser
 |---------|-------------------|
 | Cold boot | `CrossPaneCoordinator.ColdBoot` → `RefreshAsync(IndexRoot)` after rebuild; starts **`FsBackgroundScanner`** after first frame. |
 | Re-navigate same index root | `Browse2EnsureCoordinatorForCurrentBrowseAsync` reuse branch → `Browse2RefreshVisibleFoldersAsync`. |
-| Window activation | `MainWindow_Activated`: **Deactivated** → **CodeActivated** / **PointerActivated** → refresh index root, current folder, and all persisted expanded paths (deduped, bounded by cap). |
+| Window activation | **Does not** call `Browse2RefreshVisibleFoldersAsync` (avoids spurious image-pane reload / preview blank on focus return). After external disk edits while the app was in the background, use **`browse2.refreshTree` (F5)**, navigation, expand, find, or wizard-driven reconciliation. |
 | User expand in folder tree | `CrossPaneCoordinator.OnFolderTreeToggleExpand`: after expand, when map row is unverified or `HasSubfolders` with zero child rows in map. |
 | Find folder / file hit | `CrossPaneCoordinator.ApplyFindFolderHit` / `ApplyFindFileHit` → refresh hit folder or parent of file. |
 | Explicit command | `browse2.refreshTree` (KeyboardOnly default **F5**) → `Browse2RefreshVisibleFoldersAsync`. |

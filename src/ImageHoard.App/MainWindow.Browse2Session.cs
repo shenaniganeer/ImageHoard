@@ -38,8 +38,6 @@ public sealed partial class MainWindow
         _browse2Coordinator.Images.SortKind = Browse2MapListSort(_layoutState.ListSort);
     }
 
-    private WindowActivationState _browse2PriorWindowActivation = WindowActivationState.Deactivated;
-
     internal CrossPaneCoordinator? Browse2CoordinatorOrNull => _browse2Coordinator;
 
     private void Browse2DisposeSession()
@@ -234,24 +232,6 @@ public sealed partial class MainWindow
                 // ignored per-folder
             }
         }
-    }
-
-    private void MainWindow_Activated(object sender, WindowActivatedEventArgs e)
-    {
-        if (_browse2Coordinator is null)
-        {
-            _browse2PriorWindowActivation = e.WindowActivationState;
-            return;
-        }
-
-        var now = e.WindowActivationState;
-        if (_browse2PriorWindowActivation == WindowActivationState.Deactivated
-            && now is WindowActivationState.CodeActivated or WindowActivationState.PointerActivated)
-        {
-            _ = Browse2RefreshVisibleFoldersAsync();
-        }
-
-        _browse2PriorWindowActivation = now;
     }
 
     private void SyncBrowse2SyntheticPrimaryNavNode()

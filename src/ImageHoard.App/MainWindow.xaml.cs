@@ -125,7 +125,6 @@ public sealed partial class MainWindow : Window, IPreferencesSession
         WireModalOverlays();
         WireBrowseShellChrome();
         ApplyBrowserChromeMode();
-        Activated += MainWindow_Activated;
         PreviewHostGrid.SizeChanged += PreviewHostGrid_SizeChanged;
         RootGrid.Loaded += MainWindow_Loaded;
         Closed += (_, _) =>

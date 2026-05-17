@@ -33,6 +33,12 @@ internal sealed class TreeController : IDisposable
     /// <summary>Raised on the dispatcher after one coalesced application pass.</summary>
     public event Action<FlatModelDelta>? TreeModelDelta;
 
+    /// <summary>
+    /// Raised on the dispatcher after <see cref="RevealAndSelect"/> updates <see cref="FolderTreeFlatModel.Selection"/>,
+    /// including when there is no structural delta (e.g. sibling folder under an already-expanded parent).
+    /// </summary>
+    public event Action? AfterRevealAndSelect;
+
     public void Dispose()
     {
         _diffStream.DiffReceived -= OnDiffReceived;
@@ -133,6 +139,7 @@ internal sealed class TreeController : IDisposable
         _model.Selection.SelectedFolderPath = norm;
         var delta = merged.Count == 0 ? FlatModelDelta.Empty : new FlatModelDelta(merged);
         RaiseIfNonEmpty(delta);
+        AfterRevealAndSelect?.Invoke();
         return delta;
     }
 

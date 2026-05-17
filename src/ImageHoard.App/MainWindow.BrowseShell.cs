@@ -1162,7 +1162,8 @@ public sealed partial class MainWindow
         IReadOnlyList<ImageHoard.Core.Models.FileSystemEntry> entries;
         try
         {
-            entries = await AppServices.FileSystem.ListDirectoryAsync(parent.FullName).ConfigureAwait(false);
+            // Must resume on the UI thread: sibling navigation calls TreeController.RevealAndSelect (dispatcher-only).
+            entries = await AppServices.FileSystem.ListDirectoryAsync(parent.FullName).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -1226,7 +1227,7 @@ public sealed partial class MainWindow
             await NavigateToFolderAsync(targetFolderPath).ConfigureAwait(true);
             if (_browse2Coordinator == null)
                 return;
-            await Task.Yield();
+            await _browse2Coordinator.Images.WaitForReloadAppliedAsync(CancellationToken.None).ConfigureAwait(true);
             var first = _browse2Coordinator.Images.Items.FirstOrDefault();
             if (first != null
                 && BrowseNavigationModeFilter.Matches(_sortSession.GetState(first.FullPath), _browseNavigationMode))
@@ -1243,7 +1244,7 @@ public sealed partial class MainWindow
 
         _ = _browse2Coordinator.Tree.RevealAndSelect(targetFolderPath);
         _browse2Coordinator.Images.CurrentFolderPath = targetFolderPath;
-        await Task.Yield();
+        await _browse2Coordinator.Images.WaitForReloadAppliedAsync(CancellationToken.None).ConfigureAwait(true);
         var pick = _browse2Coordinator.Images.Items.FirstOrDefault();
         if (pick != null)
         {

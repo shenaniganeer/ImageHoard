@@ -182,7 +182,11 @@ public sealed partial class MainWindow
                 if (!string.IsNullOrEmpty(parent))
                 {
                     _ = _browse2Coordinator.Tree.RevealAndSelect(parent);
-                    BrowserV2Host.FolderTree.ScrollFolderIntoView(parent, centerInViewport: false);
+                    BrowserV2Host.FolderTree.ScrollFolderIntoView(
+                        parent,
+                        centerInViewport: true,
+                        skipIfFullyVisible: true,
+                        pinLeadingLineIndex: 0);
                 }
 
                 _browse2Coordinator.Images.SelectByPath(anchor);
@@ -192,14 +196,62 @@ public sealed partial class MainWindow
             if (!string.IsNullOrEmpty(anchor) && Directory.Exists(anchor))
             {
                 _ = _browse2Coordinator.Tree.RevealAndSelect(anchor);
-                BrowserV2Host.FolderTree.ScrollFolderIntoView(anchor, centerInViewport: false);
+                BrowserV2Host.FolderTree.ScrollFolderIntoView(
+                    anchor,
+                    centerInViewport: false,
+                    skipIfFullyVisible: true,
+                    pinLeadingLineIndex: 2);
                 return Task.CompletedTask;
             }
+
+            // Stale/missing anchor: match ForColdBootAnchor "scroll to top" when intent has no paths; otherwise pin browsed folder.
+            if (string.IsNullOrEmpty(intent.PrimaryPath) && string.IsNullOrEmpty(intent.SecondaryPath))
+            {
+                BrowserV2Host.FolderTree.ScrollFolderTreeToOrigin();
+                return Task.CompletedTask;
+            }
+
+            var coldState = BuildBrowserPaneState();
+            var folderCold = BrowserTreeViewportIntentResolver.GetPinPathAfterBrowseCommit(coldState);
+            if (!string.IsNullOrEmpty(folderCold))
+            {
+                BrowserV2Host.FolderTree.ScrollFolderIntoView(
+                    folderCold,
+                    centerInViewport: false,
+                    skipIfFullyVisible: true,
+                    pinLeadingLineIndex: 2);
+            }
+            else
+                BrowserV2Host.FolderTree.ScrollFolderTreeToOrigin();
+
+            return Task.CompletedTask;
         }
 
-        var sel = _browse2Coordinator.Tree.Model.Selection.SelectedFolderPath;
-        if (!string.IsNullOrEmpty(sel))
-            BrowserV2Host.FolderTree.ScrollFolderIntoView(sel, centerInViewport: false);
+        var state = BuildBrowserPaneState();
+        var folder = BrowserTreeViewportBrowse2FolderTarget.ResolveFolderPathForViewportScroll(intent, state);
+        if (string.IsNullOrEmpty(folder))
+            folder = BrowserTreeViewportIntentResolver.GetPinPathAfterBrowseCommit(state);
+        if (string.IsNullOrEmpty(folder))
+            return Task.CompletedTask;
+
+        var centerFindFolder = intent.Reason == BrowserTreeViewportReason.FindHitFolder;
+        if (centerFindFolder)
+        {
+            BrowserV2Host.FolderTree.ScrollFolderIntoView(
+                folder,
+                centerInViewport: true,
+                skipIfFullyVisible: true,
+                pinLeadingLineIndex: 0);
+        }
+        else
+        {
+            BrowserV2Host.FolderTree.ScrollFolderIntoView(
+                folder,
+                centerInViewport: false,
+                skipIfFullyVisible: true,
+                pinLeadingLineIndex: 2);
+        }
+
         return Task.CompletedTask;
     }
 

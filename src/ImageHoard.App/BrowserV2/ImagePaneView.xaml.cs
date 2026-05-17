@@ -2,9 +2,12 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using ImageHoard.Core.Browse;
+using ImageHoard.Core.Browse2;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 
@@ -110,6 +113,84 @@ public sealed partial class ImagePaneView : UserControl
         {
             _suppressSelectionSync = false;
         }
+
+        SchedulePrimaryRowViewportScroll();
+    }
+
+private void SchedulePrimaryRowViewportScroll()
+    {
+        _ = DispatcherQueue.GetForCurrentThread()?.TryEnqueue(DispatcherQueuePriority.Normal, () => ApplyPrimaryRowViewportScroll(0));
+    }
+
+    /// <param name="retryDepth">0 = first pass; 1 = one deferred retry when virtualization has not yet produced a container.</param>
+    private void ApplyPrimaryRowViewportScroll(int retryDepth)
+    {
+        const int maxRetryDepth = 1;
+        if (_controller is null || string.IsNullOrEmpty(_controller.SelectedImagePath))
+            return;
+
+        ImagePaneRow? primaryRow = null;
+        foreach (var row in _controller.Items)
+        {
+            if (string.Equals(row.FullPath, _controller.SelectedImagePath, StringComparison.OrdinalIgnoreCase))
+            {
+                primaryRow = row;
+                break;
+            }
+        }
+
+        if (primaryRow is null)
+            return;
+
+        // Realize off-screen virtualized rows before ContainerFromItem / TransformToVisual.
+        ImageList.ScrollIntoView(primaryRow);
+        ImageList.UpdateLayout();
+
+        if (ImageList.ContainerFromItem(primaryRow) is not ListViewItem lvi)
+        {
+            if (retryDepth < maxRetryDepth)
+                DispatcherQueue.GetForCurrentThread()?.TryEnqueue(DispatcherQueuePriority.Normal, () => ApplyPrimaryRowViewportScroll(retryDepth + 1));
+            return;
+        }
+
+        var sv = FindDescendantScrollViewer(ImageList);
+        if (sv is null)
+            return;
+
+        var rowRoot = (lvi.ContentTemplateRoot as FrameworkElement) ?? lvi;
+        if (rowRoot.ActualHeight <= 0)
+            rowRoot.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+
+        var height = rowRoot.ActualHeight > 0 ? rowRoot.ActualHeight : 32;
+        var pt = rowRoot.TransformToVisual(sv).TransformPoint(new Point(0, 0));
+        var itemContentTop = sv.VerticalOffset + pt.Y;
+        var pinY = 2 * height;
+        var newY = ListViewportScrollMath.TryComputePinnedVerticalOffset(
+            itemContentTop,
+            height,
+            sv.VerticalOffset,
+            sv.ViewportHeight,
+            Math.Max(0, sv.ScrollableHeight),
+            pinY,
+            skipIfFullyVisible: true);
+        if (newY is { } y)
+            sv.ChangeView(null, y, null, disableAnimation: true);
+    }
+
+    private static ScrollViewer? FindDescendantScrollViewer(DependencyObject root)
+    {
+        if (root is ScrollViewer sv)
+            return sv;
+        var n = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < n; i++)
+        {
+            var c = VisualTreeHelper.GetChild(root, i);
+            var found = FindDescendantScrollViewer(c);
+            if (found is not null)
+                return found;
+        }
+
+        return null;
     }
 
     private void ImageList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -139,6 +220,7 @@ public sealed partial class ImagePaneView : UserControl
             primary = paths[^1];
 
         _controller.NotifySelectionFromView(paths, primary);
+        SchedulePrimaryRowViewportScroll();
     }
 
     private void ImageRowGrid_RightTapped(object sender, RightTappedRoutedEventArgs e)
@@ -158,6 +240,7 @@ public sealed partial class ImagePaneView : UserControl
         }
 
         _controller.NotifySelectedFromView(row.FullPath);
+        SchedulePrimaryRowViewportScroll();
         ContextMenuRequested?.Invoke(this, new BrowserPaneContextMenuRequestedEventArgs(anchor, e));
     }
 

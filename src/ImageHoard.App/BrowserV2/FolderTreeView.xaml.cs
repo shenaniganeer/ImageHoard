@@ -172,7 +172,19 @@ public sealed partial class FolderTreeView : UserControl
     public void ResetRows(IReadOnlyList<FolderRow> rows, bool preserveViewport = false) =>
         ApplyModelDelta(new FlatModelDelta(new[] { new FlatModelReset(rows) }), preserveViewport);
 
-    public void ScrollFolderIntoView(string folderPath, bool centerInViewport = false)
+    /// <summary>Scrolls the folder tree to vertical offset zero (cold-boot / stale-anchor fallback).</summary>
+    public void ScrollFolderTreeToOrigin()
+    {
+        _pendingScrollRestore = null;
+        TreeScrollViewer.UpdateLayout();
+        TreeScrollViewer.ChangeView(null, 0, null, disableAnimation: true);
+    }
+
+    public void ScrollFolderIntoView(string folderPath, bool centerInViewport = false) =>
+        ScrollFolderIntoView(folderPath, centerInViewport, skipIfFullyVisible: false, pinLeadingLineIndex: 0);
+
+    /// <param name="pinLeadingLineIndex">When <paramref name="centerInViewport"/> is false, pins the row top at this many empty "lines" from the viewport top (2 = third row).</param>
+    public void ScrollFolderIntoView(string folderPath, bool centerInViewport, bool skipIfFullyVisible, int pinLeadingLineIndex)
     {
         // Drop deferred preserveViewport restore so a queued Low-priority RestorePendingScroll cannot
         // overwrite this explicit scroll (e.g. RevealAndSelect then ScrollFolderIntoView on cold boot / Find).
@@ -187,19 +199,32 @@ public sealed partial class FolderTreeView : UserControl
         // on cold boot ScrollableHeight is still 0 and ChangeView silently clamps the target to the top.
         TreeScrollViewer.UpdateLayout();
         TreeRepeater.UpdateLayout();
-        // Negative intra-row offset is fine: RestorePendingScroll re-evaluates the y as
-        // (ix * rowH + offset) and re-clamps against the current ScrollableHeight.
-        var offset = 0.0;
-        if (centerInViewport && TreeScrollViewer.ViewportHeight > rowH)
-            offset = -(TreeScrollViewer.ViewportHeight - rowH) / 2;
-        var y = ix * rowH + offset;
+        var v = TreeScrollViewer.VerticalOffset;
+        var vh = TreeScrollViewer.ViewportHeight;
         var maxY = Math.Max(0, TreeScrollViewer.ScrollableHeight);
-        y = FolderTreeViewportAnchorMath.ClampVerticalScrollTarget(y, maxY);
+        var itemTop = ix * rowH;
+        double pinY;
+        if (centerInViewport && vh > rowH)
+            pinY = (vh - rowH) / 2;
+        else
+            pinY = Math.Max(0, pinLeadingLineIndex) * rowH;
+
+        var newY = ListViewportScrollMath.TryComputePinnedVerticalOffset(
+            itemTop,
+            rowH,
+            v,
+            vh,
+            maxY,
+            pinY,
+            skipIfFullyVisible);
+        if (newY is not { } y)
+            return;
+
         TreeScrollViewer.ChangeView(null, y, null, disableAnimation: true);
         // Belt-and-braces: re-apply at Low priority after layout settles. If layout was still in
         // progress and ScrollableHeight clamped y down, the deferred pass re-evaluates against the
         // final extent once rows are realized.
-        _pendingScrollRestore = (ix, offset);
+        _pendingScrollRestore = (ix, y - itemTop);
         DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, RestorePendingScroll);
     }
 
@@ -437,7 +462,7 @@ public sealed partial class FolderTreeView : UserControl
         SelectedFolderPathChanged?.Invoke(this, n);
         RefreshRealizedRowChrome();
         if (scrollIntoView)
-            ScrollFolderIntoView(n, centerInViewport: false);
+            ScrollFolderIntoView(n, centerInViewport: false, skipIfFullyVisible: true, pinLeadingLineIndex: 2);
     }
 
     private void ReplaceMultiSelectForPlainClick(string normalizedPath)

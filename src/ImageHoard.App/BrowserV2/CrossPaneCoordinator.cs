@@ -221,7 +221,6 @@ internal sealed class CrossPaneCoordinator : IDisposable
     {
         _ = Tree.RevealAndSelect(folderPath);
         Images.CurrentFolderPath = Tree.Model.Selection.SelectedFolderPath;
-        _folderTreeView?.ScrollFolderIntoView(folderPath, centerInViewport: true);
         _ = TargetedRefresher.RefreshAsync(folderPath, _listingRefreshCancellation);
     }
 
@@ -234,7 +233,6 @@ internal sealed class CrossPaneCoordinator : IDisposable
             var p = FavoriteIndexRoots.NormalizeFavoritePath(parent);
             _ = Tree.RevealAndSelect(p);
             Images.CurrentFolderPath = Tree.Model.Selection.SelectedFolderPath;
-            _folderTreeView?.ScrollFolderIntoView(p, centerInViewport: false);
             _ = TargetedRefresher.RefreshAsync(p, _listingRefreshCancellation);
         }
     }
